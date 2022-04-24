@@ -16,7 +16,7 @@ def gen_transform_mat(
     Ouderaa and van der Wilk.
 
     Args:
-        η: an Array with six entries:
+        `η`: an Array with six entries:
         * η_0 controls translation in x.
         * η_1 controls translation in y.
         * η_2 is the angle of rotation.
@@ -24,7 +24,7 @@ def gen_transform_mat(
         * η_4 is the scaling factor in y.
         * η_5 controls shearing.
 
-        ε: an Array of the same shape as η which is used for
+        `ε`: an Array of the same shape as `η` which is used for
         sampling transformations via a reparameterisation trick (ε ~ U[-1, 1]^6)
 
     Returns:
@@ -55,12 +55,12 @@ def transform_image(
     See Sec 3.2 in "Spatial Transformer Networks" by Jaderberg et al.
 
     Args:
-        image: a rank-3 Array of shape (num channels, heigh, width).
+        `image`: a rank-3 Array of shape (num channels, heigh, width).
 
-        T: a 3x3 affine transformation Array.
+        `T`: a 3x3 affine transformation Array.
 
     Returns:
-        A transformed image of same shape as the input image.
+        A transformed image of same shape as the input.
     """
     assert_rank(image, 3)
     assert_shape(T, (3, 3))
