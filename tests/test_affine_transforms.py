@@ -1,5 +1,5 @@
 """Tests for affine transformations."""
-import os
+from pathlib import Path
 
 from absl.testing import parameterized
 import numpy as np
@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torchdiffeq import odeint
 from PIL import Image
 
-from src.transformations.affine import transform_image, gen_transform_mat
+from src.transformations.affine import transform_image, gen_transform_mat, create_generator_matrices
 
 
 def _pytorch_transform_image(image, G):
@@ -24,12 +24,12 @@ class AffineTransformTests(parameterized.TestCase):
     """Tests for affine transformations."""
 
     def setUp(self):
-        testdata_filename = os.path.join(os.path.dirname(__file__), 'checkerboard.png')
+        testdata_filename = Path(__file__).parent / 'checkerboard.png'
         input_image = Image.open(testdata_filename).convert('RGB')
         self.input_array = jnp.moveaxis(jnp.array(input_image, dtype=jnp.float32), -1, 0)
 
     def test_identity(self):
-        T = gen_transform_mat(jnp.zeros(6), jnp.ones(6))
+        T = gen_transform_mat(jnp.zeros(6, dtype=jnp.float32), jnp.ones(6, dtype=jnp.float32))
 
         jax_output = transform_image(self.input_array, T)
         pt_output = _pytorch_transform_image(np.array(self.input_array), np.array(T))
@@ -62,7 +62,7 @@ class AffineTransformTests(parameterized.TestCase):
         {'testcase_name': 'all', 'η': [.1, .1, .1, .1, .1, .1]},
     )
     def test_vs_pytorch(self, η):
-        T = gen_transform_mat(jnp.array(η), jnp.ones(6))
+        T = gen_transform_mat(jnp.array(η), jnp.ones(6, dtype=jnp.float32))
 
         jax_output = transform_image(self.input_array, T)
         pt_output = _pytorch_transform_image(np.array(self.input_array), np.array(T))
@@ -84,14 +84,16 @@ class AffineMatrixTests(parameterized.TestCase):
         {'θ': -jnp.pi},
     )
     def test_rotation(self, θ):
-        η = jnp.array([0, 0, θ, 0, 0, 0])
-        T = gen_transform_mat(η, jnp.ones(6))
+        η = jnp.array([0., 0., θ, 0., 0., 0.])
+        T = gen_transform_mat(η, jnp.ones(6, dtype=jnp.float32))
 
+        # pylint: disable=bad-whitespace
         T_rot = jnp.array([
             [jnp.cos(θ), -jnp.sin(θ), 0.],
-            [jnp.sin(θ), jnp.cos(θ), 0.],
-            [0., 0., 1.]
+            [jnp.sin(θ),  jnp.cos(θ), 0.],
+            [        0.,          0., 1.]
         ])
+        # pylint: enable=bad-whitespace
         np.testing.assert_allclose(T, T_rot, rtol=1e-7, atol=1e-7)
 
     @parameterized.parameters(
@@ -103,8 +105,8 @@ class AffineMatrixTests(parameterized.TestCase):
         {'tx': -5., 'ty': -5.},
     )
     def test_translation(self, tx, ty):
-        η = jnp.array([tx, ty, 0, 0, 0, 0])
-        T = gen_transform_mat(η, jnp.ones(6))
+        η = jnp.array([tx, ty, 0., 0., 0., 0.])
+        T = gen_transform_mat(η, jnp.ones(6, dtype=jnp.float32))
 
         T_trans = jnp.array([
             [1., 0., tx],
@@ -121,21 +123,23 @@ class AffineMatrixTests(parameterized.TestCase):
         {'sx': .5, 'sy': .5},
     )
     def test_scaling(self, sx, sy):
-        η = jnp.array([0, 0, 0, sx, sy, 0])
-        T = gen_transform_mat(η, jnp.ones(6))
+        η = jnp.array([0., 0., 0., sx, sy, 0.])
+        T = gen_transform_mat(η, jnp.ones(6, dtype=jnp.float32))
 
+        # pylint: disable=bad-whitespace
         T_trans = jnp.array([
-            [jnp.exp(sx), 0., 0.],
-            [0., jnp.exp(sy), 0.],
-            [0., 0., 1.]
+            [jnp.exp(sx),          0., 0.],
+            [         0., jnp.exp(sy), 0.],
+            [         0.,          0., 1.]
         ])
+        # pylint: enable=bad-whitespace
         np.testing.assert_allclose(T, T_trans, rtol=1e-7, atol=1e-7)
 
 
 
 def _pytorch_expm(A, rtol=1e-4):
     I = torch.eye(A.shape[-1], device=A.device, dtype=A.dtype)
-    return odeint(lambda t, x: A@x, I, torch.tensor([0.,1.]).to(A.device,A.dtype), rtol=rtol)[-1]
+    return odeint(lambda t, x: A@x, I, torch.tensor([0., 1.]).to(A.device, A.dtype), rtol=rtol)[-1]
 
 
 class MatrixExpTests(parameterized.TestCase):
@@ -166,17 +170,11 @@ class MatrixExpTests(parameterized.TestCase):
         {'testcase_name': 'all', 'η': [.1, .1, .1, .1, .1, .1]},
     )
     def test_vs_pytorch(self, η):
-        G_trans_x = jnp.zeros((3, 3), jnp.float32).at[0, 2].set(1)
-        G_trans_y = jnp.zeros((3, 3), jnp.float32).at[1, 2].set(1)
-        G_rot = jnp.zeros((3, 3), jnp.float32).at[1, 0].set(1).at[0, 1].set(-1)
-        G_scale_x = jnp.zeros((3, 3), jnp.float32).at[0, 0].set(1)
-        G_scale_y = jnp.zeros((3, 3), jnp.float32).at[1, 1].set(1)
-        G_shear = jnp.zeros((3, 3), jnp.float32).at[1, 0].set(1).at[0, 1].set(1)
-        Gs = np.array([G_trans_x, G_trans_y, G_rot, G_scale_x, G_scale_y, G_shear])
+        Gs = create_generator_matrices()
 
         Gsum = (np.array(η)[:, np.newaxis, np.newaxis] * Gs).sum(axis=0)
 
-        pt_T = _pytorch_expm(torch.from_numpy(Gsum), rtol=1e-6)
+        pt_T = _pytorch_expm(torch.from_numpy(np.array(Gsum)), rtol=1e-6)
         jax_T = jax.scipy.linalg.expm(Gsum)
 
         np.testing.assert_allclose(jax_T, pt_T, rtol=1e-6, atol=1e-6)
