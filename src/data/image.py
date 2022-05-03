@@ -93,7 +93,7 @@ def get_image_dataset(
 
         valid_percent: the `float` percentage of training data to use for validation. (Default: `0.1`)
 
-        random_seed: the `int` random seed. (Default: 42)
+        random_seed: the `int` random seed for splitting the valid data and applying random affine transformations. (Default: 42)
 
         train_augmentations: a `list` of augmentations to apply to the training data. (Default: `[]`)
 
