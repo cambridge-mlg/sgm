@@ -85,21 +85,21 @@ def get_image_dataset(
     """Provides PyTorch `Dataset`s for the specified image dataset_name.
 
     Args:
-        `dataset_name`: the `str` name of the dataset. E.g. `'MNIST'`.
+        dataset_name: the `str` name of the dataset. E.g. `'MNIST'`.
 
-        `data_dir`: the `str` directory where the datasets should be downloaded to and loaded from. (Default: `'../raw_data'`)
+        data_dir: the `str` directory where the datasets should be downloaded to and loaded from. (Default: `'../raw_data'`)
 
-        `flatten_img`: a `bool` indicating whether images should be flattened. (Default: `False`)
+        flatten_img: a `bool` indicating whether images should be flattened. (Default: `False`)
 
-        `valid_percent`: the `float` percentage of training data to use for validation. (Default: `0.1`)
+        valid_percent: the `float` percentage of training data to use for validation. (Default: `0.1`)
 
-        `random_seed`: the `int` random seed. (Default: 42)
+        random_seed: the `int` random seed. (Default: 42)
 
-        `train_augmentations`: a `list` of augmentations to apply to the training data. (Default: `[]`)
+        train_augmentations: a `list` of augmentations to apply to the training data. (Default: `[]`)
 
-        `test_augmentations`: a `list` of augmentations to apply to the test data. (Default: `[]`)
+        test_augmentations: a `list` of augmentations to apply to the test data. (Default: `[]`)
 
-        `η`: an optional `Array` controlling the affine transformations to apply to the data.
+        η: an optional `Array` controlling the affine transformations to apply to the data.
         For example for rotations of up to π/2 degrees, `η = [0., 0., π/2, 0., 0., 0.]`.
         For more information see `transformations.affine.gen_transform_mat`.
         (Default: `None`)
