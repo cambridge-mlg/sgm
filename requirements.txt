@@ -1,1 +1,4 @@
 jax==0.3.4
+torch==1.11.0
+torchdiffeq==0.2.2
+chex==0.1.3
