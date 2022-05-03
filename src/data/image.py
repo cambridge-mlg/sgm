@@ -53,7 +53,7 @@ def _transform_data(data, η=None, seed=42):
     ε = jax.random.uniform(key, (N, 6), minval=-1, maxval=1)
     Ts = jax.vmap(gen_transform_mat, in_axes=(None, 0))(η, ε)
 
-    # PyTorch puts the channel dim before width and heigh, but we Jax puts it last,
+    # PyTorch puts the channel dim before width and height, but we Jax puts it last,
     # so we need to move the channel dim for the data so that it works with our transforms.
     data = np.moveaxis(data, -1, 1)
 
