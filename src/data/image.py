@@ -53,7 +53,7 @@ def _transform_data(data, η=None, seed=42):
     ε = jax.random.uniform(key, (N, 6), minval=-1, maxval=1)
     Ts = jax.vmap(gen_transform_mat, in_axes=(None, 0))(η, ε)
 
-    # PyTorch puts the channel dim before width and heigh, but we Jax puts it last,
+    # PyTorch puts the channel dim before width and height, but we Jax puts it last,
     # so we need to move the channel dim for the data so that it works with our transforms.
     data = np.moveaxis(data, -1, 1)
 
@@ -85,21 +85,21 @@ def get_image_dataset(
     """Provides PyTorch `Dataset`s for the specified image dataset_name.
 
     Args:
-        `dataset_name`: the `str` name of the dataset. E.g. `'MNIST'`.
+        dataset_name: the `str` name of the dataset. E.g. `'MNIST'`.
 
-        `data_dir`: the `str` directory where the datasets should be downloaded to and loaded from. (Default: `'../raw_data'`)
+        data_dir: the `str` directory where the datasets should be downloaded to and loaded from. (Default: `'../raw_data'`)
 
-        `flatten_img`: a `bool` indicating whether images should be flattened. (Default: `False`)
+        flatten_img: a `bool` indicating whether images should be flattened. (Default: `False`)
 
-        `valid_percent`: the `float` percentage of training data to use for validation. (Default: `0.1`)
+        valid_percent: the `float` percentage of training data to use for validation. (Default: `0.1`)
 
-        `random_seed`: the `int` random seed. (Default: 42)
+        random_seed: the `int` random seed for splitting the valid data and applying random affine transformations. (Default: 42)
 
-        `train_augmentations`: a `list` of augmentations to apply to the training data. (Default: `[]`)
+        train_augmentations: a `list` of augmentations to apply to the training data. (Default: `[]`)
 
-        `test_augmentations`: a `list` of augmentations to apply to the test data. (Default: `[]`)
+        test_augmentations: a `list` of augmentations to apply to the test data. (Default: `[]`)
 
-        `η`: an optional `Array` controlling the affine transformations to apply to the data.
+        η: an optional `Array` controlling the affine transformations to apply to the data.
         For example for rotations of up to π/2 degrees, `η = [0., 0., π/2, 0., 0., 0.]`.
         For more information see `transformations.affine.gen_transform_mat`.
         (Default: `None`)
