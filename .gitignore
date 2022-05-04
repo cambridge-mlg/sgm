@@ -133,3 +133,6 @@ dmypy.json
 
 # downloaded datasets
 raw_data/
+
+# weights and biases stuff
+wandb/
