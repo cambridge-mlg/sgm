@@ -29,11 +29,19 @@ _supported_posteriors = [
 ]
 
 
+def _get_act_fn(act_fn):
+    if isinstance(act_fn, str):
+        return getattr(nn, act_fn)
+    else:
+        return act_fn
+    # TODO: this ^ is a bit gross
+
+
 class FCEncoder(nn.Module):
     latent_dim: int
-    posterior: str
+    posterior: str = 'hetero-diag-normal'
     hidden_dims: Optional[List[int]] = None
-    act_fn: Callable = nn.relu
+    act_fn: Union[Callable, str] = nn.relu
 
     @nn.compact
     def __call__(self, x, train):
@@ -44,9 +52,11 @@ class FCEncoder(nn.Module):
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
 
+        act_fn = _get_act_fn(self.act_fn)
+
         h = x
         for i, hidden_dim in enumerate(self.hidden_dims):
-            h = self.act_fn(nn.Dense(hidden_dim, name=f'fc{i}')(h))
+            h = act_fn(nn.Dense(hidden_dim, name=f'fc{i}')(h))
 
         μ = nn.Dense(self.latent_dim, name=f'fc{i+1}_μ')(h)
         σ = jax.nn.softplus(nn.Dense(self.latent_dim, name=f'fc{i+1}_σ')(h))
@@ -56,9 +66,9 @@ class FCEncoder(nn.Module):
 
 class FCDecoder(nn.Module):
     image_shape: int
-    likelihood: str
+    likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    act_fn: Callable = nn.relu
+    act_fn: Union[Callable, str] = nn.relu
     σ_init: Callable = init.constant(jnp.log(jnp.exp(1) - 1.))
     # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
 
@@ -71,11 +81,13 @@ class FCDecoder(nn.Module):
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
 
+        act_fn = _get_act_fn(self.act_fn)
+
         output_dim = prod(self.image_shape)
 
         h = z
         for i, hidden_dim in enumerate(self.hidden_dims):
-            h = self.act_fn(nn.Dense(hidden_dim, name=f'fc{i}')(h))
+            h = act_fn(nn.Dense(hidden_dim, name=f'fc{i}')(h))
 
         if self.likelihood == 'bernoulli':
             logits = nn.Dense(output_dim, name=f'fc{i+1}')(h)
@@ -108,7 +120,6 @@ class VAE(nn.Module):
     # prior: str = 'diag-normal'
     learn_prior: bool = False
     convolutional: bool = False
-    act_fn: Union[Callable, str] = nn.relu
     encoder: Optional[KwArgs] = None
     decoder: Optional[KwArgs] = None
 
@@ -118,14 +129,8 @@ class VAE(nn.Module):
             msg = 'Convolutional VAE is not yet supported.'
             raise RuntimeError(msg)
 
-        if isinstance(self.act_fn, str):
-            act_fn = getattr(nn, self.act_fn)
-        else:
-            act_fn = self.act_fn
-        # TODO: this ^ is a bit gross
-
-        self.enc = FCEncoder(latent_dim=self.latent_dim, act_fn=act_fn, **(self.encoder or {}))
-        self.dec = FCDecoder(act_fn=act_fn, **(self.decoder or {}))
+        self.enc = FCEncoder(latent_dim=self.latent_dim, **(self.encoder or {}))
+        self.dec = FCDecoder(**(self.decoder or {}))
 
         self.prior_loc = self.param(
             'prior_loc',
