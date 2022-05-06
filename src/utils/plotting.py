@@ -27,6 +27,7 @@ def plot_img_array(array, nrow=16, padding=2, pad_value=0.0, title=None):
             k = k + 1
 
     grid = jnp.clip(grid * 255.0 + 0.5, 0, 255).astype(jnp.uint8)
+
     fig = plt.figure(figsize=(1 * xmaps, 1 * ymaps))
     plt.imshow(grid)
     plt.axis('off')

@@ -1,10 +1,11 @@
-from typing import Any, Callable, List, Mapping, Optional, Union
+from typing import Any, Callable, List, Mapping, Optional, Tuple, Union
 from functools import partial
 from math import prod
 
 import jax.numpy as jnp
 import jax
 from jax import random, lax
+from jax.tree_util import tree_map
 from chex import Array
 from flax import linen as nn
 import flax.linen.initializers as init
@@ -180,24 +181,27 @@ def make_VAE_loss(
                 mutable=list(state.keys()) if train else {},
             )
 
-            elbo = _calculate_elbo(x, q_z_x, p_x_z, p_z)['elbo']
+            metrics = _calculate_metrics(x, q_z_x, p_x_z, p_z)
+            elbo = metrics['elbo']
 
-            return -elbo, new_state
+            return -elbo, new_state, metrics
 
         # Broadcast over batch and take mean.
-        batch_losses, new_state = jax.vmap(
-            loss_fn, out_axes=(0, None), in_axes=(0), axis_name='batch'
+        batch_losses, new_state, batch_metrics = jax.vmap(
+            loss_fn, out_axes=(0, None, 0), in_axes=(0), axis_name='batch'
         )(x_batch)
-        return batch_losses.mean(axis=0), (new_state,)
+        batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
+        return batch_losses.mean(axis=0), (new_state, batch_metrics)
 
-    return batch_loss
+    return jax.jit(batch_loss)
 
 
 def make_VAE_eval(
     model: VAE,
     x_batch: Array,
     zs: Array,
-    num_recons: int = 16
+    img_shape: Tuple,
+    num_recons: int = 16,
 ) -> Callable:
     """Creates a function for evaluating a VAE."""
     def batch_eval(params, state, batch_rng):
@@ -210,7 +214,7 @@ def make_VAE_eval(
                 {'params': params, **state}, x, rng, train=False
             )
 
-            metrics = _calculate_elbo(x, q_z_x, p_x_z, p_z)
+            metrics = _calculate_metrics(x, q_z_x, p_x_z, p_z)
 
             return metrics, p_x_z.mode()
 
@@ -218,11 +222,11 @@ def make_VAE_eval(
         batch_metrics, batch_x_recon= jax.vmap(
             eval_fn, out_axes=(0, 0), in_axes=(0,), axis_name='batch'
         )(x_batch)
-        batch_metrics = jax.tree_util.tree_map(lambda x: x.mean(axis=0), batch_metrics)
+        batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
 
         recon_comparison = jnp.concatenate([
-            x_batch[:num_recons].reshape(-1, 28, 28, 1),
-            batch_x_recon[:num_recons].reshape(-1, 28, 28, 1)
+            x_batch[:num_recons].reshape(-1, *img_shape),
+            batch_x_recon[:num_recons].reshape(-1, *img_shape)
         ])
 
         @partial(jax.vmap, axis_name='batch')
@@ -242,16 +246,16 @@ def make_VAE_eval(
 
         sampled_images, image_modes = sample_fn(zs)
         samples = jnp.concatenate([
-            sampled_images.reshape(-1, 28, 28, 1),
-            image_modes.reshape(-1, 28, 28, 1)
+            sampled_images.reshape(-1, *img_shape),
+            image_modes.reshape(-1, *img_shape)
         ])
 
         return batch_metrics, recon_comparison, samples
 
-    return batch_eval
+    return jax.jit(batch_eval)
 
 
-def _calculate_elbo(x, q_z_x, p_x_z, p_z):
+def _calculate_metrics(x, q_z_x, p_x_z, p_z):
     x_size = prod(p_x_z.batch_shape)
     z_size = prod(p_z.batch_shape)
 
