@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Mapping, Optional, Union
 from functools import partial
 from math import prod
 
@@ -10,17 +10,23 @@ from flax import linen as nn
 import flax.linen.initializers as init
 import tensorflow_probability.substrates.jax.distributions as dists
 
-# TODO: support Categorical.
+
+KwArgs = Mapping[str, Any]
+
+
 _supported_likelihoods = [
     'iso-normal',  # Homoskedastic (i.e. not input dependant) isotropic Guassian.
     'diag-normal',  # Homoskedastic diagonal Guassian.
     'hetero-diag-normal',  # Heteroskedastic (i.e., predicted per input by an NN) isotropic Guassian.
     'hetero-iso-normal',  # Heteroskedastic diagonal Guassian.
-    'bernoulli'
+    'bernoulli',
+    # TODO: support Categorical.
 ]
 
-# TODO: support Full Cov Normal.
-_supported_posteriors = ['diag-normal']
+_supported_posteriors = [
+    'hetero-diag-normal',
+    # TODO: support Full Cov Normal.
+]
 
 
 class FCEncoder(nn.Module):
@@ -31,7 +37,10 @@ class FCEncoder(nn.Module):
 
     @nn.compact
     def __call__(self, x, train):
-        assert self.posterior in _supported_posteriors
+        if self.posterior not in _supported_posteriors:
+            msg = f'`self.posterior` should be one of `{_supported_posteriors} but was `{self.posterior}` instead.'
+            raise RuntimeError(msg)
+
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
 
@@ -46,7 +55,7 @@ class FCEncoder(nn.Module):
 
 
 class FCDecoder(nn.Module):
-    output_dim: int
+    image_shape: int
     likelihood: str
     hidden_dims: Optional[List[int]] = None
     act_fn: Callable = nn.relu
@@ -55,26 +64,31 @@ class FCDecoder(nn.Module):
 
     @nn.compact
     def __call__(self, z, train):
-        assert self.likelihood in _supported_likelihoods
+        if self.likelihood not in _supported_likelihoods:
+            msg = f'`self.likelihood` should be one of `{_supported_likelihoods} but was `{self.likelihood}` instead.'
+            raise RuntimeError(msg)
+
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
+
+        output_dim = prod(self.image_shape)
 
         h = z
         for i, hidden_dim in enumerate(self.hidden_dims):
             h = self.act_fn(nn.Dense(hidden_dim, name=f'fc{i}')(h))
 
         if self.likelihood == 'bernoulli':
-            logits = nn.Dense(self.output_dim, name=f'fc{i+1}')(h)
+            logits = nn.Dense(output_dim, name=f'fc{i+1}')(h)
 
             return dists.Bernoulli(logits=logits)
 
         else:
-            μ = nn.Dense(self.output_dim, name=f'fc{i+1}_μ')(h)
+            μ = nn.Dense(output_dim, name=f'fc{i+1}_μ')(h)
 
             if 'iso' in self.likelihood:
                 σ_size = 1
             else:
-                σ_size = self.output_dim
+                σ_size = output_dim
 
             if 'hetero' in self.likelihood:
                 σ = jax.nn.softplus(nn.Dense(σ_size, name=f'fc3\{i+1}_σ')(h))
@@ -89,33 +103,29 @@ class FCDecoder(nn.Module):
 
 
 class VAE(nn.Module):
-    output_dim: int
     latent_dim: int = 20
-    likelihood: str = 'diag-normal'
-    posterior: str = 'diag-normal'
     # TODO: support other priors? e.g.:
     # prior: str = 'diag-normal'
     learn_prior: bool = False
     convolutional: bool = False
-    enc_hidden_dims: Optional[List[int]] = None
-    dec_hidden_dims: Optional[List[int]] = None
-    act_fn: Callable = nn.relu
+    act_fn: Union[Callable, str] = nn.relu
+    encoder: Optional[KwArgs] = None
+    decoder: Optional[KwArgs] = None
 
     def setup(self):
-        if self.likelihood not in _supported_likelihoods:
-            msg = f'`self.likelihood` should be one of `{_supported_likelihoods} but was `{self.likelihood}` instead.'
-            raise RuntimeError(msg)
-
-        if self.posterior not in _supported_posteriors:
-            msg = f'`self.posterior` should be one of `{_supported_posteriors} but was `{self.posterior}` instead.'
-            raise RuntimeError(msg)
-
         # TODO: support convolutional VAE.
         if self.convolutional:
             msg = 'Convolutional VAE is not yet supported.'
+            raise RuntimeError(msg)
 
-        self.encoder = FCEncoder(self.latent_dim, self.posterior, self.enc_hidden_dims, self.act_fn)
-        self.decoder = FCDecoder(self.output_dim, self.likelihood, self.dec_hidden_dims, self.act_fn)
+        if isinstance(self.act_fn, str):
+            act_fn = getattr(nn, self.act_fn)
+        else:
+            act_fn = self.act_fn
+        # TODO: this ^ is a bit gross
+
+        self.enc = FCEncoder(latent_dim=self.latent_dim, act_fn=act_fn, **(self.encoder or {}))
+        self.dec = FCDecoder(act_fn=act_fn, **(self.decoder or {}))
 
         self.prior_loc = self.param(
             'prior_loc',
@@ -134,16 +144,20 @@ class VAE(nn.Module):
         self.p_z = dists.Normal(loc=self.prior_loc, scale=self.prior_scale)
 
     def __call__(self, x, rng, train=True):
-        q_z_x = self.encoder(x, train=train)
+        q_z_x = self.enc(x, train=train)
         z = q_z_x.sample(seed=rng)
 
-        p_x_z = self.decoder(z, train=train)
+        p_x_z = self.dec(z, train=train)
 
         return q_z_x, p_x_z, self.p_z
 
-    def generate(self, z, rng, sample_shape=(1,)):
-        p_x_z = self.decoder(z, train=False)
-        return p_x_z.sample(seed=rng, sample_shape=sample_shape)
+    def generate(self, z, rng, sample_shape=(1,), return_mode=False):
+        p_x_z = self.dec(z, train=False)
+
+        if not return_mode:
+            return p_x_z.sample(seed=rng, sample_shape=sample_shape)
+        else:
+            return p_x_z.mode()
 
 
 def make_VAE_loss(
@@ -214,11 +228,20 @@ def make_VAE_eval(
                 method=VAE.generate
             )
 
-            return x_sample
+            x_mode = model.apply(
+                {'params': params, **state}, z, rng, return_mode=True,
+                method=VAE.generate
+            )
 
-        sampled_images = sample_fn(zs).reshape(-1, 28, 28, 1)
+            return x_sample, x_mode
 
-        return batch_metrics, recon_comparison, sampled_images
+        sampled_images, image_modes = sample_fn(zs)
+        samples = jnp.concatenate([
+            sampled_images.reshape(-1, 28, 28, 1),
+            image_modes.reshape(-1, 28, 28, 1)
+        ])
+
+        return batch_metrics, recon_comparison, samples
 
     return batch_eval
 

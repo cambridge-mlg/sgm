@@ -7,3 +7,4 @@ flax==0.4.1
 tensorflow-probability==0.16.0
 tqdm==4.64.0
 wandb==0.12.16
+ml_collections==0.1.1
