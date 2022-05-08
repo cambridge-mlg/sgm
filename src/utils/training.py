@@ -1,5 +1,7 @@
 
 from typing import Callable, Mapping, Optional
+from functools import partial
+
 import numpy as np
 import wandb
 from tqdm.auto import trange
@@ -58,48 +60,59 @@ def train_loop(
 
             return state.apply_gradients(grads=grads, model_state=model_state), loss, metrics
 
+        @partial(jax.jit, static_argnames='metrics_only')
+        def eval_step(state, x_batch, rng, metrics_only=False):
+            eval_fn = make_eval_fn(model, x_batch, zs, config.model.decoder.image_shape)
 
-        valid_x, _ = next(iter(valid_loader))
-        eval_fn = make_eval_fn(model, valid_x, zs, config.model.decoder.image_shape)
+            metrics, recon_comparison, sampled_images = eval_fn(
+                state.params, state.model_state, rng,
+            )
 
-        if test_loader is not None:
-            test_x, _ = next(iter(test_loader))
-            test_fn = make_eval_fn(model, test_x, zs, config.model.decoder.image_shape)
+            if metrics_only:
+                return metrics
+            else:
+                return metrics, recon_comparison, sampled_images
 
 
         train_losses = []
         valid_losses = []
-
         epochs = trange(1, config.epochs + 1)
         for epoch in epochs:
             batch_losses = []
             batch_metrics = []
-
             for (x_batch, _) in train_loader:
                 rng, batch_rng = random.split(rng)
                 state, loss, metrics = train_step(state, x_batch, batch_rng)
                 batch_losses.append(loss)
                 batch_metrics.append(metrics)
 
-            train_losses.append(np.mean(batch_losses))
-            batch_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
+            train_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
+            train_losses.append(-train_metrics['elbo'])
 
-            rng, eval_rng = random.split(rng)
-            valid_metrics, recon_comparison, sampled_images = eval_fn(
-                state.params, state.model_state, eval_rng
-            )
+            batch_metrics = []
+            for i, (x_batch, _) in enumerate(valid_loader):
+                rng, eval_rng = random.split(rng)
+                if i==0:
+                    metrics, recon_comparison, sampled_images = eval_step(state, x_batch, eval_rng)
+                else:
+                    metrics = eval_step(state, x_batch, eval_rng, metrics_only=True)
+                batch_metrics.append(metrics)
+
+            valid_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
             valid_losses.append(-valid_metrics['elbo'])
 
             losses_str = f'train loss: {train_losses[-1]:8.4f}, valid_loss: {valid_losses[-1]:8.4f}'
             epochs.set_postfix_str(losses_str)
             print(f'epoch: {epoch:3} - {losses_str}')
 
-            recon_plot = plot_img_array(recon_comparison, title="Top: originals; Bot: recons")
-            samples_plot = plot_img_array(sampled_images, title="Top: samples; Bot: mode")
+            recon_plot_title = "Reconstructions – Top: original; Mid: mode; Bot: sample"
+            recon_plot = plot_img_array(recon_comparison, title=recon_plot_title)
+            samples_plot_title = "Prior Samples – Top: mode; Bot: sample"
+            samples_plot = plot_img_array(sampled_images, title=samples_plot_title)
             metrics = {
                 'epoch': epoch,
                 'train/loss': train_losses[-1],
-                **{'train/' + key: val for key, val in batch_metrics.items()},
+                **{'train/' + key: val for key, val in train_metrics.items()},
                 'valid/loss': valid_losses[-1],
                 'valid_reconstructions': recon_plot,
                 **{'valid/' + key: val for key, val in valid_metrics.items()},
@@ -116,20 +129,27 @@ def train_loop(
                 run.summary['best_valid_loss'] = valid_losses[-1]
 
                 if test_loader is not None:
-                    test_metrics, recon_comparison, sampled_images = test_fn(
-                        state.params, state.model_state, test_rng
-                    )
+                    batch_metrics = []
+                    for i, (x_batch, _) in enumerate(test_loader):
+                        eval_rng, test_rng = random.split(test_rng)
+                        if i==0:
+                            metrics, recon_comparison, sampled_images = eval_step(state, x_batch, eval_rng)
+                        else:
+                            metrics = eval_step(state, x_batch, eval_rng, metrics_only=True)
+                        batch_metrics.append(metrics)
+
+                    test_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
 
                     run.summary['test/loss'] = -test_metrics['elbo']
                     for key, val in test_metrics.items():
                         run.summary['test/' + key] = val
                     run.summary['test_reconstructions'] = plot_img_array(
-                        recon_comparison, title="Top: originals; Bot: recons")
+                        recon_comparison, title=recon_plot_title)
                     run.summary['best_prior_samples'] = plot_img_array(
-                        sampled_images, title="Top: samples; Bot: mode")
+                        sampled_images, title=samples_plot_title)
 
 
 
 def tree_transpose(list_of_trees):
-  """Convert a list of trees of identical structure into a single tree of lists."""
-  return jax.tree_map(lambda *xs: jnp.array(list(xs)), *list_of_trees)
+    """Convert a list of trees of identical structure into a single tree of lists."""
+    return jax.tree_map(lambda *xs: jnp.array(list(xs)), *list_of_trees)

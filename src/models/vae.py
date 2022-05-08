@@ -1,9 +1,9 @@
 from typing import Any, Callable, List, Mapping, Optional, Tuple, Union
 from functools import partial
-from math import prod
+from math import ceil, prod
 
-import jax.numpy as jnp
 import jax
+import jax.numpy as jnp
 from jax import random, lax
 from jax.tree_util import tree_map
 from chex import Array
@@ -57,12 +57,44 @@ class FCEncoder(nn.Module):
 
         h = x
         for i, hidden_dim in enumerate(self.hidden_dims):
-            h = act_fn(nn.Dense(hidden_dim, name=f'fc{i}')(h))
+            h = act_fn(nn.Dense(hidden_dim, name=f'hidden{i}')(h))
 
-        μ = nn.Dense(self.latent_dim, name=f'fc{i+1}_μ')(h)
-        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name=f'fc{i+1}_σ')(h))
+        μ = nn.Dense(self.latent_dim, name=f'μ')(h)
+        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name=f'σ')(h))
 
-        return dists.Normal(μ, σ)
+        return dists.Normal(loc=μ, scale=σ)
+
+
+class ConvEncoder(nn.Module):
+    latent_dim: int
+    posterior: str = 'hetero-diag-normal'
+    hidden_dims: Optional[List[int]] = None
+    act_fn: Union[Callable, str] = nn.relu
+    norm_cls: nn.Module = nn.LayerNorm
+
+    @nn.compact
+    def __call__(self, x, train):
+        if self.posterior not in _supported_posteriors:
+            msg = f'`self.posterior` should be one of `{_supported_posteriors} but was `{self.posterior}` instead.'
+            raise RuntimeError(msg)
+
+        if self.hidden_dims is None:
+            self.hidden_dims = [64, 128]
+
+        act_fn = _get_act_fn(self.act_fn)
+
+        h = x
+        for i, hidden_dim in enumerate(self.hidden_dims):
+            h = nn.Conv(hidden_dim, (3, 3), 2 if i==0 else 1, name=f'hidden{i}')(h)
+            h = self.norm_cls(name=f'norm{i}')(h)
+            h = act_fn(h)
+
+        h = h.flatten()
+
+        μ = nn.Dense(self.latent_dim, name=f'μ')(h)
+        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name='σ')(h))
+
+        return dists.Normal(loc=μ, scale=σ)
 
 
 class FCDecoder(nn.Module):
@@ -88,15 +120,15 @@ class FCDecoder(nn.Module):
 
         h = z
         for i, hidden_dim in enumerate(self.hidden_dims):
-            h = act_fn(nn.Dense(hidden_dim, name=f'fc{i}')(h))
+            h = act_fn(nn.Dense(hidden_dim, name=f'hidden{i}')(h))
 
         if self.likelihood == 'bernoulli':
-            logits = nn.Dense(output_dim, name=f'fc{i+1}')(h)
+            logits = nn.Dense(output_dim, name=f'logits')(h)
 
             return dists.Bernoulli(logits=logits)
 
         else:
-            μ = nn.Dense(output_dim, name=f'fc{i+1}_μ')(h)
+            μ = nn.Dense(output_dim, name=f'μ')(h)
 
             if 'iso' in self.likelihood:
                 σ_size = 1
@@ -104,12 +136,70 @@ class FCDecoder(nn.Module):
                 σ_size = output_dim
 
             if 'hetero' in self.likelihood:
-                σ = jax.nn.softplus(nn.Dense(σ_size, name=f'fc3\{i+1}_σ')(h))
+                σ = jax.nn.softplus(nn.Dense(σ_size, name=f'σ_')(h))
             else:
                 σ = jax.nn.softplus(self.param(
                     'σ_',
                     self.σ_init,
                     (σ_size,)
+                ))
+
+            return dists.Normal(loc=μ, scale=σ)
+
+
+class ConvDecoder(nn.Module):
+    image_shape: int
+    likelihood: str = 'iso-normal'
+    hidden_dims: Optional[List[int]] = None
+    act_fn: Union[Callable, str] = nn.relu
+    σ_init: Callable = init.constant(jnp.log(jnp.exp(1) - 1.))
+    # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
+    norm_cls: nn.Module = nn.LayerNorm
+
+    @nn.compact
+    def __call__(self, z, train):
+        if self.likelihood not in _supported_likelihoods:
+            msg = f'`self.likelihood` should be one of `{_supported_likelihoods} but was `{self.likelihood}` instead.'
+            raise RuntimeError(msg)
+
+        if self.hidden_dims is None:
+            self.hidden_dims = [128, 64]
+
+        assert self.image_shape[0] == self.image_shape[1], "Images should be square."
+        output_size = self.image_shape[0]
+        first_hidden_size = output_size // 2
+
+        act_fn = _get_act_fn(self.act_fn)
+
+        h = nn.Dense(first_hidden_size * first_hidden_size * self.hidden_dims[0], name=f'resize')(z)
+        h = h.reshape(first_hidden_size, first_hidden_size, self.hidden_dims[0])
+
+        for i, hidden_dim in enumerate(self.hidden_dims):
+            h = nn.ConvTranspose(hidden_dim, (3, 3), (2, 2) if i == 0 else (1, 1), name=f'hidden{i}')(h)
+            h = self.norm_cls(name=f'norm{i}')(h)
+            h = act_fn(h)
+
+        if self.likelihood == 'bernoulli':
+            logits = nn.Conv(self.image_shape[-1], (3, 3), 1, name=f'logits')(h)
+
+            return dists.Bernoulli(logits=logits)
+
+        else:
+            μ = nn.Conv(self.image_shape[-1], (3, 3), 1, name=f'μ')(h)
+
+            if 'hetero' in self.likelihood:
+                if not 'iso' in self.likelihood:
+                    σ = jax.nn.softplus(nn.Conv(
+                            self.image_shape[-1], (3, 3), 1, name=f'σ_'
+                        )(h))
+                else:
+                    σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h))
+
+            else:
+                σ = jax.nn.softplus(self.param(
+                    'σ_',
+                    self.σ_init,
+                    (1,) if 'iso' in self.likelihood else self.image_shape
                 ))
 
             return dists.Normal(loc=μ, scale=σ)
@@ -127,11 +217,14 @@ class VAE(nn.Module):
     def setup(self):
         # TODO: support convolutional VAE.
         if self.convolutional:
-            msg = 'Convolutional VAE is not yet supported.'
-            raise RuntimeError(msg)
+            Encoder = ConvEncoder
+            Decoder = ConvDecoder
+        else:
+            Encoder = FCEncoder
+            Decoder = FCDecoder
 
-        self.enc = FCEncoder(latent_dim=self.latent_dim, **(self.encoder or {}))
-        self.dec = FCDecoder(**(self.decoder or {}))
+        self.enc = Encoder(latent_dim=self.latent_dim, **(self.encoder or {}))
+        self.dec = Decoder(**(self.decoder or {}))
 
         self.prior_loc = self.param(
             'prior_loc',
@@ -209,24 +302,25 @@ def make_VAE_eval(
 
         # Define eval func for 1 example.
         def eval_fn(x):
-            rng = random.fold_in(eval_rng, lax.axis_index('batch'))
+            rng1, rng2 = random.split(random.fold_in(eval_rng, lax.axis_index('batch')))
             q_z_x, p_x_z, p_z = model.apply(
-                {'params': params, **state}, x, rng, train=False
+                {'params': params, **state}, x, rng1, train=False
             )
 
             metrics = _calculate_metrics(x, q_z_x, p_x_z, p_z)
 
-            return metrics, p_x_z.mode()
+            return metrics, p_x_z.mode(), p_x_z.sample(seed=rng2, sample_shape=(1,))
 
         # Broadcast over batch and take mean.
-        batch_metrics, batch_x_recon= jax.vmap(
-            eval_fn, out_axes=(0, 0), in_axes=(0,), axis_name='batch'
+        batch_metrics, batch_x_recon_mode, batch_x_recon_sample = jax.vmap(
+            eval_fn, out_axes=(0, 0, 0), in_axes=(0,), axis_name='batch'
         )(x_batch)
         batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
 
         recon_comparison = jnp.concatenate([
             x_batch[:num_recons].reshape(-1, *img_shape),
-            batch_x_recon[:num_recons].reshape(-1, *img_shape)
+            batch_x_recon_mode[:num_recons].reshape(-1, *img_shape),
+            batch_x_recon_sample[:num_recons].reshape(-1, *img_shape),
         ])
 
         @partial(jax.vmap, axis_name='batch')
@@ -246,8 +340,8 @@ def make_VAE_eval(
 
         sampled_images, image_modes = sample_fn(zs)
         samples = jnp.concatenate([
+            image_modes.reshape(-1, *img_shape),
             sampled_images.reshape(-1, *img_shape),
-            image_modes.reshape(-1, *img_shape)
         ])
 
         return batch_metrics, recon_comparison, samples
