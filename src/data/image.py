@@ -11,6 +11,25 @@ from torchvision import transforms, datasets
 from src.transformations.affine import transform_image, gen_transform_mat
 
 
+DATASET_MEAN = {
+    'MNIST': (0.1307,),
+    'FashionMNIST': (0.2860,),
+    'KMNIST': (0.1918,),
+    'SVHN': (0.4377, 0.4438, 0.4728),
+    'CIFAR10': (0.4914, 0.4822, 0.4465),
+    'CIFAR100': (0.5071, 0.4866, 0.4409),
+}
+
+DATASET_STD = {
+    'MNIST': (0.3081,),
+    'FashionMNIST': (0.3530,),
+    'KMNIST': (0.3483,),
+    'SVHN': (0.1980, 0.2010, 0.1970),
+    'CIFAR10': (0.2470, 0.2435, 0.2616),
+    'CIFAR100': (0.2673, 0.2564, 0.2762),
+}
+
+
 class Flatten:
     """Transform to flatten an image for use with MLPs."""
     def __call__(self, array: np.ndarray) -> np.ndarray:
@@ -53,7 +72,7 @@ def _transform_data(data, η=None, seed=42):
     ε = jax.random.uniform(key, (N, 6), minval=-1, maxval=1)
     Ts = jax.vmap(gen_transform_mat, in_axes=(None, 0))(η, ε)
 
-    # PyTorch puts the channel dim before width and height, but we Jax puts it last,
+    # PyTorch puts the channel dim before width and height, but Jax puts it last,
     # so we need to move the channel dim for the data so that it works with our transforms.
     data = np.moveaxis(data, -1, 1)
 
@@ -76,7 +95,7 @@ def get_image_dataset(
     dataset_name: str,
     data_dir: str = '../raw_data',
     flatten_img: bool = False,
-    valid_percent: float = 0.1,
+    val_percent: float = 0.1,
     random_seed: int = 42,
     train_augmentations: list[Callable] = [],
     test_augmentations: list[Callable] = [],
@@ -91,9 +110,9 @@ def get_image_dataset(
 
         flatten_img: a `bool` indicating whether images should be flattened. (Default: `False`)
 
-        valid_percent: the `float` percentage of training data to use for validation. (Default: `0.1`)
+        val_percent: the `float` percentage of training data to use for validation. (Default: `0.1`)
 
-        random_seed: the `int` random seed for splitting the valid data and applying random affine transformations. (Default: 42)
+        random_seed: the `int` random seed for splitting the val data and applying random affine transformations. (Default: 42)
 
         train_augmentations: a `list` of augmentations to apply to the training data. (Default: `[]`)
 
@@ -105,7 +124,7 @@ def get_image_dataset(
         (Default: `None`)
 
     Returns:
-        `(train_dataset, test_dataset)` if `valid_percent` is 0 otherwise `(train_dataset, test_dataset, valid_dataset)`
+        `(train_dataset, test_dataset)` if `val_percent` is 0 otherwise `(train_dataset, test_dataset, val_dataset)`
     """
     dataset_choices = ['MNIST', 'FashionMNIST', 'KMNIST', 'SVHN', 'CIFAR10', 'CIFAR100']
     if dataset_name not in dataset_choices:
@@ -113,45 +132,27 @@ def get_image_dataset(
         raise RuntimeError(msg)
 
     if dataset_name == 'MNIST':
-        mean=(0.1307,)
-        std=(0.3081,)
-
         train_kwargs = {"train": True}
         test_kwargs = {"train": False}
 
     elif dataset_name == 'FashionMNIST':
-        mean=(0.2860,)
-        std=(0.3530,)
-
         train_kwargs = {"train": True}
         test_kwargs = {"train": False}
 
     elif dataset_name == 'KMNIST':
-        mean=(0.1918,)
-        std=(0.3483,)
-
         train_kwargs = {"train": True}
         test_kwargs = {"train": False}
 
     elif dataset_name == 'SVHN':
-        mean = (0.4377, 0.4438, 0.4728)
-        std = (0.1980, 0.2010, 0.1970)
-
         train_kwargs = {"split": 'train'}
         test_kwargs = {"split": 'test'}
 
     elif dataset_name == 'CIFAR10':
-        mean = (0.4914, 0.4822, 0.4465)
-        std = (0.2470, 0.2435, 0.2616)
-
         train_kwargs = {"train": True}
         test_kwargs = {"train": False}
 
     else:
         assert dataset_name == 'CIFAR100'
-
-        mean = (0.5071, 0.4866, 0.4409)
-        std = (0.2673, 0.2564, 0.2762)
 
         train_kwargs = {"train": True}
         test_kwargs = {"train": False}
@@ -166,14 +167,14 @@ def get_image_dataset(
     transform_train = transforms.Compose(
         train_augmentations + [
             transforms.ToTensor(),
-            transforms.Normalize(mean, std),
+            transforms.Normalize(DATASET_MEAN[dataset_name], DATASET_STD[dataset_name]),
         ] + common_transforms
     )
 
     transform_test = transforms.Compose(
         test_augmentations + [
             transforms.ToTensor(),
-            transforms.Normalize(mean, std),
+            transforms.Normalize(DATASET_MEAN[dataset_name], DATASET_STD[dataset_name]),
         ] + common_transforms
     )
 
@@ -189,16 +190,16 @@ def get_image_dataset(
         test_dataset.data = _transform_data(test_dataset.data, η, random_seed)
         train_dataset.data = _transform_data(train_dataset.data, η, random_seed)
 
-    if valid_percent != 0.:
+    if val_percent != 0.:
         n_train = len(train_dataset)
-        n_valid = int(valid_percent*n_train)
+        n_valid = int(val_percent*n_train)
         n_train = n_train - n_valid
 
-        train_dataset, valid_dataset = data.random_split(
+        train_dataset, val_dataset = data.random_split(
             train_dataset, [n_train, n_valid],
             torch.Generator().manual_seed(random_seed) if random_seed is not None else None
         )
 
-        return train_dataset, test_dataset, valid_dataset
+        return train_dataset, test_dataset, val_dataset
     else:
         return train_dataset, test_dataset

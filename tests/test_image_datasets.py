@@ -17,10 +17,10 @@ class ImageDatasetTests(parameterized.TestCase):
         {"testcase_name": "CIFAR100", "dataset_name": "CIFAR100"},
     )
     def test_num_outputs(self, dataset_name):
-        datasets = get_image_dataset(dataset_name, valid_percent=0.)
+        datasets = get_image_dataset(dataset_name, val_percent=0.)
         self.assertEqual(len(datasets), 2)
 
-        datasets = get_image_dataset(dataset_name, valid_percent=0.1)
+        datasets = get_image_dataset(dataset_name, val_percent=0.1)
         self.assertEqual(len(datasets), 3)
 
     @parameterized.named_parameters(
@@ -28,7 +28,7 @@ class ImageDatasetTests(parameterized.TestCase):
         {"testcase_name": "0.5", "valid_percent": 0.5},
     )
     def test_size_of_valid_set(self, valid_percent):
-        train_data, _, valid_data = get_image_dataset('MNIST', valid_percent=valid_percent)
+        train_data, _, valid_data = get_image_dataset('MNIST', val_percent=valid_percent)
 
         n_train = len(train_data)
         n_valid = len(valid_data)
