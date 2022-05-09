@@ -192,11 +192,11 @@ def get_image_dataset(
 
     if val_percent != 0.:
         n_train = len(train_dataset)
-        n_valid = int(val_percent*n_train)
-        n_train = n_train - n_valid
+        n_val = int(val_percent*n_train)
+        n_train = n_train - n_val
 
         train_dataset, val_dataset = data.random_split(
-            train_dataset, [n_train, n_valid],
+            train_dataset, [n_train, n_val],
             torch.Generator().manual_seed(random_seed) if random_seed is not None else None
         )
 

@@ -24,17 +24,17 @@ class ImageDatasetTests(parameterized.TestCase):
         self.assertEqual(len(datasets), 3)
 
     @parameterized.named_parameters(
-        {"testcase_name": "0.1", "valid_percent": 0.1},
-        {"testcase_name": "0.5", "valid_percent": 0.5},
+        {"testcase_name": "0.1", "val_percent": 0.1},
+        {"testcase_name": "0.5", "val_percent": 0.5},
     )
-    def test_size_of_valid_set(self, valid_percent):
-        train_data, _, valid_data = get_image_dataset('MNIST', val_percent=valid_percent)
+    def test_size_of_val_set(self, val_percent):
+        train_data, _, val_data = get_image_dataset('MNIST', val_percent=val_percent)
 
         n_train = len(train_data)
-        n_valid = len(valid_data)
-        n_total = n_train + n_valid
+        n_val = len(val_data)
+        n_total = n_train + n_val
 
-        self.assertEqual(floor(n_total * valid_percent), n_valid)
+        self.assertEqual(floor(n_total * val_percent), n_val)
 
 
     @parameterized.named_parameters(

@@ -34,7 +34,7 @@ def train_loop(
     make_loss_fn: Callable,
     make_eval_fn: Callable,
     train_loader: NumpyLoader,
-    valid_loader: NumpyLoader,
+    val_loader: NumpyLoader,
     test_loader: Optional[NumpyLoader] = None,
     wandb_kwargs: Optional[Mapping] = None,
 ) -> None:
@@ -75,7 +75,7 @@ def train_loop(
 
 
         train_losses = []
-        valid_losses = []
+        val_losses = []
         epochs = trange(1, config.epochs + 1)
         for epoch in epochs:
             batch_losses = []
@@ -90,7 +90,7 @@ def train_loop(
             train_losses.append(-train_metrics['elbo'])
 
             batch_metrics = []
-            for i, (x_batch, _) in enumerate(valid_loader):
+            for i, (x_batch, _) in enumerate(val_loader):
                 rng, eval_rng = random.split(rng)
                 if i==0:
                     metrics, recon_comparison, sampled_images = eval_step(state, x_batch, eval_rng)
@@ -98,10 +98,10 @@ def train_loop(
                     metrics = eval_step(state, x_batch, eval_rng, metrics_only=True)
                 batch_metrics.append(metrics)
 
-            valid_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
-            valid_losses.append(-valid_metrics['elbo'])
+            val_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
+            val_losses.append(-val_metrics['elbo'])
 
-            losses_str = f'train loss: {train_losses[-1]:8.4f}, valid_loss: {valid_losses[-1]:8.4f}'
+            losses_str = f'train loss: {train_losses[-1]:8.4f}, val_loss: {val_losses[-1]:8.4f}'
             epochs.set_postfix_str(losses_str)
             print(f'epoch: {epoch:3} - {losses_str}')
 
@@ -113,20 +113,20 @@ def train_loop(
                 'epoch': epoch,
                 'train/loss': train_losses[-1],
                 **{'train/' + key: val for key, val in train_metrics.items()},
-                'valid/loss': valid_losses[-1],
-                'valid_reconstructions': recon_plot,
-                **{'valid/' + key: val for key, val in valid_metrics.items()},
+                'val/loss': val_losses[-1],
+                'val_reconstructions': recon_plot,
+                **{'val/' + key: val for key, val in val_metrics.items()},
                 'prior_samples': samples_plot,
             }
             run.log(metrics)
 
             rng, test_rng = random.split(rng)
-            if valid_losses[-1] <= min(valid_losses):
-                print("Best valid_loss")
+            if val_losses[-1] <= min(val_losses):
+                print("Best val_loss")
                 # TODO add model saving.
 
                 run.summary['best_epoch'] = epoch
-                run.summary['best_valid_loss'] = valid_losses[-1]
+                run.summary['best_val_loss'] = val_losses[-1]
 
                 if test_loader is not None:
                     batch_metrics = []
