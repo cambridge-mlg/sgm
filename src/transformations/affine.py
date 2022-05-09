@@ -46,7 +46,7 @@ def gen_transform_mat(
         * η_4 is the scaling factor in y.
         * η_5 controls shearing.
 
-        ε: an Array of the same shape as η which is used for
+        ε: an Array of the same shape as `η` which is used for
         sampling transformations via a reparameterisation trick (ε ~ U[-1, 1]^6)
 
     Returns:
@@ -76,7 +76,7 @@ def transform_image(
         T: a 3x3 affine transformation Array.
 
     Returns:
-        A transformed image of same shape as the input image.
+        A transformed image of same shape as the input.
     """
     assert_rank(image, 3)
     assert_shape(T, (3, 3))

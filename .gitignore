@@ -130,3 +130,6 @@ dmypy.json
 
 # vs code stuff
 .vscode/
+
+# downloaded datasets
+raw_data/
