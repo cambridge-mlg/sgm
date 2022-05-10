@@ -11,7 +11,7 @@ from flax import linen as nn
 import flax.linen.initializers as init
 import tensorflow_probability.substrates.jax.distributions as dists
 
-from src.models.enc_dec import FCDecoder, FCEncoder, ConvDecoder, ConvEncoder
+from src.models.enc_dec import FCDecoder, FCEncoder, ConvDecoder, ConvEncoder, ConvNeXtEncoder, ConvNeXtDecoder
 
 
 KwArgs = Mapping[str, Any]
@@ -20,7 +20,7 @@ KwArgs = Mapping[str, Any]
 _ARCHITECTURES = [
     'MLP',
     'ConvNet',
-    'ResNet',
+    'ConvNeXt',
 ]
 
 
@@ -29,19 +29,25 @@ class VAE(nn.Module):
     # TODO: support other priors? e.g.:
     # prior: str = 'diag-normal'
     learn_prior: bool = False
-    convolutional: bool = False
+    architecture: str = 'MLP'
     encoder: Optional[KwArgs] = None
     decoder: Optional[KwArgs] = None
     β: float = 1.
 
     def setup(self):
-        # TODO: support convolutional VAE.
+        if self.architecture not in _ARCHITECTURES:
+            msg = f'`self.architecture` should be one of `{_ARCHITECTURES}` but was `{self.architecture}` instead.'
+            raise RuntimeError(msg)
+
         if self.architecture == 'ConvNet':
             Encoder = ConvEncoder
             Decoder = ConvDecoder
         elif self.architecture == 'MLP':
             Encoder = FCEncoder
             Decoder = FCDecoder
+        else:
+            Encoder = ConvNeXtEncoder
+            Decoder = ConvNeXtDecoder
 
         self.enc = Encoder(latent_dim=self.latent_dim, **(self.encoder or {}))
         self.dec = Decoder(**(self.decoder or {}))
