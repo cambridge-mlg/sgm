@@ -45,21 +45,21 @@ class VAE(nn.Module):
         self.enc = Encoder(latent_dim=self.latent_dim, **(self.encoder or {}))
         self.dec = Decoder(**(self.decoder or {}))
 
-        self.prior_loc = self.param(
-            'prior_loc',
+        self.prior_μ = self.param(
+            'prior_μ',
             init.zeros,
             (self.latent_dim,)
         )
-        self.prior_scale = jax.nn.softplus(self.param(
-            'prior_scale_',
+        self.prior_σ = jax.nn.softplus(self.param(
+            'prior_σ_',
             init.constant(jnp.log(jnp.exp(1) - 1.)),
             # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
             (self.latent_dim,)
         ))
         if not self.learn_prior:
-            self.prior_loc = jax.lax.stop_gradient(self.prior_loc)
-            self.prior_scale = jax.lax.stop_gradient(self.prior_scale)
-        self.p_z = dists.Normal(loc=self.prior_loc, scale=self.prior_scale)
+            self.prior_μ = jax.lax.stop_gradient(self.prior_μ)
+            self.prior_σ = jax.lax.stop_gradient(self.prior_σ)
+        self.p_z = dists.Normal(loc=self.prior_μ, scale=self.prior_σ)
 
     def __call__(self, x, rng, train=True):
         q_z_x = self.enc(x, train=train)
