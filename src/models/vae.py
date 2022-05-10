@@ -133,7 +133,7 @@ def make_VAE_eval(
                 {'params': params, **state}, x, rng1, train=False
             )
 
-            metrics = _calculate_metrics(x, q_z_x, p_x_z, p_z)
+            metrics = _calculate_metrics(x, q_z_x, p_x_z, p_z, model.β)
 
             return metrics, p_x_z.mode(), p_x_z.sample(seed=rng2, sample_shape=(1,))
 
