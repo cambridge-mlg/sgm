@@ -2,7 +2,6 @@
 from typing import Callable, Mapping, Optional
 from functools import partial
 
-import numpy as np
 import wandb
 from tqdm.auto import trange
 import jax
@@ -101,7 +100,7 @@ def train_loop(
             val_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
             val_losses.append(-val_metrics['elbo'])
 
-            losses_str = f'train loss: {train_losses[-1]:8.4f}, val_loss: {val_losses[-1]:8.4f}'
+            losses_str = f'train loss: {train_losses[-1]:8.6f}, val_loss: {val_losses[-1]:8.6f}'
             epochs.set_postfix_str(losses_str)
             print(f'epoch: {epoch:3} - {losses_str}')
 
