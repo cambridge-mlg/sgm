@@ -32,6 +32,7 @@ class VAE(nn.Module):
     convolutional: bool = False
     encoder: Optional[KwArgs] = None
     decoder: Optional[KwArgs] = None
+    β: float = 1.
 
     def setup(self):
         # TODO: support convolutional VAE.
@@ -93,7 +94,7 @@ def make_VAE_loss(
                 mutable=list(state.keys()) if train else {},
             )
 
-            metrics = _calculate_metrics(x, q_z_x, p_x_z, p_z)
+            metrics = _calculate_metrics(x, q_z_x, p_x_z, p_z, model.β)
             elbo = metrics['elbo']
 
             return -elbo, new_state, metrics
@@ -168,18 +169,17 @@ def make_VAE_eval(
     return jax.jit(batch_eval)
 
 
-def _calculate_metrics(x, q_z_x, p_x_z, p_z):
+def _calculate_metrics(x, q_z_x, p_x_z, p_z, β):
     x_size = prod(p_x_z.batch_shape)
-    z_size = prod(p_z.batch_shape)
 
     ll = p_x_z.log_prob(x).sum()
     kld = q_z_x.kl_divergence(p_z).sum()
-    elbo = ll - kld
+    elbo = ll - β * kld
 
     return {
         'll': ll,
         'kld': kld,
-        'elbo': elbo / (x_size * z_size),
+        'elbo': elbo / x_size,
         # ^ We normalise the ELBO by the data and latent size to (hopefully) make LR, etc., more general.
         'elbo_unnorm': elbo,
     }
