@@ -186,6 +186,6 @@ def _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β=1):
         'll': ll,
         'kld': kld,
         'elbo': elbo / x_size,
-        # ^ We normalise the ELBO by the data and latent size to (hopefully) make LR, etc., more general.
+        # ^ We normalise the ELBO by the data size to (hopefully) make LR, etc., more general.
         'elbo_unnorm': elbo,
     }

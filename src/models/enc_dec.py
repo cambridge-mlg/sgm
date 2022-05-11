@@ -30,7 +30,6 @@ def _get_act_fn(act_fn):
         return getattr(nn, act_fn)
     else:
         return act_fn
-    # TODO: this ^ is a bit gross
 
 
 class FCEncoder(nn.Module):
