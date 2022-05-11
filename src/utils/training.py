@@ -183,6 +183,8 @@ def train_loop(
                     run.summary['best_prior_samples'] = plot_img_array(
                         sampled_images, title=samples_plot_title)
 
+    return state
+
 
 
 def tree_transpose(list_of_trees):
