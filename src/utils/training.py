@@ -76,7 +76,7 @@ def train_loop(
     val_loader: NumpyLoader,
     test_loader: Optional[NumpyLoader] = None,
     wandb_kwargs: Optional[Mapping] = None,
-) -> None:
+) -> TrainState:
     wandb_kwargs = {
         'project': 'learning-invariances',
         'entity': 'invariance-learners',
