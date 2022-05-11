@@ -1,5 +1,5 @@
 
-from typing import Callable, Mapping, Optional
+from typing import Callable, Mapping, Optional, Tuple
 from functools import partial
 
 import wandb
@@ -11,10 +11,13 @@ from jax.tree_util import tree_map
 from flax.core.frozen_dict import FrozenDict
 from flax.training import train_state
 import flax.linen as nn
+import optax
+from chex import Array
 from ml_collections import config_dict
 
 from src.utils.plotting import plot_img_array
 from src.data import NumpyLoader
+import src.models as models
 
 
 PRNGKey = jnp.ndarray
@@ -25,10 +28,43 @@ class TrainState(train_state.TrainState):
     model_state: FrozenDict
 
 
+def setup_training(
+    config: config_dict.ConfigDict,
+    rng: PRNGKey,
+    init_data: Array,
+) -> Tuple[nn.Module, TrainState]:
+    model_cls = getattr(models, config.model_name)
+    model = model_cls(**config.model.to_dict())
+
+    init_rng, rng = random.split(rng)
+    variables = model.init(init_rng, init_data, rng)
+    model_state, params = variables.pop('params')
+    del variables
+
+    if config.get('lr_schedule_name', None):
+        schedule = getattr(optax, config.lr_schedule_name)
+        lr = schedule(
+            init_value=config.learning_rate,
+            **config.lr_schedule.to_dict()
+        )
+    else:
+        lr = config.learning_rate
+
+    optim = getattr(optax, config.optim_name)
+    state = TrainState.create(
+        apply_fn=model.apply,
+        params=params,
+        tx=optim(learning_rate=lr, **config.optim.to_dict()),
+        model_state=model_state,
+    )
+
+    return model, state
+
+
 def train_loop(
     model: nn.Module,
     state: TrainState,
-    config: config_dict,
+    config: config_dict.ConfigDict,
     rng: PRNGKey,
     make_loss_fn: Callable,
     make_eval_fn: Callable,
