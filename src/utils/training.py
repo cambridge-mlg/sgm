@@ -14,6 +14,7 @@ import flax.linen as nn
 import optax
 from chex import Array
 from ml_collections import config_dict
+from clu import parameter_overview
 
 from src.utils.plotting import plot_img_array
 from src.data import NumpyLoader
@@ -38,6 +39,9 @@ def setup_training(
 
     init_rng, rng = random.split(rng)
     variables = model.init(init_rng, init_data, rng)
+
+    print(parameter_overview.get_parameter_overview(variables))
+
     model_state, params = variables.pop('params')
     del variables
 
