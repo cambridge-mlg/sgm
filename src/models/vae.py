@@ -175,7 +175,7 @@ def make_VAE_eval(
     return jax.jit(batch_eval)
 
 
-def _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β=1):
+def _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β=1.):
     x_size = prod(p_x_z.batch_shape)
 
     ll = p_x_z.log_prob(x).sum()

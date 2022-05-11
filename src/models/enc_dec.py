@@ -295,8 +295,6 @@ class ConvNeXtEncoder(nn.Module):
             h = nn.LayerNorm(name=f"downsample_norm{i}")(h)
 
             h = ConvNeXtBlock(hidden_dim)(h)
-            # TODO: ^ maybe we want more of these?
-
 
         h = h.flatten()
 
@@ -341,8 +339,6 @@ class ConvNeXtDecoder(nn.Module):
             h = nn.LayerNorm(name=f"upsample_norm{i}")(h)
 
             h = ConvNeXtBlock(hidden_dim)(h)
-            # TODO: ^ maybe we want more of these?
-
 
         if self.likelihood == 'bernoulli':
             logits = nn.Conv(
