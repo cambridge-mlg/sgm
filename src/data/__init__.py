@@ -1,10 +1,11 @@
 __all__ = [
     'get_image_dataset',
+    'train_val_split_sizes',
     'NumpyLoader',
     'METADATA',
 ]
 
-from src.data.image import get_image_dataset
+from src.data.image import get_image_dataset, train_val_split_sizes
 from src.data.numpy_loader import NumpyLoader
 
 METADATA = {

@@ -191,15 +191,20 @@ def get_image_dataset(
         train_dataset.data = _transform_data(train_dataset.data, η, random_seed)
 
     if val_percent != 0.:
-        n_train = len(train_dataset)
-        n_val = int(val_percent*n_train)
-        n_train = n_train - n_val
+        num_train, num_val = train_val_split_sizes(len(train_dataset), val_percent)
 
         train_dataset, val_dataset = data.random_split(
-            train_dataset, [n_train, n_val],
+            train_dataset, [num_train, num_val],
             torch.Generator().manual_seed(random_seed) if random_seed is not None else None
         )
 
         return train_dataset, test_dataset, val_dataset
     else:
         return train_dataset, test_dataset
+
+
+def train_val_split_sizes(num_train: int, val_percent: float) -> Tuple[int, int]:
+    num_val = int(val_percent * num_train)
+    num_train = num_train - num_val
+
+    return num_train, num_val
