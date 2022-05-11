@@ -100,7 +100,7 @@ def make_VAE_loss(
                 mutable=list(state.keys()) if train else {},
             )
 
-            metrics = _calculate_metrics(x, q_z_x, p_x_z, p_z, model.β)
+            metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, model.β)
             elbo = metrics['elbo']
 
             return -elbo, new_state, metrics
@@ -133,7 +133,7 @@ def make_VAE_eval(
                 {'params': params, **state}, x, rng1, train=False
             )
 
-            metrics = _calculate_metrics(x, q_z_x, p_x_z, p_z, model.β)
+            metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, model.β)
 
             return metrics, p_x_z.mode(), p_x_z.sample(seed=rng2, sample_shape=(1,))
 
@@ -175,7 +175,7 @@ def make_VAE_eval(
     return jax.jit(batch_eval)
 
 
-def _calculate_metrics(x, q_z_x, p_x_z, p_z, β):
+def _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β=1):
     x_size = prod(p_x_z.batch_shape)
 
     ll = p_x_z.log_prob(x).sum()
