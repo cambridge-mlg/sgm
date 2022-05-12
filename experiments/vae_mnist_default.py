@@ -9,7 +9,7 @@ def get_config() -> config_dict.ConfigDict:
 
     config.dataset_name = 'MNIST'
     config.val_percent = 0.1
-    config.batch_size = 512
+    config.batch_size = 256
     config.epochs = 50
 
     config.optim_name = 'adamw'
@@ -32,23 +32,22 @@ def get_config() -> config_dict.ConfigDict:
     config.model.learn_prior = False
     config.model.architecture = 'ConvNeXt'  # 'ConvNet'  # 'MLP'
 
-    config.β = 30  # 10
+    config.β = 10  # 10
     config.β_schedule_name = 'cosine_decay_schedule'
     config.β_schedule = config_dict.ConfigDict()
-    β_end_value = 1
+    β_end_value = 3
     config.β_schedule.alpha = β_end_value / config.β
-    config.β_schedule.decay_steps = config.epochs * num_batches_per_epoch / 2
+    config.β_schedule.decay_steps = config.epochs * num_batches_per_epoch
 
     config.model.encoder = config_dict.ConfigDict()
     config.model.encoder.posterior = 'hetero-diag-normal'
-    config.model.encoder.hidden_dims = [64, 128, 256]
+    config.model.encoder.hidden_dims = [64, 128]  # [64, 128, 256]
 
     config.model.decoder = config_dict.ConfigDict()
     config.model.decoder.likelihood = 'iso-normal'
     config.model.decoder.σ_min = 1e-2
     config.model.decoder.hidden_dims = list(reversed(config.model.encoder.hidden_dims))
-    # config.model.decoder.hidden_dims = config.model.encoder.hidden_dims
-    # config.model.decoder.hidden_dims = [384, 192, 96]
+    config.model.decoder.hidden_dims = [384, 192, 96, 48]
     config.model.decoder.image_shape = METADATA['image_shape'][config.dataset_name]
 
     return config
