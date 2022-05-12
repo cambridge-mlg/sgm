@@ -10,10 +10,10 @@ import tensorflow_probability.substrates.jax.distributions as dists
 
 _LIKELIHOODS = [
     'iso-normal',  # Homoskedastic (i.e. not input dependant) isotropic Guassian.
-    'unit-iso-normal',  # unit-variance isotropic Guassian.
+    'unit-iso-normal',  # Unit-variance isotropic Guassian.
     'diag-normal',  # Homoskedastic diagonal Guassian.
-    'hetero-diag-normal',  # Heteroskedastic (i.e., predicted per input by an NN) isotropic Guassian.
-    'hetero-iso-normal',  # Heteroskedastic diagonal Guassian.
+    'hetero-diag-normal',  # Heteroskedastic (i.e., predicted per input by an NN) diagonal Guassian.
+    'hetero-iso-normal',  # Heteroskedastic isotropic Guassian.
     'bernoulli',
     # TODO: support Categorical.
 ]
@@ -30,6 +30,9 @@ _INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
 # and we init σ_ to this value, we effectively init σ to 1.
 
 
+# This function allows us to either specify activation functions callables,
+# as seen in the default for FCEncoder below, or as string names,
+# which is useful for commandline args or config files.
 def _get_act_fn(act_fn):
     if isinstance(act_fn, str):
         return getattr(nn, act_fn)
@@ -231,6 +234,7 @@ class ConvDecoder(nn.Module):
 _convnext_initializer = nn.initializers.variance_scaling(
     0.2, "fan_in", distribution="truncated_normal"
 )
+
 
 class ConvNeXtBlock(nn.Module):
     r""" ConvNeXt Block.

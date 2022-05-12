@@ -27,7 +27,7 @@ ScalarOrSchedule = Union[float, optax.Schedule]
 
 
 class TrainState(train_state.TrainState):
-    """A Flax TrainState which also tracks model (e.g. BN) state and schedules β."""
+    """A Flax TrainState which also tracks model state (e.g. BatchNorm running averages) and schedules β."""
     model_state: FrozenDict
     β: float
     β_val_or_schedule: ScalarOrSchedule = struct.field(pytree_node=False)
@@ -59,6 +59,9 @@ class TrainState(train_state.TrainState):
         )
 
 
+# Helper which helps us deal with the fact that we can either specify a fixed β
+# or a schedule for adjusting β. This is a pattern similar to the one used by
+# optax for deadling with LRs either being specified as a constant or schedule.
 def _get_β_for_step(step, β_val_or_schedule):
     if callable(β_val_or_schedule):
         return β_val_or_schedule(step)
@@ -71,6 +74,26 @@ def setup_training(
     rng: PRNGKey,
     init_data: Array,
 ) -> Tuple[nn.Module, TrainState]:
+    """Helper which returns the model object and the corresponding initialised train state for a given config.
+
+    Notes:
+        config is a `config_dict.ConfigDict` containing the following entries:
+        * config.model_name
+        * config.model (a config_dict that contains everything required by the model constructor)
+        * config.learning_rate
+        * config.optim_name (the name of the optax optimizer)
+        * config.optim (a possibly empty config dict containing everything for the scheduler constructor,
+        except the learning_rate)
+        * config.lr_schedule_name (optional, the name of the optax scheduler to use for lr)
+        * config.lr_schedule (optional, a config dict containing everything for the scheduler constructor,
+        except the initial value, which is specified by config.learning_rate)
+        * config.β
+        * config.β_schedule_name (optional, the name of the optax scheduler to use for β)
+        * config.β_schedule (optional, a config dict containing everything for the scheduler constructor,
+        except the initial value, which is specified by config.β)
+
+        init_data is an Array of the same shape as a *single* training example.
+    """
     model_cls = getattr(models, config.model_name)
     model = model_cls(**config.model.to_dict())
 
@@ -78,6 +101,7 @@ def setup_training(
     variables = model.init(init_rng, init_data, rng)
 
     print(parameter_overview.get_parameter_overview(variables))
+    # ^ This is really nice for summarising Jax models!
 
     model_state, params = variables.pop('params')
     del variables
@@ -127,6 +151,33 @@ def train_loop(
     test_loader: Optional[NumpyLoader] = None,
     wandb_kwargs: Optional[Mapping] = None,
 ) -> TrainState:
+    """Runs the training loop!
+
+    Notes:
+        The `state` arg is a `src.utils.training.TrainState`, which tracks model_state and schedules β.
+
+        The `config` arg is a `config_dict.ConfigDict`. It must contain the following entries:
+        * config.model.latent_dim
+        * config.model.decoder.image_shape
+        * config.epochs
+
+        `make_loss_fn` is a callable with three arguments (model, x_batch, train), that returns the loss
+        function for training. A closure or `functools.partial` can be used to deal with additional
+        arguments. The returned loss function should take four arguments
+        (params, model_state, rng, β) and return (loss, (new_model_state, metrics)).
+
+        `make_eval_fn` is a callable with four arguments (model, x_batch, zs, image_shape), that returns
+        a function for evaluating the model. The returned evaluation function should take four
+        arguments (params, model_state, rng, β) and return (metrics, recon_comparison, sampled_images).
+        TODO: describe the format for reco_comaprison and sampled_images.
+
+        If `test_loader` is supplied, on epochs for which the validation loss is the new best, the test set
+        will be evaluated using `make_eval_fn` and the results will be added to the W&B summary.
+
+        `wandb_kwargs` are a dictionary for overriding the kwargs passed to `wandb.init`. The only kwargs
+        specified by default are `project='learning-invariances'`, `entity='invariance-learners'`, and
+        `config=config.to_dict`. For example, specifying `wandb_kwargs={'mode': 'disabled'}` will stop W&B syncing.
+    """
     wandb_kwargs = {
         'project': 'learning-invariances',
         'entity': 'invariance-learners',
@@ -244,7 +295,6 @@ def train_loop(
                         sampled_images, title=samples_plot_title)
 
     return state
-
 
 
 def tree_transpose(list_of_trees):
