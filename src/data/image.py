@@ -72,18 +72,11 @@ def _transform_data(data, η=None, seed=42):
     ε = jax.random.uniform(key, (N, 6), minval=-1, maxval=1)
     Ts = jax.vmap(gen_transform_mat, in_axes=(None, 0))(η, ε)
 
-    # PyTorch puts the channel dim before width and height, but Jax puts it last,
-    # so we need to move the channel dim for the data so that it works with our transforms.
-    data = np.moveaxis(data, -1, 1)
-
     transformed_data = np.array(jax.vmap(transform_image)(data, Ts))
 
     if n_dims == 3:
         # Remove channel dim in greycale case.
-        transformed_data = np.array(transformed_data)[:, 0, :, :]
-    else:
-        # Move channel dim back in color case.
-        transformed_data = np.moveaxis(np.array(transformed_data), 1, -1)
+        transformed_data = np.array(transformed_data)[:, :, :, 0]
 
     if is_pt:
         transformed_data = torch.from_numpy(transformed_data)

@@ -64,14 +64,14 @@ def gen_transform_mat(
 
 def transform_image(
     image: Array,
-    T: Array
+    T: Array,
 ) -> Array:
     """Applies an affine transformation to an image.
 
     See Sec 3.2 in "Spatial Transformer Networks" by Jaderberg et al.
 
     Args:
-        image: a rank-3 Array of shape (num channels, height, width).
+        image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax image format.
 
         T: a 3x3 affine transformation Array.
 
@@ -81,7 +81,7 @@ def transform_image(
     assert_rank(image, 3)
     assert_shape(T, (3, 3))
 
-    num_channels, height, width = image.shape
+    height, width, num_channels = image.shape
     A = T[:2, :]
 
     # (x_t, y_t, 1), eq (1) in Jaderberg et al.
@@ -96,13 +96,12 @@ def transform_image(
     transformed_pts = transformed_pts * jnp.array([[width], [height]])
 
     # Transform the image by moving the pixels to their new locations
-    output = jnp.stack(
-        [
-            jax.scipy.ndimage.map_coordinates(image[i], transformed_pts[::-1], order=1, cval=0)
-            # Note: usually we would use bicubic interpolation (order=3), but this isn't available
-            # in jax, so we have to use linear interpolation.
-            for i in range(num_channels)
-        ]
-    )
-    output = jnp.reshape(output, (num_channels, height, width))
+    output = jnp.stack([
+        jax.scipy.ndimage.map_coordinates(image[:, :, i], transformed_pts[::-1], order=1, cval=0)
+        # Note: usually we would use bicubic interpolation (order=3), but this isn't available
+        # in jax, so we have to use linear interpolation.
+        for i in range(num_channels)
+    ], axis=-1)
+    output = jnp.reshape(output, image.shape)
+
     return output

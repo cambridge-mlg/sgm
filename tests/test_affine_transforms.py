@@ -14,10 +14,10 @@ from src.transformations.affine import transform_image, gen_transform_mat, creat
 
 
 def _pytorch_transform_image(image, G):
-    image = torch.from_numpy(image[np.newaxis, :, :])
+    image = torch.from_numpy(np.moveaxis(image[np.newaxis, :, :], -1, 1))
     flowgrid = F.affine_grid(torch.from_numpy(G[np.newaxis, :2, :]), size=image.size(), align_corners=True)
     output = F.grid_sample(image, flowgrid, align_corners=True, padding_mode='zeros', mode='nearest')
-    return output.numpy()[0]
+    return np.moveaxis(output.numpy(), 1, -1)[0]
 
 
 class AffineTransformTests(parameterized.TestCase):
@@ -26,7 +26,7 @@ class AffineTransformTests(parameterized.TestCase):
     def setUp(self):
         testdata_filename = Path(__file__).parent / 'checkerboard.png'
         input_image = Image.open(testdata_filename).convert('RGB')
-        self.input_array = jnp.moveaxis(jnp.array(input_image, dtype=jnp.float32), -1, 0)
+        self.input_array = jnp.array(input_image, dtype=jnp.float32)
 
     def test_identity(self):
         T = gen_transform_mat(jnp.zeros(6, dtype=jnp.float32), jnp.ones(6, dtype=jnp.float32))
