@@ -25,6 +25,11 @@ _POSTERIORS = [
 ]
 
 
+_INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
+# ^ this value is softplus^{-1}(1), i.e. if we get σ as softplus(σ_),
+# and we init σ_ to this value, we effectively init σ to 1.
+
+
 def _get_act_fn(act_fn):
     if isinstance(act_fn, str):
         return getattr(nn, act_fn)
@@ -63,10 +68,9 @@ class FCDecoder(nn.Module):
     image_shape: int
     likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    act_fn: Union[Callable, str] = nn.relu
-    σ_init: Callable = init.constant(jnp.log(jnp.exp(1) - 1.))
-    # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
+    σ_init: Callable = init.constant(_INV_SOFTPLUS_1)
     σ_min: float = 1e-2
+    act_fn: Union[Callable, str] = nn.relu
 
     @nn.compact
     def __call__(self, z, train):
@@ -153,10 +157,9 @@ class ConvDecoder(nn.Module):
     image_shape: int
     likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    act_fn: Union[Callable, str] = nn.relu
-    σ_init: Callable = init.constant(jnp.log(jnp.exp(1) - 1.))
-    # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
+    σ_init: Callable = init.constant(_INV_SOFTPLUS_1)
     σ_min: float = 1e-2
+    act_fn: Union[Callable, str] = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
@@ -236,6 +239,8 @@ class ConvNeXtBlock(nn.Module):
     """
     dim: int = 64
     layer_scale_init_value: float = 1e-6
+    act_fn: Callable = nn.gelu
+    norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
     def __call__(self, inputs):
@@ -246,13 +251,13 @@ class ConvNeXtBlock(nn.Module):
             kernel_init=_convnext_initializer,
             name="dw3x3conv"
         )(inputs)
-        x = nn.LayerNorm(name="norm")(x)
+        x = self.norm_cls(name="norm")(x)
         x = nn.Dense(
             4 * self.dim,
             kernel_init=_convnext_initializer,
             name="pw1x1conv1"
         )(x)
-        x = nn.gelu(x)
+        x = self.act_fn(x)
         x = nn.Dense(
             self.dim,
             kernel_init=_convnext_initializer,
@@ -273,6 +278,8 @@ class ConvNeXtEncoder(nn.Module):
     latent_dim: int
     posterior: str = 'hetero-diag-normal'
     hidden_dims: Optional[List[int]] = None
+    act_fn: Union[Callable, str] = nn.gelu
+    norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
     def __call__(self, x, train):
@@ -282,6 +289,8 @@ class ConvNeXtEncoder(nn.Module):
 
         if self.hidden_dims is None:
             self.hidden_dims = [64, 128, 256, 512]
+
+        act_fn = _get_act_fn(self.act_fn)
 
         h = x
         for i, hidden_dim in enumerate(self.hidden_dims):
@@ -294,7 +303,7 @@ class ConvNeXtEncoder(nn.Module):
             )(h)
             h = nn.LayerNorm(name=f"downsample_norm{i}")(h)
 
-            h = ConvNeXtBlock(hidden_dim)(h)
+            h = ConvNeXtBlock(hidden_dim, act_fn=act_fn, norm_cls=self.norm_cls)(h)
 
         h = h.flatten()
 
@@ -308,9 +317,11 @@ class ConvNeXtDecoder(nn.Module):
     image_shape: int
     likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    σ_init: Callable = init.constant(jnp.log(jnp.exp(1) - 1.))
-    # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
+    σ_init: Callable = init.constant(_INV_SOFTPLUS_1)
     σ_min: float = 1e-2
+    act_fn: Union[Callable, str] = nn.gelu
+    norm_cls: nn.Module = nn.LayerNorm
+
 
     @nn.compact
     def __call__(self, z, train):
@@ -336,7 +347,7 @@ class ConvNeXtDecoder(nn.Module):
                 kernel_init=_convnext_initializer,
                 name=f"upsample_convt{i}",
             )(h)
-            h = nn.LayerNorm(name=f"upsample_norm{i}")(h)
+            h = self.norm_cls(name=f"upsample_norm{i}")(h)
 
             h = ConvNeXtBlock(hidden_dim)(h)
 
