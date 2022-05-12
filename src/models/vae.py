@@ -32,7 +32,6 @@ class VAE(nn.Module):
     architecture: str = 'MLP'
     encoder: Optional[KwArgs] = None
     decoder: Optional[KwArgs] = None
-    β: float = 1.
 
     def setup(self):
         if self.architecture not in _ARCHITECTURES:
@@ -91,7 +90,7 @@ def make_VAE_loss(
     train: bool = True,
 ) -> Callable:
     """Creates a loss function for training a VAE."""
-    def batch_loss(params, state, batch_rng):
+    def batch_loss(params, state, batch_rng, β=1.):
         # Define loss func for 1 example.
         def loss_fn(x):
             rng = random.fold_in(batch_rng, lax.axis_index('batch'))
@@ -100,7 +99,7 @@ def make_VAE_loss(
                 mutable=list(state.keys()) if train else {},
             )
 
-            metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, model.β)
+            metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β)
             elbo = metrics['elbo']
 
             return -elbo, new_state, metrics
@@ -123,7 +122,7 @@ def make_VAE_eval(
     num_recons: int = 16,
 ) -> Callable:
     """Creates a function for evaluating a VAE."""
-    def batch_eval(params, state, batch_rng):
+    def batch_eval(params, state, batch_rng, β=1.):
         eval_rng, sample_rng = random.split(batch_rng)
 
         # Define eval func for 1 example.
@@ -133,7 +132,7 @@ def make_VAE_eval(
                 {'params': params, **state}, x, rng1, train=False
             )
 
-            metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, model.β)
+            metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β)
 
             return metrics, p_x_z.mode(), p_x_z.sample(seed=rng2, sample_shape=(1,))
 
