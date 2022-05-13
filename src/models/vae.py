@@ -153,20 +153,20 @@ def make_VAE_eval(
             rng = random.fold_in(sample_rng, lax.axis_index('batch'))
             x_sample = model.apply(
                 {'params': params, **state}, z, rng,
-                method=VAE.generate
+                method=model.generate
             )
 
             x_mode = model.apply(
                 {'params': params, **state}, z, rng, return_mode=True,
-                method=VAE.generate
+                method=model.generate
             )
 
             return x_sample, x_mode
 
-        sampled_images, image_modes = sample_fn(zs)
+        x_samples, x_modes = sample_fn(zs)
         samples = jnp.concatenate([
-            image_modes.reshape(-1, *img_shape),
-            sampled_images.reshape(-1, *img_shape),
+            x_samples.reshape(-1, *img_shape),
+            x_modes.reshape(-1, *img_shape),
         ])
 
         return batch_metrics, recon_comparison, samples
