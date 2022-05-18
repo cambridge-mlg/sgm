@@ -145,14 +145,14 @@ def make_VAE_eval(
 
         # Define eval func for 1 example.
         def eval_fn(x):
-            rng1, rng2 = random.split(random.fold_in(eval_rng, lax.axis_index('batch')))
+            z_rng, x_rng = random.split(random.fold_in(eval_rng, lax.axis_index('batch')))
             q_z_x, p_x_z, p_z = model.apply(
-                {'params': params, **state}, x, rng1, train=False
+                {'params': params, **state}, x, z_rng, train=False
             )
 
             metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β)
 
-            return metrics, p_x_z.mode(), p_x_z.sample(seed=rng2, sample_shape=(1,))
+            return metrics, p_x_z.mode(), p_x_z.sample(seed=x_rng, sample_shape=(1,))
 
         # Broadcast over batch and aggregate.
         agg = _get_agg_fn(aggregation)
