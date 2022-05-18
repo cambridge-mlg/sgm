@@ -214,7 +214,7 @@ class ConvDecoder(nn.Module):
                 if not 'iso' in self.likelihood:
                     σ = jax.nn.softplus(output_conv(name=f'σ_')(h))
                 else:
-                    σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h))
+                    σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h.flatten()))
 
             else:
                 σ = jax.nn.softplus(self.param(
@@ -371,7 +371,7 @@ class ConvNeXtDecoder(nn.Module):
                 if not 'iso' in self.likelihood:
                     σ = jax.nn.softplus(output_conv(name=f'σ_')(h))
                 else:
-                    σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h))
+                    σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h.flatten()))
 
             else:
                 σ = jax.nn.softplus(self.param(
