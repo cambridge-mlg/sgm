@@ -61,7 +61,7 @@ class TrainState(train_state.TrainState):
 
 # Helper which helps us deal with the fact that we can either specify a fixed β
 # or a schedule for adjusting β. This is a pattern similar to the one used by
-# optax for deadling with LRs either being specified as a constant or schedule.
+# optax for dealing with LRs either being specified as a constant or schedule.
 def _get_β_for_step(step, β_val_or_schedule):
     if callable(β_val_or_schedule):
         return β_val_or_schedule(step)
