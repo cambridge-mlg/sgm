@@ -72,9 +72,9 @@ def _transform_data(data, η_min=None, η_max=None, seed=42):
         data = data[:, :, :, np.newaxis]
 
     rng = jax.random.PRNGKey(seed)
-    p_η = dists.Uniform(min=η_min, max=η_max)
+    p_η = dists.Uniform(low=η_min, high=η_max)
     η = p_η.sample(sample_shape=(N,), seed=rng)
-    Ts = jax.vmap(gen_transform_mat, in_axes=(None, 0))(η)
+    Ts = jax.vmap(gen_transform_mat, in_axes=(0))(η)
 
     transformed_data = np.array(jax.vmap(transform_image)(data, Ts))
 
