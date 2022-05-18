@@ -15,7 +15,8 @@ from src.models.enc_dec import (
     FCDecoder, FCEncoder,
     ConvDecoder, ConvEncoder,
     ConvNeXtEncoder, ConvNeXtDecoder,
-    raise_if_not_in_list
+    raise_if_not_in_list,
+    INV_SOFTPLUS_1
 )
 
 
@@ -63,7 +64,7 @@ class VAE(nn.Module):
         )
         self.prior_σ = jax.nn.softplus(self.param(
             'prior_σ_',
-            init.constant(jnp.log(jnp.exp(1) - 1.)),
+            init.constant(INV_SOFTPLUS_1),
             # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
             (self.latent_dim,)
         ))

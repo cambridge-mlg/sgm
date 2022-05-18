@@ -26,7 +26,7 @@ _POSTERIORS = [
 ]
 
 
-_INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
+INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
 # ^ this value is softplus^{-1}(1), i.e. if we get σ as softplus(σ_),
 # and we init σ_ to this value, we effectively init σ to 1.
 
@@ -76,7 +76,7 @@ class FCDecoder(nn.Module):
     image_shape: int
     likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    σ_init: Callable = init.constant(_INV_SOFTPLUS_1)
+    σ_init: Callable = init.constant(INV_SOFTPLUS_1)
     σ_min: float = 1e-2
     act_fn: Union[Callable, str] = nn.relu
 
@@ -161,7 +161,7 @@ class ConvDecoder(nn.Module):
     image_shape: int
     likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    σ_init: Callable = init.constant(_INV_SOFTPLUS_1)
+    σ_init: Callable = init.constant(INV_SOFTPLUS_1)
     σ_min: float = 1e-2
     act_fn: Union[Callable, str] = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
@@ -314,7 +314,7 @@ class ConvNeXtDecoder(nn.Module):
     image_shape: int
     likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    σ_init: Callable = init.constant(_INV_SOFTPLUS_1)
+    σ_init: Callable = init.constant(INV_SOFTPLUS_1)
     σ_min: float = 1e-2
     act_fn: Union[Callable, str] = nn.gelu
     norm_cls: nn.Module = nn.LayerNorm
