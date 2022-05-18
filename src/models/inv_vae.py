@@ -22,11 +22,12 @@ _ENCODER_INVARIANCE_MODES = ['full', 'partial', 'none']
 
 
 def _sample_transformed_data(xhat, rng, rotation):
-        η = jnp.array([0, 0, rotation, 0, 0, 0])
-        ε = random.uniform(rng, (6,), minval=-1., maxval=1.)
-        T = gen_transform_mat(η, ε)
-        return transform_image(xhat, T)
-        # TODO: this ^ breaks for flattened images, i.e. with a FC decoder.
+    η = jnp.array([0, 0, rotation, 0, 0, 0])
+    ε = random.uniform(rng, (6,), minval=-1., maxval=1.)
+    # TODO: make this work for a different min and max - see src.data.image._transform_data
+    T = gen_transform_mat(η * ε)
+    return transform_image(xhat, T)
+    # TODO: this ^ breaks for flattened images, i.e. with a FC decoder.
 
 
 # TODO: generalised to more than just rotations
