@@ -29,7 +29,7 @@ class AffineTransformTests(parameterized.TestCase):
         self.input_array = jnp.array(input_image, dtype=jnp.float32)
 
     def test_identity(self):
-        T = gen_transform_mat(jnp.zeros(6, dtype=jnp.float32), jnp.ones(6, dtype=jnp.float32))
+        T = gen_transform_mat(jnp.zeros(6, dtype=jnp.float32))
 
         jax_output = transform_image(self.input_array, T)
         pt_output = _pytorch_transform_image(np.array(self.input_array), np.array(T))
@@ -62,7 +62,7 @@ class AffineTransformTests(parameterized.TestCase):
         {'testcase_name': 'all', 'η': [.1, .1, .1, .1, .1, .1]},
     )
     def test_vs_pytorch(self, η):
-        T = gen_transform_mat(jnp.array(η), jnp.ones(6, dtype=jnp.float32))
+        T = gen_transform_mat(jnp.array(η))
 
         jax_output = transform_image(self.input_array, T)
         pt_output = _pytorch_transform_image(np.array(self.input_array), np.array(T))
@@ -85,7 +85,7 @@ class AffineMatrixTests(parameterized.TestCase):
     )
     def test_rotation(self, θ):
         η = jnp.array([0., 0., θ, 0., 0., 0.])
-        T = gen_transform_mat(η, jnp.ones(6, dtype=jnp.float32))
+        T = gen_transform_mat(η)
 
         # pylint: disable=bad-whitespace
         T_rot = jnp.array([
@@ -106,7 +106,7 @@ class AffineMatrixTests(parameterized.TestCase):
     )
     def test_translation(self, tx, ty):
         η = jnp.array([tx, ty, 0., 0., 0., 0.])
-        T = gen_transform_mat(η, jnp.ones(6, dtype=jnp.float32))
+        T = gen_transform_mat(η)
 
         T_trans = jnp.array([
             [1., 0., tx],
@@ -124,7 +124,7 @@ class AffineMatrixTests(parameterized.TestCase):
     )
     def test_scaling(self, sx, sy):
         η = jnp.array([0., 0., 0., sx, sy, 0.])
-        T = gen_transform_mat(η, jnp.ones(6, dtype=jnp.float32))
+        T = gen_transform_mat(η)
 
         # pylint: disable=bad-whitespace
         T_trans = jnp.array([

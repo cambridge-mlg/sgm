@@ -7,6 +7,7 @@ from chex import Array
 import torch
 from torch.utils import data
 from torchvision import transforms, datasets
+import tensorflow_probability.substrates.jax.distributions as dists
 
 from src.transformations.affine import transform_image, gen_transform_mat
 
@@ -48,10 +49,12 @@ class ToNumpy:
         return np.array(tensor, dtype=np.float32)
 
 
-def _transform_data(data, η=None, seed=42):
-    if η is None:
+def _transform_data(data, η_min=None, η_max=None, seed=42):
+    if η_min is None:
         # Identity transform.
-        η = jnp.array([0., 0., 0., 0., 0., 0.])
+        η_min = jnp.array([0., 0., 0., 0., 0., 0.])
+    if η_max is None:
+        η_max = jnp.array([0., 0., 0., 0., 0., 0.])
 
     N = data.shape[0]
 
@@ -68,9 +71,10 @@ def _transform_data(data, η=None, seed=42):
     if n_dims == 3:
         data = data[:, :, :, np.newaxis]
 
-    key = jax.random.PRNGKey(seed)
-    ε = jax.random.uniform(key, (N, 6), minval=-1, maxval=1)
-    Ts = jax.vmap(gen_transform_mat, in_axes=(None, 0))(η, ε)
+    rng = jax.random.PRNGKey(seed)
+    p_η = dists.Uniform(min=η_min, max=η_max)
+    η = p_η.sample(sample_shape=(N,), seed=rng)
+    Ts = jax.vmap(gen_transform_mat, in_axes=(None, 0))(η)
 
     transformed_data = np.array(jax.vmap(transform_image)(data, Ts))
 
@@ -92,7 +96,8 @@ def get_image_dataset(
     random_seed: int = 42,
     train_augmentations: list[Callable] = [],
     test_augmentations: list[Callable] = [],
-    η: Optional[Array] = None,
+    η_min: Optional[Array] = None,
+    η_max: Optional[Array] = None,
 ) -> Union[Tuple[data.Dataset, data.Dataset], Tuple[data.Dataset, data.Dataset, data.Dataset]]:
     """Provides PyTorch `Dataset`s for the specified image dataset_name.
 
@@ -111,8 +116,9 @@ def get_image_dataset(
 
         test_augmentations: a `list` of augmentations to apply to the test data. (Default: `[]`)
 
-        η: an optional `Array` controlling the affine transformations to apply to the data.
-        For example for rotations of up to π/2 degrees, `η = [0., 0., π/2, 0., 0., 0.]`.
+        η_min, η_max: optional `Array`s controlling the affine transformations to apply to the data.
+        To be concrete, these arrays represent the lower and upper bounds of a uniform distribution
+        from which affine transformation parameters are drawn.
         For more information see `transformations.affine.gen_transform_mat`.
         (Default: `None`)
 
@@ -179,9 +185,9 @@ def get_image_dataset(
         **test_kwargs, transform=transform_test, download=True, root=data_dir,
     )
 
-    if η is not None:
-        test_dataset.data = _transform_data(test_dataset.data, η, random_seed)
-        train_dataset.data = _transform_data(train_dataset.data, η, random_seed)
+    if η_min is not None or η_max is not None:
+        test_dataset.data = _transform_data(test_dataset.data, η_min, η_max, random_seed)
+        train_dataset.data = _transform_data(train_dataset.data, η_min, η_max, random_seed)
 
     if val_percent != 0.:
         num_train, num_val = train_val_split_sizes(len(train_dataset), val_percent)

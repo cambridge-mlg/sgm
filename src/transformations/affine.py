@@ -29,7 +29,6 @@ def create_generator_matrices() -> Array:
 
 def gen_transform_mat(
     η: Array,
-    ε: Array,
 ) -> Array:
     """Generates an affine transformation matrix which can be used to translate,
     rotate, scale, and shear a 2D image.
@@ -46,18 +45,14 @@ def gen_transform_mat(
         * η_4 is the scaling factor in y.
         * η_5 controls shearing.
 
-        ε: an Array of the same shape as `η` which is used for
-        sampling transformations via a reparameterisation trick (ε ~ U[-1, 1]^6)
-
     Returns:
         A 3x3 affine transformation array.
     """
-    assert_equal_shape([η, ε])
     assert_shape(η, (6,))
 
     Gs = create_generator_matrices()
 
-    T = expm((ε[:, jnp.newaxis, jnp.newaxis] * η[:, jnp.newaxis, jnp.newaxis] * Gs).sum(axis=0))
+    T = expm((η[:, jnp.newaxis, jnp.newaxis] * Gs).sum(axis=0))
 
     return T
 
