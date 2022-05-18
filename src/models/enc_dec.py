@@ -47,6 +47,33 @@ def _get_act_fn(act_fn):
         return act_fn
 
 
+def create_likelihood(obj, hidden, output_layer, output_shape):
+    if obj.likelihood == 'bernoulli':
+        logits = output_layer(name=f'logits')(hidden)
+        return distrax.Bernoulli(logits=logits)
+
+    else:
+        μ = output_layer(name=f'μ')(hidden)
+
+        if obj.likelihood == 'hetero-diag-normal':
+            σ_ = output_layer(name=f'σ_')(hidden)
+
+        elif obj.likelihood == 'hetero-iso-normal':
+            σ_ = nn.Dense(1, name=f'σ_')(hidden.flatten())
+
+        elif obj.likelihood == 'iso-normal':
+            σ_ = obj.param('σ_', obj.σ_init, (1,))
+
+        elif obj.likelihood == 'unit-iso-normal':
+            σ_ = jax.lax.stop_gradient(obj.param('σ_', init.ones, (1,)))
+
+        else:
+            assert obj.likelihood == 'diag-normal'
+            σ_ = obj.param('σ_', obj.σ_init, output_shape)
+
+        return distrax.Normal(loc=μ, scale=jax.nn.softplus(σ_).clip(min=obj.σ_min))
+
+
 class FCEncoder(nn.Module):
     latent_dim: int
     posterior: str = 'hetero-diag-normal'
@@ -89,37 +116,12 @@ class FCDecoder(nn.Module):
 
         act_fn = _get_act_fn(self.act_fn)
 
-        output_dim = prod(self.image_shape)
-
         h = z
         for i, hidden_dim in enumerate(self.hidden_dims):
             h = act_fn(nn.Dense(hidden_dim, name=f'hidden{i}')(h))
 
-        if self.likelihood == 'bernoulli':
-            logits = nn.Dense(output_dim, name=f'logits')(h)
-
-            return distrax.Bernoulli(logits=logits)
-
-        else:
-            μ = nn.Dense(output_dim, name=f'μ')(h)
-
-            if 'iso' in self.likelihood:
-                σ_size = 1
-            else:
-                σ_size = output_dim
-
-            if 'hetero' in self.likelihood:
-                σ = jax.nn.softplus(nn.Dense(σ_size, name=f'σ_')(h))
-            else:
-                σ = jax.nn.softplus(self.param(
-                    'σ_',
-                    self.σ_init,
-                    (σ_size,)
-                ))
-                if 'unit' in self.likelihood:
-                    σ = jax.lax.stop_gradient(σ)
-
-            return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+        output_dim = prod(self.image_shape)
+        return create_likelihood(self, h, partial(nn.Dense, output_dim), (output_dim,))
 
 
 class ConvEncoder(nn.Module):
@@ -201,29 +203,7 @@ class ConvDecoder(nn.Module):
             strides=(1, 1),
         )
 
-        if self.likelihood == 'bernoulli':
-            logits = output_conv(name=f'logits')(h)
-            return distrax.Bernoulli(logits=logits)
-
-        else:
-            μ = output_conv(name=f'μ')(h)
-
-            if 'hetero' in self.likelihood:
-                if not 'iso' in self.likelihood:
-                    σ = jax.nn.softplus(output_conv(name=f'σ_')(h))
-                else:
-                    σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h.flatten()))
-
-            else:
-                σ = jax.nn.softplus(self.param(
-                    'σ_',
-                    self.σ_init,
-                    (1,) if 'iso' in self.likelihood else self.image_shape
-                ))
-                if 'unit' in self.likelihood:
-                    σ = jax.lax.stop_gradient(σ)
-
-            return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+        return create_likelihood(self, h, output_conv, self.image_shape)
 
 
 _convnext_initializer = nn.initializers.variance_scaling(
@@ -353,27 +333,4 @@ class ConvNeXtDecoder(nn.Module):
             strides=(1, 1),
         )
 
-        if self.likelihood == 'bernoulli':
-            logits = output_conv(name=f'logits')(h)
-
-            return distrax.Bernoulli(logits=logits)
-
-        else:
-            μ = output_conv(name=f'μ')(h)
-
-            if 'hetero' in self.likelihood:
-                if not 'iso' in self.likelihood:
-                    σ = jax.nn.softplus(output_conv(name=f'σ_')(h))
-                else:
-                    σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h.flatten()))
-
-            else:
-                σ = jax.nn.softplus(self.param(
-                    'σ_',
-                    self.σ_init,
-                    (1,) if 'iso' in self.likelihood else self.image_shape
-                ))
-                if 'unit' in self.likelihood:
-                    σ = jax.lax.stop_gradient(σ)
-
-            return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+        return create_likelihood(self, h, output_conv, self.image_shape)
