@@ -32,7 +32,8 @@ def get_config() -> config_dict.ConfigDict:
     config.model.latent_dim = 32
     config.model.learn_prior = False
     config.model.architecture = 'ConvNeXt'  # 'ConvNet'  # 'MLP'
-    config.model.max_rotation = jnp.pi/4
+    config.model.η_max = [0., 0., jnp.pi/4, 0., 0., 0.]
+    config.model.η_min = [0., 0., -jnp.pi/4, 0., 0., 0.]
     config.model.encoder_invariance = 'partial'  # 'none'  # 'full'
     config.model.invariance_samples = 4
 

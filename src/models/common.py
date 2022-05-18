@@ -7,20 +7,22 @@ import tensorflow_probability.substrates.jax.distributions as dists
 from src.transformations.affine import gen_transform_mat, transform_image
 
 
-def sample_transformed_data(xhat, rng, rotation):
-    η = jnp.array([0, 0, rotation, 0, 0, 0])
-    ε = random.uniform(rng, (6,), minval=-1., maxval=1.)
-    # TODO: make this work for a different min and max - see src.data.image._transform_data
-    T = gen_transform_mat(η * ε)
-    return transform_image(xhat, T)
+def sample_transformed_data(x, rng, η_min, η_max):
+    p_η = dists.Uniform(low=η_min, high=η_max)
+    η = p_η.sample(sample_shape=(), seed=rng)
+
+    T = gen_transform_mat(η)
+    return transform_image(x, T)
     # TODO: this ^ breaks for flattened images, i.e. with a FC decoder.
+    # A possible easiest fix is to make the FC encoder & decoder take and return
+    # images, and do the flattening internally.
 
 
-def make_invariant_encoder(enc, x, inv_rot, num_samples, rng, train):
+def make_invariant_encoder(enc, x, η_min, η_max, num_samples, rng, train):
     rngs = random.split(rng, num_samples)
 
     def sample_q_params(x, rng):
-        x_trans = sample_transformed_data(x, rng, inv_rot)
+        x_trans = sample_transformed_data(x, rng, η_min, η_max)
         q_z_x = enc(x_trans, train=train)
         return q_z_x.loc, q_z_x.scale
 

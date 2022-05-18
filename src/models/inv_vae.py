@@ -1,5 +1,5 @@
 from re import X
-from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import Any, Callable, List, Mapping, Optional, Tuple, Union
 from functools import partial
 from math import prod
 
@@ -20,15 +20,25 @@ KwArgs = Mapping[str, Any]
 _ENCODER_INVARIANCE_MODES = ['full', 'partial', 'none']
 
 
-# TODO: generalised to more than just rotations
 class invVAE(VAE):
-    max_rotation: float = jnp.pi/4
+    η_min: Optional[Union[Array, List]] = None
+    η_max: Optional[Union[Array, List]] = None
     encoder_invariance: str = 'partial'
     invariance_samples: Optional[int] = None
 
+    def setup(self):
+        super().setup()
+
+        if self.η_min is None or self.η_max is None:
+            msg = f'`self.η_min` and self.η_max` must be specified, but were ({self.η_min}, {self.η_max}). See src.transformations.affine.gen_transform_mat for specification details.'
+            raise RuntimeError(msg)
+
+        self.η_min = jnp.array(self.η_min)
+        self.η_max = jnp.array(self.η_max)
+
     def __call__(self, xhat, rng, train=True, invariance_samples=None):
         z_rng, transform_rng, inv_rng = random.split(rng, 3)
-        x = sample_transformed_data(xhat, transform_rng, self.max_rotation)
+        x = sample_transformed_data(xhat, transform_rng, self.η_min, self.η_max)
 
         if self.encoder_invariance not in _ENCODER_INVARIANCE_MODES:
             msg = f'`self.encoder_invariance` should be one of `{_ENCODER_INVARIANCE_MODES}` but was `{self.encoder_invariance}` instead.'
@@ -39,7 +49,7 @@ class invVAE(VAE):
             invariance_samples = nn.merge_param(
                 'invariance_samples', self.invariance_samples, invariance_samples
             )
-            q_z_x = make_invariant_encoder(self.enc, x, inv_rot, invariance_samples, inv_rng, train)
+            q_z_x = make_invariant_encoder(self.enc, x, self.η_min, self.η_max, invariance_samples, inv_rng, train)
         else:
             q_z_x = self.enc(x, train=train)
 
@@ -61,8 +71,8 @@ class invVAE(VAE):
         if return_xhat:
             return xhat
         else:
-            return sample_transformed_data(xhat, transform_rng, self.max_rotation)
-            # TODO: vmap this to deal with more than 1 sample
+            return sample_transformed_data(xhat, transform_rng, self.η_min, self.η_max)
+            # TODO: vmap this to handle more than 1 sample of x_hat
 
 
 
