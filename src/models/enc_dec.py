@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 import flax.linen.initializers as init
-import tensorflow_probability.substrates.jax.distributions as dists
+import distrax
 
 
 _LIKELIHOODS = [
@@ -65,7 +65,7 @@ class FCEncoder(nn.Module):
         μ = nn.Dense(self.latent_dim, name=f'μ')(h)
         σ = jax.nn.softplus(nn.Dense(self.latent_dim, name=f'σ')(h))
 
-        return dists.Normal(loc=μ, scale=σ)
+        return distrax.Normal(loc=μ, scale=σ)
 
 
 class FCDecoder(nn.Module):
@@ -96,7 +96,7 @@ class FCDecoder(nn.Module):
         if self.likelihood == 'bernoulli':
             logits = nn.Dense(output_dim, name=f'logits')(h)
 
-            return dists.Bernoulli(logits=logits)
+            return distrax.Bernoulli(logits=logits)
 
         else:
             μ = nn.Dense(output_dim, name=f'μ')(h)
@@ -117,7 +117,7 @@ class FCDecoder(nn.Module):
                 if 'unit' in self.likelihood:
                     σ = jax.lax.stop_gradient(σ)
 
-            return dists.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+            return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
 
 
 class ConvEncoder(nn.Module):
@@ -154,7 +154,7 @@ class ConvEncoder(nn.Module):
         μ = nn.Dense(self.latent_dim, name=f'μ')(h)
         σ = jax.nn.softplus(nn.Dense(self.latent_dim, name='σ')(h))
 
-        return dists.Normal(loc=μ, scale=σ)
+        return distrax.Normal(loc=μ, scale=σ)
 
 
 class ConvDecoder(nn.Module):
@@ -205,7 +205,7 @@ class ConvDecoder(nn.Module):
 
         if self.likelihood == 'bernoulli':
             logits = output_conv(name=f'logits')(h)
-            return dists.Bernoulli(logits=logits)
+            return distrax.Bernoulli(logits=logits)
 
         else:
             μ = output_conv(name=f'μ')(h)
@@ -225,7 +225,7 @@ class ConvDecoder(nn.Module):
                 if 'unit' in self.likelihood:
                     σ = jax.lax.stop_gradient(σ)
 
-            return dists.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+            return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
 
 
 _convnext_initializer = nn.initializers.variance_scaling(
@@ -311,7 +311,7 @@ class ConvNeXtEncoder(nn.Module):
         μ = nn.Dense(self.latent_dim, name=f'μ')(h)
         σ = jax.nn.softplus(nn.Dense(self.latent_dim, name='σ')(h))
 
-        return dists.Normal(loc=μ, scale=σ)
+        return distrax.Normal(loc=μ, scale=σ)
 
 
 class ConvNeXtDecoder(nn.Module):
@@ -362,7 +362,7 @@ class ConvNeXtDecoder(nn.Module):
         if self.likelihood == 'bernoulli':
             logits = output_conv(name=f'logits')(h)
 
-            return dists.Bernoulli(logits=logits)
+            return distrax.Bernoulli(logits=logits)
 
         else:
             μ = output_conv(name=f'μ')(h)
@@ -382,4 +382,4 @@ class ConvNeXtDecoder(nn.Module):
                 if 'unit' in self.likelihood:
                     σ = jax.lax.stop_gradient(σ)
 
-            return dists.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+            return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))

@@ -9,7 +9,7 @@ from jax.tree_util import tree_map
 from chex import Array
 from flax import linen as nn
 import flax.linen.initializers as init
-import tensorflow_probability.substrates.jax.distributions as dists
+import distrax
 
 from src.models.enc_dec import FCDecoder, FCEncoder, ConvDecoder, ConvEncoder, ConvNeXtEncoder, ConvNeXtDecoder
 
@@ -65,7 +65,7 @@ class VAE(nn.Module):
         if not self.learn_prior:
             self.prior_μ = jax.lax.stop_gradient(self.prior_μ)
             self.prior_σ = jax.lax.stop_gradient(self.prior_σ)
-        self.p_z = dists.Normal(loc=self.prior_μ, scale=self.prior_σ)
+        self.p_z = distrax.Normal(loc=self.prior_μ, scale=self.prior_σ)
 
     def __call__(self, x, rng, train=True):
         q_z_x = self.enc(x, train=train)
