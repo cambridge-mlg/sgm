@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Callable, List, Optional, Union
 from math import prod
 
@@ -195,27 +196,23 @@ class ConvDecoder(nn.Module):
             h = self.norm_cls(name=f'norm{i}')(h)
             h = act_fn(h)
 
-        if self.likelihood == 'bernoulli':
-            logits = nn.Conv(
-                self.image_shape[-1],
-                kernel_size=(3, 3),
-                strides=(1, 1),
-                name=f'logits'
-            )(h)
+        output_conv = partial(
+            nn.Conv,
+            self.image_shape[-1],
+            kernel_size=(3, 3),
+            strides=(1, 1),
+        )
 
+        if self.likelihood == 'bernoulli':
+            logits = output_conv(name=f'logits')(h)
             return dists.Bernoulli(logits=logits)
 
         else:
-            μ = nn.Conv(self.image_shape[-1], (3, 3), 1, name=f'μ')(h)
+            μ = output_conv(name=f'μ')(h)
 
             if 'hetero' in self.likelihood:
                 if not 'iso' in self.likelihood:
-                    σ = jax.nn.softplus(nn.Conv(
-                            self.image_shape[-1],
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            name=f'σ_'
-                        )(h))
+                    σ = jax.nn.softplus(output_conv(name=f'σ_')(h))
                 else:
                     σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h))
 
@@ -274,7 +271,7 @@ class ConvNeXtBlock(nn.Module):
             x = gamma * x
 
         x = inputs + x
-        # NOTE: ^ this should have DropPath if it was being used in an actual ConvNeXt
+        # NOTE: ^ this should have DropPath if it was being used in an full ConvNeXt ResNet.
         return x
 
 
@@ -355,32 +352,24 @@ class ConvNeXtDecoder(nn.Module):
 
             h = ConvNeXtBlock(hidden_dim)(h)
 
+        output_conv = partial(
+            nn.Conv,
+            self.image_shape[-1],
+            kernel_size=(3, 3),
+            strides=(1, 1),
+        )
+
         if self.likelihood == 'bernoulli':
-            logits = nn.Conv(
-                self.image_shape[-1],
-                kernel_size=(3, 3),
-                strides=(1, 1),
-                name=f'logits'
-            )(h)
+            logits = output_conv(name=f'logits')(h)
 
             return dists.Bernoulli(logits=logits)
 
         else:
-            μ = nn.Conv(
-                self.image_shape[-1],
-                kernel_size=(3, 3),
-                strides=(1, 1),
-                name=f'μ'
-            )(h)
+            μ = output_conv(name=f'μ')(h)
 
             if 'hetero' in self.likelihood:
                 if not 'iso' in self.likelihood:
-                    σ = jax.nn.softplus(nn.Conv(
-                            self.image_shape[-1],
-                            kernel_size=(3, 3),
-                            strides=(1, 1),
-                            name=f'σ_'
-                        )(h))
+                    σ = jax.nn.softplus(output_conv(name=f'σ_')(h))
                 else:
                     σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h))
 
