@@ -9,25 +9,15 @@ from jax import random, lax
 from jax.tree_util import tree_map
 from chex import Array
 import flax.linen as nn
-import tensorflow_probability.substrates.jax.distributions as dists
 
 from src.models.vae import VAE
-from src.transformations.affine import gen_transform_mat, transform_image
+from src.models.common import sample_transformed_data, make_invariant_encoder
 
 
 KwArgs = Mapping[str, Any]
 
 
 _ENCODER_INVARIANCE_MODES = ['full', 'partial', 'none']
-
-
-def _sample_transformed_data(xhat, rng, rotation):
-    η = jnp.array([0, 0, rotation, 0, 0, 0])
-    ε = random.uniform(rng, (6,), minval=-1., maxval=1.)
-    # TODO: make this work for a different min and max - see src.data.image._transform_data
-    T = gen_transform_mat(η * ε)
-    return transform_image(xhat, T)
-    # TODO: this ^ breaks for flattened images, i.e. with a FC decoder.
 
 
 # TODO: generalised to more than just rotations
@@ -38,12 +28,21 @@ class invVAE(VAE):
 
     def __call__(self, xhat, rng, train=True, invariance_samples=None):
         z_rng, transform_rng, inv_rng = random.split(rng, 3)
-        x = _sample_transformed_data(xhat, transform_rng, self.max_rotation)
+        x = sample_transformed_data(xhat, transform_rng, self.max_rotation)
 
         if self.encoder_invariance not in _ENCODER_INVARIANCE_MODES:
             msg = f'`self.encoder_invariance` should be one of `{_ENCODER_INVARIANCE_MODES}` but was `{self.encoder_invariance}` instead.'
             raise RuntimeError(msg)
-        q_z_x = self._make_encoder(x, self.encoder_invariance, invariance_samples, inv_rng, train)
+
+        if self.encoder_invariance in ['full', 'partial']:
+            inv_rot = self.max_rotation if self.encoder_invariance == 'partial' else jnp.pi/2
+            invariance_samples = nn.merge_param(
+                'invariance_samples', self.invariance_samples, invariance_samples
+            )
+            q_z_x = make_invariant_encoder(self.enc, x, inv_rot, invariance_samples, inv_rng, train)
+        else:
+            q_z_x = self.enc(x, train=train)
+
         z = q_z_x.sample(seed=z_rng)
 
         p_xhat_z = self.dec(z, train=train)
@@ -62,32 +61,8 @@ class invVAE(VAE):
         if return_xhat:
             return xhat
         else:
-            return _sample_transformed_data(xhat, transform_rng, self.max_rotation)
+            return sample_transformed_data(xhat, transform_rng, self.max_rotation)
             # TODO: vmap this to deal with more than 1 sample
-
-    def _make_encoder(self, x, encoder_invariance, invariance_samples, rng, train):
-        if encoder_invariance in ['full', 'partial']:
-            inv_rot = self.max_rotation if encoder_invariance == 'partial' else jnp.pi/2
-            invariance_samples = nn.merge_param(
-                'invariance_samples', self.invariance_samples, invariance_samples
-            )
-
-            rngs = random.split(rng, invariance_samples)
-
-            def sample_q_params(x, rng):
-                x_trans = _sample_transformed_data(x, rng, inv_rot)
-                q_z_x = self.enc(x_trans, train=train)
-                return q_z_x.loc, q_z_x.scale
-
-            params = jax.vmap(sample_q_params, in_axes=(None, 0))(x, rngs)
-            params = tree_map(lambda x: jnp.mean(x, axis=0), params)
-
-            q_z_x = dists.Normal(*params)
-            # TODO: support other distributions here.
-        else:
-            q_z_x = self.enc(x, train=train)
-
-        return q_z_x
 
 
 
