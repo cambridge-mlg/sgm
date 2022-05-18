@@ -11,7 +11,12 @@ from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
 
-from src.models.enc_dec import FCDecoder, FCEncoder, ConvDecoder, ConvEncoder, ConvNeXtEncoder, ConvNeXtDecoder
+from src.models.enc_dec import (
+    FCDecoder, FCEncoder,
+    ConvDecoder, ConvEncoder,
+    ConvNeXtEncoder, ConvNeXtDecoder,
+    raise_if_not_in_list
+)
 
 
 KwArgs = Mapping[str, Any]
@@ -84,10 +89,20 @@ class VAE(nn.Module):
             return p_x_z.mode()
 
 
+def _get_agg_fn(agg: str) -> Callable:
+    raise_if_not_in_list(agg, ['mean', 'sum'], 'aggregation')
+
+    if agg == 'mean':
+        return jnp.mean
+    else:
+        return jnp.sum
+
+
 def make_VAE_loss(
     model: VAE,
     x_batch: Array,
     train: bool = True,
+    aggregation: str = 'mean',
 ) -> Callable:
     """Creates a loss function for training a VAE."""
     def batch_loss(params, state, batch_rng, β=1.):
@@ -104,12 +119,13 @@ def make_VAE_loss(
 
             return -elbo, new_state, metrics
 
-        # Broadcast over batch and take mean.
+        # Broadcast over batch and aggregate.
+        agg = _get_agg_fn(aggregation)
         batch_losses, new_state, batch_metrics = jax.vmap(
             loss_fn, out_axes=(0, None, 0), in_axes=(0), axis_name='batch'
         )(x_batch)
-        batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
-        return batch_losses.mean(axis=0), (new_state, batch_metrics)
+        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
+        return agg(batch_losses, axis=0), (new_state, batch_metrics)
 
     return jax.jit(batch_loss)
 
@@ -120,6 +136,7 @@ def make_VAE_eval(
     zs: Array,
     img_shape: Tuple,
     num_recons: int = 16,
+    aggregation: str = 'mean',
 ) -> Callable:
     """Creates a function for evaluating a VAE."""
     def batch_eval(params, state, batch_rng, β=1.):
@@ -136,11 +153,12 @@ def make_VAE_eval(
 
             return metrics, p_x_z.mode(), p_x_z.sample(seed=rng2, sample_shape=(1,))
 
-        # Broadcast over batch and take mean.
+        # Broadcast over batch and aggregate.
+        agg = _get_agg_fn(aggregation)
         batch_metrics, batch_x_recon_mode, batch_x_recon_sample = jax.vmap(
             eval_fn, out_axes=(0, 0, 0), in_axes=(0,), axis_name='batch'
         )(x_batch)
-        batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
+        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
 
         recon_comparison = jnp.concatenate([
             x_batch[:num_recons].reshape(-1, *img_shape),

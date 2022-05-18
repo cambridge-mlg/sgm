@@ -31,7 +31,7 @@ _INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
 # and we init σ_ to this value, we effectively init σ to 1.
 
 
-def _raise_if_not_in_list(val, valid_options, varname):
+def raise_if_not_in_list(val, valid_options, varname):
     if val not in valid_options:
        msg = f'`{varname}` should be one of `{valid_options}` but was `{val}` instead.'
        raise RuntimeError(msg)
@@ -55,7 +55,7 @@ class FCEncoder(nn.Module):
 
     @nn.compact
     def __call__(self, x, train):
-        _raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
+        raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
@@ -82,7 +82,7 @@ class FCDecoder(nn.Module):
 
     @nn.compact
     def __call__(self, z, train):
-        _raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
+        raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
@@ -131,7 +131,7 @@ class ConvEncoder(nn.Module):
 
     @nn.compact
     def __call__(self, x, train):
-        _raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
+        raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
             self.hidden_dims = [64, 128]
@@ -168,7 +168,7 @@ class ConvDecoder(nn.Module):
 
     @nn.compact
     def __call__(self, z, train):
-        _raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
+        raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
             self.hidden_dims = [128, 64]
@@ -282,7 +282,7 @@ class ConvNeXtEncoder(nn.Module):
 
     @nn.compact
     def __call__(self, x, train):
-        _raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
+        raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
             self.hidden_dims = [64, 128, 256, 512]
@@ -322,7 +322,7 @@ class ConvNeXtDecoder(nn.Module):
 
     @nn.compact
     def __call__(self, z, train):
-        _raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
+        raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
             self.hidden_dims = [512, 256, 128, 64]

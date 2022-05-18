@@ -193,18 +193,18 @@ def train_loop(
 
         @jax.jit
         def train_step(state, x_batch, rng):
-            loss_fn = make_loss_fn(model, x_batch, train=True)
+            loss_fn = make_loss_fn(model, x_batch, train=True, aggregation='sum')
             grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
 
-            (loss, (model_state, metrics)), grads = grad_fn(
+            (_, (model_state, metrics)), grads = grad_fn(
                 state.params, state.model_state, rng, state.β,
             )
 
-            return state.apply_gradients(grads=grads, model_state=model_state), loss, metrics
+            return state.apply_gradients(grads=grads, model_state=model_state), metrics
 
         @partial(jax.jit, static_argnames='metrics_only')
         def eval_step(state, x_batch, rng, metrics_only=False):
-            eval_fn = make_eval_fn(model, x_batch, zs, config.model.decoder.image_shape)
+            eval_fn = make_eval_fn(model, x_batch, zs, config.model.decoder.image_shape, aggregation='sum')
 
             metrics, recon_comparison, sampled_images = eval_fn(
                 state.params, state.model_state, rng, state.β,
@@ -220,15 +220,16 @@ def train_loop(
         val_losses = []
         epochs = trange(1, config.epochs + 1)
         for epoch in epochs:
-            batch_losses = []
             batch_metrics = []
             for (x_batch, _) in train_loader:
                 rng, batch_rng = random.split(rng)
-                state, loss, metrics = train_step(state, x_batch, batch_rng)
-                batch_losses.append(loss)
+                state, metrics = train_step(state, x_batch, batch_rng)
                 batch_metrics.append(metrics)
 
-            train_metrics = tree_map(lambda x: jnp.mean(x), tree_concatenate(batch_metrics))
+            train_metrics = tree_map(
+                lambda x: jnp.sum(x) / len(train_loader.dataset),
+                tree_concatenate(batch_metrics)
+            )
             train_losses.append(-train_metrics['elbo'])
 
             batch_metrics = []
@@ -240,7 +241,10 @@ def train_loop(
                     metrics = eval_step(state, x_batch, eval_rng, metrics_only=True)
                 batch_metrics.append(metrics)
 
-            val_metrics = tree_map(lambda x: jnp.mean(x), tree_concatenate(batch_metrics))
+            val_metrics = tree_map(
+                lambda x: jnp.sum(x) / len(val_loader.dataset),
+                tree_concatenate(batch_metrics)
+            )
             val_losses.append(-val_metrics['elbo'])
 
             learning_rate = state.opt_state.hyperparams['learning_rate']
@@ -284,7 +288,10 @@ def train_loop(
                             metrics = eval_step(state, x_batch, eval_rng, metrics_only=True)
                         batch_metrics.append(metrics)
 
-                    test_metrics = tree_map(lambda x: jnp.mean(x), tree_concatenate(batch_metrics))
+                    test_metrics = tree_map(
+                        lambda x: jnp.sum(x) / len(test_loader.dataset),
+                        tree_concatenate(batch_metrics)
+                    )
 
                     run.summary['test/loss'] = -test_metrics['elbo']
                     for key, val in test_metrics.items():
@@ -299,4 +306,4 @@ def train_loop(
 
 def tree_concatenate(list_of_trees):
     """Convert a list of trees of identical structure into a single tree of lists."""
-    return jax.tree_map(lambda *xs: jnp.array(list(xs)), *list_of_trees)
+    return tree_map(lambda *xs: jnp.array(list(xs)), *list_of_trees)
