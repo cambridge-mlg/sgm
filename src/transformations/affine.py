@@ -13,16 +13,17 @@ def create_generator_matrices() -> Array:
         None
 
     Returns:
-        A 6x3x3 array containing the 6 3x3 generator matrices, in order:
-        translation in x, translation in y, rotation, scale in x, scale in y, and shearing.
+        A 7x3x3 array containing the 7 3x3 generator matrices, in order:
+        translation in x, translation in y, rotation, scale in x, scale in y, shearing in x, and shearing in y.
     """
     G_trans_x = jnp.zeros((3, 3), jnp.float32).at[0, 2].set(1)
     G_trans_y = jnp.zeros((3, 3), jnp.float32).at[1, 2].set(1)
     G_rot = jnp.zeros((3, 3), jnp.float32).at[1, 0].set(1).at[0, 1].set(-1)
     G_scale_x = jnp.zeros((3, 3), jnp.float32).at[0, 0].set(1)
     G_scale_y = jnp.zeros((3, 3), jnp.float32).at[1, 1].set(1)
-    G_shear = jnp.zeros((3, 3), jnp.float32).at[1, 0].set(1).at[0, 1].set(1)
-    Gs = jnp.array([G_trans_x, G_trans_y, G_rot, G_scale_x, G_scale_y, G_shear])
+    G_shear_x = jnp.zeros((3, 3), jnp.float32).at[0, 1].set(1)
+    G_shear_y = jnp.zeros((3, 3), jnp.float32).at[1, 0].set(1)
+    Gs = jnp.array([G_trans_x, G_trans_y, G_rot, G_scale_x, G_scale_y, G_shear_x, G_shear_y])
 
     return Gs
 
@@ -43,12 +44,13 @@ def gen_transform_mat(
         * η_2 is the angle of rotation.
         * η_3 is the scaling factor in x.
         * η_4 is the scaling factor in y.
-        * η_5 controls shearing.
+        * η_5 controls shearing in x.
+        * η_6 controls shearing in y.
 
     Returns:
         A 3x3 affine transformation array.
     """
-    assert_shape(η, (6,))
+    assert_shape(η, (7,))
 
     Gs = create_generator_matrices()
 

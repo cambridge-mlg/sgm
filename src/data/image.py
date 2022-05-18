@@ -52,9 +52,9 @@ class ToNumpy:
 def _transform_data(data, η_min=None, η_max=None, seed=42):
     if η_min is None:
         # Identity transform.
-        η_min = jnp.array([0., 0., 0., 0., 0., 0.])
+        η_min = jnp.array([0., 0., 0., 0., 0., 0., 0.])
     if η_max is None:
-        η_max = jnp.array([0., 0., 0., 0., 0., 0.])
+        η_max = jnp.array([0., 0., 0., 0., 0., 0., 0.])
 
     N = data.shape[0]
 
