@@ -31,6 +31,12 @@ _INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
 # and we init σ_ to this value, we effectively init σ to 1.
 
 
+def _raise_if_not_in_list(val, valid_options, varname):
+    if val not in valid_options:
+       msg = f'`{varname}` should be one of `{valid_options}` but was `{val}` instead.'
+       raise RuntimeError(msg)
+
+
 # This function allows us to either specify activation functions callables,
 # as seen in the default for FCEncoder below, or as string names,
 # which is useful for commandline args or config files.
@@ -49,9 +55,7 @@ class FCEncoder(nn.Module):
 
     @nn.compact
     def __call__(self, x, train):
-        if self.posterior not in _POSTERIORS:
-            msg = f'`self.posterior` should be one of `{_POSTERIORS}` but was `{self.posterior}` instead.'
-            raise RuntimeError(msg)
+        _raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
@@ -78,9 +82,7 @@ class FCDecoder(nn.Module):
 
     @nn.compact
     def __call__(self, z, train):
-        if self.likelihood not in _LIKELIHOODS:
-            msg = f'`self.likelihood` should be one of `{_LIKELIHOODS}` but was `{self.likelihood}` instead.'
-            raise RuntimeError(msg)
+        _raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
@@ -129,9 +131,7 @@ class ConvEncoder(nn.Module):
 
     @nn.compact
     def __call__(self, x, train):
-        if self.posterior not in _POSTERIORS:
-            msg = f'`self.posterior` should be one of `{_POSTERIORS}` but was `{self.posterior}` instead.'
-            raise RuntimeError(msg)
+        _raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
             self.hidden_dims = [64, 128]
@@ -168,9 +168,7 @@ class ConvDecoder(nn.Module):
 
     @nn.compact
     def __call__(self, z, train):
-        if self.likelihood not in _LIKELIHOODS:
-            msg = f'`self.likelihood` should be one of `{_LIKELIHOODS}` but was `{self.likelihood}` instead.'
-            raise RuntimeError(msg)
+        _raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
             self.hidden_dims = [128, 64]
@@ -284,9 +282,7 @@ class ConvNeXtEncoder(nn.Module):
 
     @nn.compact
     def __call__(self, x, train):
-        if self.posterior not in _POSTERIORS:
-            msg = f'`self.posterior` should be one of `{_POSTERIORS}` but was `{self.posterior}` instead.'
-            raise RuntimeError(msg)
+        _raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
             self.hidden_dims = [64, 128, 256, 512]
@@ -326,9 +322,7 @@ class ConvNeXtDecoder(nn.Module):
 
     @nn.compact
     def __call__(self, z, train):
-        if self.likelihood not in _LIKELIHOODS:
-            msg = f'`self.likelihood` should be one of `{_LIKELIHOODS}` but was `{self.likelihood}` instead.'
-            raise RuntimeError(msg)
+        _raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
             self.hidden_dims = [512, 256, 128, 64]
