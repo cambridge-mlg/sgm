@@ -35,8 +35,8 @@ def get_config() -> config_dict.ConfigDict:
     config.β = 10  # 10
     config.β_schedule_name = 'cosine_decay_schedule'
     config.β_schedule = config_dict.ConfigDict()
-    β_end_value = 3
-    config.β_schedule.alpha = β_end_value / config.β
+    config.β_end_value = 3
+    config.β_schedule.alpha = config.β_end_value / config.β
     config.β_schedule.decay_steps = config.epochs * num_batches_per_epoch
 
     config.model.encoder = config_dict.ConfigDict()
