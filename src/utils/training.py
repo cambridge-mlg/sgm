@@ -228,7 +228,7 @@ def train_loop(
                 batch_losses.append(loss)
                 batch_metrics.append(metrics)
 
-            train_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
+            train_metrics = tree_map(lambda x: jnp.mean(x), tree_concatenate(batch_metrics))
             train_losses.append(-train_metrics['elbo'])
 
             batch_metrics = []
@@ -240,7 +240,7 @@ def train_loop(
                     metrics = eval_step(state, x_batch, eval_rng, metrics_only=True)
                 batch_metrics.append(metrics)
 
-            val_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
+            val_metrics = tree_map(lambda x: jnp.mean(x), tree_concatenate(batch_metrics))
             val_losses.append(-val_metrics['elbo'])
 
             learning_rate = state.opt_state.hyperparams['learning_rate']
@@ -284,7 +284,7 @@ def train_loop(
                             metrics = eval_step(state, x_batch, eval_rng, metrics_only=True)
                         batch_metrics.append(metrics)
 
-                    test_metrics = tree_map(lambda x: jnp.mean(x), tree_transpose(batch_metrics))
+                    test_metrics = tree_map(lambda x: jnp.mean(x), tree_concatenate(batch_metrics))
 
                     run.summary['test/loss'] = -test_metrics['elbo']
                     for key, val in test_metrics.items():
@@ -297,6 +297,6 @@ def train_loop(
     return state
 
 
-def tree_transpose(list_of_trees):
+def tree_concatenate(list_of_trees):
     """Convert a list of trees of identical structure into a single tree of lists."""
     return jax.tree_map(lambda *xs: jnp.array(list(xs)), *list_of_trees)
