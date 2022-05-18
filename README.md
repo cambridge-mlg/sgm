@@ -21,3 +21,10 @@ pip install -e .
 python3.9 -m ipykernel install --user --name=inv
 # ^ optional, for easily running IPython/Jupyter notebooks with the virtual env.
 ```
+
+## TODO:
+
+ - [ ] Add tests for the output shapes of the various encoders & decoders (including e.g. options for likelihoods)
+ - [ ] Run experiments for inv-VAEs with rotations in the data. We expect that in this case the inv encoders will perform better than non-inv ones. 
+ - [ ] Make CNN implmentation match that of [Dubois et al.](https://github.com/YannDubs/lossyless/blob/462af23a52d68f860e5ae2ff9c59f04cfb8c5fd5/lossyless/architectures.py#L235). That is, resize images to be of power 2, then have the CNN downsample in h & w dims at each stage.
+ - [ ] Try reproduce reconstruction behaviour of Dubios et al. That is, we want reconstructions to not show the symmetry to which they are suppoed to be invariant. Perhaps we need more of a bottle neck.
