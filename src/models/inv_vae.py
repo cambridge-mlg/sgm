@@ -17,7 +17,6 @@ from src.models.common import (
 )
 
 
-
 KwArgs = Mapping[str, Any]
 
 
@@ -36,9 +35,6 @@ class invVAE(VAE):
         if self.η_low is None or self.η_high is None:
             msg = f'`self.η_low` and self.η_high` must be specified, but were ({self.η_low}, {self.η_high}). See src.transformations.affine.gen_transform_mat for specification details.'
             raise RuntimeError(msg)
-
-        self.η_low = jnp.array(self.η_low)
-        self.η_high = jnp.array(self.η_high)
 
     def __call__(self, xhat, rng, train=True, invariance_samples=None):
         raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
