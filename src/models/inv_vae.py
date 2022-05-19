@@ -20,33 +20,33 @@ _ENCODER_INVARIANCE_MODES = ['full', 'partial', 'none']
 
 
 class invVAE(VAE):
-    η_min: Optional[Union[Array, List]] = None
-    η_max: Optional[Union[Array, List]] = None
+    η_low: Optional[Union[Array, List]] = None
+    η_high: Optional[Union[Array, List]] = None
     encoder_invariance: str = 'partial'
     invariance_samples: Optional[int] = None
 
     def setup(self):
         super().setup()
 
-        if self.η_min is None or self.η_max is None:
-            msg = f'`self.η_min` and self.η_max` must be specified, but were ({self.η_min}, {self.η_max}). See src.transformations.affine.gen_transform_mat for specification details.'
+        if self.η_low is None or self.η_high is None:
+            msg = f'`self.η_low` and self.η_high` must be specified, but were ({self.η_low}, {self.η_high}). See src.transformations.affine.gen_transform_mat for specification details.'
             raise RuntimeError(msg)
 
-        self.η_min = jnp.array(self.η_min)
-        self.η_max = jnp.array(self.η_max)
+        self.η_low = jnp.array(self.η_low)
+        self.η_high = jnp.array(self.η_high)
 
     def __call__(self, xhat, rng, train=True, invariance_samples=None):
         raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
 
         z_rng, transform_rng, inv_rng = random.split(rng, 3)
-        x = sample_transformed_data(xhat, transform_rng, self.η_min, self.η_max)
+        x = sample_transformed_data(xhat, transform_rng, self.η_low, self.η_high)
 
         if self.encoder_invariance in ['full', 'partial']:
             inv_rot = self.max_rotation if self.encoder_invariance == 'partial' else jnp.pi/2
             invariance_samples = nn.merge_param(
                 'invariance_samples', self.invariance_samples, invariance_samples
             )
-            q_z_x = make_invariant_encoder(self.enc, x, self.η_min, self.η_max, invariance_samples, inv_rng, train)
+            q_z_x = make_invariant_encoder(self.enc, x, self.η_low, self.η_high, invariance_samples, inv_rng, train)
         else:
             q_z_x = self.enc(x, train=train)
 
@@ -68,7 +68,7 @@ class invVAE(VAE):
         if return_xhat:
             return xhat
         else:
-            return sample_transformed_data(xhat, transform_rng, self.η_min, self.η_max)
+            return sample_transformed_data(xhat, transform_rng, self.η_low, self.η_high)
             # TODO: vmap this to handle more than 1 sample of x_hat
 
 

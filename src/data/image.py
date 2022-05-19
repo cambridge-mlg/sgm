@@ -49,12 +49,12 @@ class ToNumpy:
         return np.array(tensor, dtype=np.float32)
 
 
-def _transform_data(data, η_min=None, η_max=None, seed=42):
-    if η_min is None:
+def _transform_data(data, η_low=None, η_high=None, seed=42):
+    if η_low is None:
         # Identity transform.
-        η_min = jnp.array([0., 0., 0., 0., 0., 0., 0.])
-    if η_max is None:
-        η_max = jnp.array([0., 0., 0., 0., 0., 0., 0.])
+        η_low = jnp.array([0., 0., 0., 0., 0., 0., 0.])
+    if η_high is None:
+        η_high = jnp.array([0., 0., 0., 0., 0., 0., 0.])
 
     N = data.shape[0]
 
@@ -72,7 +72,7 @@ def _transform_data(data, η_min=None, η_max=None, seed=42):
         data = data[:, :, :, np.newaxis]
 
     rng = jax.random.PRNGKey(seed)
-    p_η = dists.Uniform(low=η_min, high=η_max)
+    p_η = dists.Uniform(low=η_low, high=η_high)
     η = p_η.sample(sample_shape=(N,), seed=rng)
     Ts = jax.vmap(gen_transform_mat, in_axes=(0))(η)
 
@@ -96,8 +96,8 @@ def get_image_dataset(
     random_seed: int = 42,
     train_augmentations: list[Callable] = [],
     test_augmentations: list[Callable] = [],
-    η_min: Optional[Array] = None,
-    η_max: Optional[Array] = None,
+    η_low: Optional[Array] = None,
+    η_high: Optional[Array] = None,
 ) -> Union[Tuple[data.Dataset, data.Dataset], Tuple[data.Dataset, data.Dataset, data.Dataset]]:
     """Provides PyTorch `Dataset`s for the specified image dataset_name.
 
@@ -116,7 +116,7 @@ def get_image_dataset(
 
         test_augmentations: a `list` of augmentations to apply to the test data. (Default: `[]`)
 
-        η_min, η_max: optional `Array`s controlling the affine transformations to apply to the data.
+        η_low, η_high: optional `Array`s controlling the affine transformations to apply to the data.
         To be concrete, these arrays represent the lower and upper bounds of a uniform distribution
         from which affine transformation parameters are drawn.
         For more information see `transformations.affine.gen_transform_mat`.
@@ -185,9 +185,9 @@ def get_image_dataset(
         **test_kwargs, transform=transform_test, download=True, root=data_dir,
     )
 
-    if η_min is not None or η_max is not None:
-        test_dataset.data = _transform_data(test_dataset.data, η_min, η_max, random_seed)
-        train_dataset.data = _transform_data(train_dataset.data, η_min, η_max, random_seed)
+    if η_low is not None or η_high is not None:
+        test_dataset.data = _transform_data(test_dataset.data, η_low, η_high, random_seed)
+        train_dataset.data = _transform_data(train_dataset.data, η_low, η_high, random_seed)
 
     if val_percent != 0.:
         num_train, num_val = train_val_split_sizes(len(train_dataset), val_percent)

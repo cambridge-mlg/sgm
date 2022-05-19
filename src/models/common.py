@@ -29,8 +29,8 @@ def raise_if_not_in_list(val, valid_options, varname):
        raise RuntimeError(msg)
 
 
-def sample_transformed_data(x, rng, η_min, η_max):
-    p_η = dists.Uniform(low=η_min, high=η_max)
+def sample_transformed_data(x, rng, η_low, η_high):
+    p_η = dists.Uniform(low=η_low, high=η_high)
     η = p_η.sample(sample_shape=(), seed=rng)
 
     T = gen_transform_mat(η)
@@ -40,11 +40,11 @@ def sample_transformed_data(x, rng, η_min, η_max):
     # images, and do the flattening internally.
 
 
-def make_invariant_encoder(enc, x, η_min, η_max, num_samples, rng, train):
+def make_invariant_encoder(enc, x, η_low, η_high, num_samples, rng, train):
     rngs = random.split(rng, num_samples)
 
     def sample_q_params(x, rng):
-        x_trans = sample_transformed_data(x, rng, η_min, η_max)
+        x_trans = sample_transformed_data(x, rng, η_low, η_high)
         q_z_x = enc(x_trans, train=train)
         return q_z_x.loc, q_z_x.scale
 
