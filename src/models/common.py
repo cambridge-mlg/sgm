@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from jax import random
 from jax.tree_util import tree_map
-import tensorflow_probability.substrates.jax.distributions as dists
+import distrax
 
 from src.transformations.affine import gen_transform_mat, transform_image
 
@@ -35,7 +35,7 @@ def raise_if_not_in_list(val, valid_options, varname):
 
 
 def sample_transformed_data(x, rng, η_low, η_high):
-    p_η = dists.Uniform(low=η_low, high=η_high)
+    p_η = distrax.Uniform(low=η_low, high=η_high)
     η = p_η.sample(sample_shape=(), seed=rng)
 
     T = gen_transform_mat(η)
@@ -56,7 +56,7 @@ def make_invariant_encoder(enc, x, η_low, η_high, num_samples, rng, train):
     params = jax.vmap(sample_q_params, in_axes=(None, 0))(x, rngs)
     params = tree_map(lambda x: jnp.mean(x, axis=0), params)
 
-    q_z_x = dists.Normal(*params)
+    q_z_x = distrax.Normal(*params)
     # TODO: support other distributions here.
 
     return q_z_x

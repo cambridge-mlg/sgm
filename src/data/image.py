@@ -7,7 +7,7 @@ from chex import Array
 import torch
 from torch.utils import data
 from torchvision import transforms, datasets
-import tensorflow_probability.substrates.jax.distributions as dists
+import distrax
 
 from src.transformations.affine import transform_image, gen_transform_mat
 
@@ -72,7 +72,7 @@ def _transform_data(data, η_low=None, η_high=None, seed=42):
         data = data[:, :, :, np.newaxis]
 
     rng = jax.random.PRNGKey(seed)
-    p_η = dists.Uniform(low=η_low, high=η_high)
+    p_η = distrax.Uniform(low=η_low, high=η_high)
     η = p_η.sample(sample_shape=(N,), seed=rng)
     Ts = jax.vmap(gen_transform_mat, in_axes=(0))(η)
 
