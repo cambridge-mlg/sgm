@@ -78,7 +78,6 @@ class invVAE(VAE):
             # TODO: vmap this to handle more than 1 sample of x_hat
 
 
-
 def make_invVAE_loss(
     model: invVAE,
     x_batch: Array,
