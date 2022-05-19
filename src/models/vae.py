@@ -11,13 +11,8 @@ from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
 
-from src.models.enc_dec import (
-    FCDecoder, FCEncoder,
-    ConvDecoder, ConvEncoder,
-    ConvNeXtEncoder, ConvNeXtDecoder,
-    raise_if_not_in_list,
-    INV_SOFTPLUS_1
-)
+from src.models.enc_dec import FCDecoder, FCEncoder, ConvDecoder, ConvEncoder, ConvNeXtEncoder, ConvNeXtDecoder
+from src.models.common import raise_if_not_in_list, INV_SOFTPLUS_1, get_agg_fn
 
 
 KwArgs = Mapping[str, Any]
@@ -40,9 +35,7 @@ class VAE(nn.Module):
     decoder: Optional[KwArgs] = None
 
     def setup(self):
-        if self.architecture not in _ARCHITECTURES:
-            msg = f'`self.architecture` should be one of `{_ARCHITECTURES}` but was `{self.architecture}` instead.'
-            raise RuntimeError(msg)
+        raise_if_not_in_list(self.architecture, _ARCHITECTURES, 'self.architecture')
 
         if self.architecture == 'ConvNet':
             Encoder = ConvEncoder
@@ -90,15 +83,6 @@ class VAE(nn.Module):
             return p_x_z.mode()
 
 
-def _get_agg_fn(agg: str) -> Callable:
-    raise_if_not_in_list(agg, ['mean', 'sum'], 'aggregation')
-
-    if agg == 'mean':
-        return jnp.mean
-    else:
-        return jnp.sum
-
-
 def make_VAE_loss(
     model: VAE,
     x_batch: Array,
@@ -121,7 +105,7 @@ def make_VAE_loss(
             return -elbo, new_state, metrics
 
         # Broadcast over batch and aggregate.
-        agg = _get_agg_fn(aggregation)
+        agg = get_agg_fn(aggregation)
         batch_losses, new_state, batch_metrics = jax.vmap(
             loss_fn, out_axes=(0, None, 0), in_axes=(0), axis_name='batch'
         )(x_batch)
@@ -155,7 +139,7 @@ def make_VAE_eval(
             return metrics, p_x_z.mode(), p_x_z.sample(seed=x_rng, sample_shape=(1,))
 
         # Broadcast over batch and aggregate.
-        agg = _get_agg_fn(aggregation)
+        agg = get_agg_fn(aggregation)
         batch_metrics, batch_x_recon_mode, batch_x_recon_sample = jax.vmap(
             eval_fn, out_axes=(0, 0, 0), in_axes=(0,), axis_name='batch'
         )(x_batch)

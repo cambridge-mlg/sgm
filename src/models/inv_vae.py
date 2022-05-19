@@ -1,4 +1,3 @@
-from re import X
 from typing import Any, Callable, List, Mapping, Optional, Tuple, Union
 from functools import partial
 from math import prod
@@ -11,7 +10,7 @@ from chex import Array
 import flax.linen as nn
 
 from src.models.vae import VAE
-from src.models.common import sample_transformed_data, make_invariant_encoder
+from src.models.common import sample_transformed_data, make_invariant_encoder, raise_if_not_in_list
 
 
 KwArgs = Mapping[str, Any]
@@ -37,12 +36,10 @@ class invVAE(VAE):
         self.η_max = jnp.array(self.η_max)
 
     def __call__(self, xhat, rng, train=True, invariance_samples=None):
+        raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
+
         z_rng, transform_rng, inv_rng = random.split(rng, 3)
         x = sample_transformed_data(xhat, transform_rng, self.η_min, self.η_max)
-
-        if self.encoder_invariance not in _ENCODER_INVARIANCE_MODES:
-            msg = f'`self.encoder_invariance` should be one of `{_ENCODER_INVARIANCE_MODES}` but was `{self.encoder_invariance}` instead.'
-            raise RuntimeError(msg)
 
         if self.encoder_invariance in ['full', 'partial']:
             inv_rot = self.max_rotation if self.encoder_invariance == 'partial' else jnp.pi/2

@@ -1,3 +1,5 @@
+from typing import Callable
+
 import jax
 import jax.numpy as jnp
 from jax import random
@@ -5,6 +7,26 @@ from jax.tree_util import tree_map
 import tensorflow_probability.substrates.jax.distributions as dists
 
 from src.transformations.affine import gen_transform_mat, transform_image
+
+
+INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
+# ^ this value is softplus^{-1}(1), i.e. if we get σ as softplus(σ_),
+# and we init σ_ to this value, we effectively init σ to 1.
+
+
+def get_agg_fn(agg: str) -> Callable:
+    raise_if_not_in_list(agg, ['mean', 'sum'], 'aggregation')
+
+    if agg == 'mean':
+        return jnp.mean
+    else:
+        return jnp.sum
+
+
+def raise_if_not_in_list(val, valid_options, varname):
+    if val not in valid_options:
+       msg = f'`{varname}` should be one of `{valid_options}` but was `{val}` instead.'
+       raise RuntimeError(msg)
 
 
 def sample_transformed_data(x, rng, η_min, η_max):
