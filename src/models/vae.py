@@ -1,0 +1,209 @@
+from typing import Any, Callable, Mapping, Optional, Tuple
+from functools import partial
+from math import prod
+
+import jax
+import jax.numpy as jnp
+from jax import random, lax
+from jax.tree_util import tree_map
+from chex import Array
+from flax import linen as nn
+import flax.linen.initializers as init
+import distrax
+
+from src.models.enc_dec import (
+    FCDecoder, FCEncoder,
+    ConvDecoder, ConvEncoder,
+    ConvNeXtEncoder, ConvNeXtDecoder,
+    raise_if_not_in_list,
+    INV_SOFTPLUS_1
+)
+
+
+KwArgs = Mapping[str, Any]
+
+
+_ARCHITECTURES = [
+    'MLP',
+    'ConvNet',
+    'ConvNeXt',
+]
+
+
+class VAE(nn.Module):
+    latent_dim: int = 20
+    # TODO: support other priors? e.g.:
+    # prior: str = 'diag-normal'
+    learn_prior: bool = False
+    architecture: str = 'MLP'
+    encoder: Optional[KwArgs] = None
+    decoder: Optional[KwArgs] = None
+
+    def setup(self):
+        if self.architecture not in _ARCHITECTURES:
+            msg = f'`self.architecture` should be one of `{_ARCHITECTURES}` but was `{self.architecture}` instead.'
+            raise RuntimeError(msg)
+
+        if self.architecture == 'ConvNet':
+            Encoder = ConvEncoder
+            Decoder = ConvDecoder
+        elif self.architecture == 'MLP':
+            Encoder = FCEncoder
+            Decoder = FCDecoder
+        else:
+            Encoder = ConvNeXtEncoder
+            Decoder = ConvNeXtDecoder
+
+        self.enc = Encoder(latent_dim=self.latent_dim, **(self.encoder or {}))
+        self.dec = Decoder(**(self.decoder or {}))
+
+        self.prior_μ = self.param(
+            'prior_μ',
+            init.zeros,
+            (self.latent_dim,)
+        )
+        self.prior_σ = jax.nn.softplus(self.param(
+            'prior_σ_',
+            init.constant(INV_SOFTPLUS_1),
+            # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
+            (self.latent_dim,)
+        ))
+        if not self.learn_prior:
+            self.prior_μ = jax.lax.stop_gradient(self.prior_μ)
+            self.prior_σ = jax.lax.stop_gradient(self.prior_σ)
+        self.p_z = distrax.Normal(loc=self.prior_μ, scale=self.prior_σ)
+
+    def __call__(self, x, rng, train=True):
+        q_z_x = self.enc(x, train=train)
+        z = q_z_x.sample(seed=rng)
+
+        p_x_z = self.dec(z, train=train)
+
+        return q_z_x, p_x_z, self.p_z
+
+    def generate(self, z, rng, sample_shape=(1,), return_mode=False):
+        p_x_z = self.dec(z, train=False)
+
+        if not return_mode:
+            return p_x_z.sample(seed=rng, sample_shape=sample_shape)
+        else:
+            return p_x_z.mode()
+
+
+def _get_agg_fn(agg: str) -> Callable:
+    raise_if_not_in_list(agg, ['mean', 'sum'], 'aggregation')
+
+    if agg == 'mean':
+        return jnp.mean
+    else:
+        return jnp.sum
+
+
+def make_VAE_loss(
+    model: VAE,
+    x_batch: Array,
+    train: bool = True,
+    aggregation: str = 'mean',
+) -> Callable:
+    """Creates a loss function for training a VAE."""
+    def batch_loss(params, state, batch_rng, β=1.):
+        # Define loss func for 1 example.
+        def loss_fn(x):
+            rng = random.fold_in(batch_rng, lax.axis_index('batch'))
+            (q_z_x, p_x_z, p_z), new_state = model.apply(
+                {'params': params, **state}, x, rng,
+                mutable=list(state.keys()) if train else {},
+            )
+
+            metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β)
+            elbo = metrics['elbo']
+
+            return -elbo, new_state, metrics
+
+        # Broadcast over batch and aggregate.
+        agg = _get_agg_fn(aggregation)
+        batch_losses, new_state, batch_metrics = jax.vmap(
+            loss_fn, out_axes=(0, None, 0), in_axes=(0), axis_name='batch'
+        )(x_batch)
+        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
+        return agg(batch_losses, axis=0), (new_state, batch_metrics)
+
+    return jax.jit(batch_loss)
+
+
+def make_VAE_eval(
+    model: VAE,
+    x_batch: Array,
+    zs: Array,
+    img_shape: Tuple,
+    num_recons: int = 16,
+    aggregation: str = 'mean',
+) -> Callable:
+    """Creates a function for evaluating a VAE."""
+    def batch_eval(params, state, batch_rng, β=1.):
+        eval_rng, sample_rng = random.split(batch_rng)
+
+        # Define eval func for 1 example.
+        def eval_fn(x):
+            z_rng, x_rng = random.split(random.fold_in(eval_rng, lax.axis_index('batch')))
+            q_z_x, p_x_z, p_z = model.apply(
+                {'params': params, **state}, x, z_rng, train=False
+            )
+
+            metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β)
+
+            return metrics, p_x_z.mode(), p_x_z.sample(seed=x_rng, sample_shape=(1,))
+
+        # Broadcast over batch and aggregate.
+        agg = _get_agg_fn(aggregation)
+        batch_metrics, batch_x_recon_mode, batch_x_recon_sample = jax.vmap(
+            eval_fn, out_axes=(0, 0, 0), in_axes=(0,), axis_name='batch'
+        )(x_batch)
+        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
+
+        recon_comparison = jnp.concatenate([
+            x_batch[:num_recons].reshape(-1, *img_shape),
+            batch_x_recon_mode[:num_recons].reshape(-1, *img_shape),
+            batch_x_recon_sample[:num_recons].reshape(-1, *img_shape),
+        ])
+
+        @partial(jax.vmap, axis_name='batch')
+        def sample_fn(z):
+            rng = random.fold_in(sample_rng, lax.axis_index('batch'))
+            x_sample = model.apply(
+                {'params': params, **state}, z, rng,
+                method=VAE.generate
+            )
+
+            x_mode = model.apply(
+                {'params': params, **state}, z, rng, return_mode=True,
+                method=VAE.generate
+            )
+
+            return x_sample, x_mode
+
+        sampled_images, image_modes = sample_fn(zs)
+        samples = jnp.concatenate([
+            image_modes.reshape(-1, *img_shape),
+            sampled_images.reshape(-1, *img_shape),
+        ])
+
+        return batch_metrics, recon_comparison, samples
+
+    return jax.jit(batch_eval)
+
+
+def _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β=1.):
+    x_size = prod(p_x_z.batch_shape)
+
+    ll = p_x_z.log_prob(x).sum()
+    kld = q_z_x.kl_divergence(p_z).sum()
+    elbo = ll - β * kld
+
+    return {
+        'll': ll,
+        'kld': kld,
+        'elbo': elbo / x_size,
+        # ^ We normalise the ELBO by the data size to (hopefully) make LR, etc., more general.
+        'elbo_unnorm': elbo,
+    }
