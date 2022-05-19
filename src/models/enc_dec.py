@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 import flax.linen.initializers as init
-import tensorflow_probability.substrates.jax.distributions as dists
+import distrax
 
 
 _LIKELIHOODS = [
@@ -26,9 +26,15 @@ _POSTERIORS = [
 ]
 
 
-_INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
+INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
 # ^ this value is softplus^{-1}(1), i.e. if we get σ as softplus(σ_),
 # and we init σ_ to this value, we effectively init σ to 1.
+
+
+def raise_if_not_in_list(val, valid_options, varname):
+    if val not in valid_options:
+       msg = f'`{varname}` should be one of `{valid_options}` but was `{val}` instead.'
+       raise RuntimeError(msg)
 
 
 # This function allows us to either specify activation functions callables,
@@ -41,6 +47,33 @@ def _get_act_fn(act_fn):
         return act_fn
 
 
+def create_likelihood(obj, hidden, output_layer, output_shape):
+    if obj.likelihood == 'bernoulli':
+        logits = output_layer(name=f'logits')(hidden)
+        return distrax.Bernoulli(logits=logits)
+
+    else:
+        μ = output_layer(name=f'μ')(hidden)
+
+        if obj.likelihood == 'hetero-diag-normal':
+            σ_ = output_layer(name=f'σ_')(hidden)
+
+        elif obj.likelihood == 'hetero-iso-normal':
+            σ_ = nn.Dense(1, name=f'σ_')(hidden.flatten())
+
+        elif obj.likelihood == 'iso-normal':
+            σ_ = obj.param('σ_', obj.σ_init, (1,))
+
+        elif obj.likelihood == 'unit-iso-normal':
+            σ_ = jax.lax.stop_gradient(obj.param('σ_', init.constant(INV_SOFTPLUS_1), (1,)))
+
+        else:
+            assert obj.likelihood == 'diag-normal'
+            σ_ = obj.param('σ_', obj.σ_init, output_shape)
+
+        return distrax.Normal(loc=μ, scale=jax.nn.softplus(σ_).clip(min=obj.σ_min))
+
+
 class FCEncoder(nn.Module):
     latent_dim: int
     posterior: str = 'hetero-diag-normal'
@@ -48,10 +81,8 @@ class FCEncoder(nn.Module):
     act_fn: Union[Callable, str] = nn.relu
 
     @nn.compact
-    def __call__(self, x, train):
-        if self.posterior not in _POSTERIORS:
-            msg = f'`self.posterior` should be one of `{_POSTERIORS}` but was `{self.posterior}` instead.'
-            raise RuntimeError(msg)
+    def __call__(self, x, train=True):
+        raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
@@ -65,59 +96,32 @@ class FCEncoder(nn.Module):
         μ = nn.Dense(self.latent_dim, name=f'μ')(h)
         σ = jax.nn.softplus(nn.Dense(self.latent_dim, name=f'σ')(h))
 
-        return dists.Normal(loc=μ, scale=σ)
+        return distrax.Normal(loc=μ, scale=σ)
 
 
 class FCDecoder(nn.Module):
     image_shape: int
     likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    σ_init: Callable = init.constant(_INV_SOFTPLUS_1)
+    σ_init: Callable = init.constant(INV_SOFTPLUS_1)
     σ_min: float = 1e-2
     act_fn: Union[Callable, str] = nn.relu
 
     @nn.compact
-    def __call__(self, z, train):
-        if self.likelihood not in _LIKELIHOODS:
-            msg = f'`self.likelihood` should be one of `{_LIKELIHOODS}` but was `{self.likelihood}` instead.'
-            raise RuntimeError(msg)
+    def __call__(self, z, train=True):
+        raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
             self.hidden_dims = [500,]
 
         act_fn = _get_act_fn(self.act_fn)
 
-        output_dim = prod(self.image_shape)
-
         h = z
         for i, hidden_dim in enumerate(self.hidden_dims):
             h = act_fn(nn.Dense(hidden_dim, name=f'hidden{i}')(h))
 
-        if self.likelihood == 'bernoulli':
-            logits = nn.Dense(output_dim, name=f'logits')(h)
-
-            return dists.Bernoulli(logits=logits)
-
-        else:
-            μ = nn.Dense(output_dim, name=f'μ')(h)
-
-            if 'iso' in self.likelihood:
-                σ_size = 1
-            else:
-                σ_size = output_dim
-
-            if 'hetero' in self.likelihood:
-                σ = jax.nn.softplus(nn.Dense(σ_size, name=f'σ_')(h))
-            else:
-                σ = jax.nn.softplus(self.param(
-                    'σ_',
-                    self.σ_init,
-                    (σ_size,)
-                ))
-                if 'unit' in self.likelihood:
-                    σ = jax.lax.stop_gradient(σ)
-
-            return dists.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+        output_dim = prod(self.image_shape)
+        return create_likelihood(self, h, partial(nn.Dense, output_dim), (output_dim,))
 
 
 class ConvEncoder(nn.Module):
@@ -128,10 +132,8 @@ class ConvEncoder(nn.Module):
     norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
-    def __call__(self, x, train):
-        if self.posterior not in _POSTERIORS:
-            msg = f'`self.posterior` should be one of `{_POSTERIORS}` but was `{self.posterior}` instead.'
-            raise RuntimeError(msg)
+    def __call__(self, x, train=True):
+        raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
             self.hidden_dims = [64, 128]
@@ -154,23 +156,21 @@ class ConvEncoder(nn.Module):
         μ = nn.Dense(self.latent_dim, name=f'μ')(h)
         σ = jax.nn.softplus(nn.Dense(self.latent_dim, name='σ')(h))
 
-        return dists.Normal(loc=μ, scale=σ)
+        return distrax.Normal(loc=μ, scale=σ)
 
 
 class ConvDecoder(nn.Module):
     image_shape: int
     likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    σ_init: Callable = init.constant(_INV_SOFTPLUS_1)
+    σ_init: Callable = init.constant(INV_SOFTPLUS_1)
     σ_min: float = 1e-2
     act_fn: Union[Callable, str] = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
-    def __call__(self, z, train):
-        if self.likelihood not in _LIKELIHOODS:
-            msg = f'`self.likelihood` should be one of `{_LIKELIHOODS}` but was `{self.likelihood}` instead.'
-            raise RuntimeError(msg)
+    def __call__(self, z, train=True):
+        raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
             self.hidden_dims = [128, 64]
@@ -203,29 +203,7 @@ class ConvDecoder(nn.Module):
             strides=(1, 1),
         )
 
-        if self.likelihood == 'bernoulli':
-            logits = output_conv(name=f'logits')(h)
-            return dists.Bernoulli(logits=logits)
-
-        else:
-            μ = output_conv(name=f'μ')(h)
-
-            if 'hetero' in self.likelihood:
-                if not 'iso' in self.likelihood:
-                    σ = jax.nn.softplus(output_conv(name=f'σ_')(h))
-                else:
-                    σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h.flatten()))
-
-            else:
-                σ = jax.nn.softplus(self.param(
-                    'σ_',
-                    self.σ_init,
-                    (1,) if 'iso' in self.likelihood else self.image_shape
-                ))
-                if 'unit' in self.likelihood:
-                    σ = jax.lax.stop_gradient(σ)
-
-            return dists.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+        return create_likelihood(self, h, output_conv, self.image_shape)
 
 
 _convnext_initializer = nn.initializers.variance_scaling(
@@ -283,10 +261,8 @@ class ConvNeXtEncoder(nn.Module):
     norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
-    def __call__(self, x, train):
-        if self.posterior not in _POSTERIORS:
-            msg = f'`self.posterior` should be one of `{_POSTERIORS}` but was `{self.posterior}` instead.'
-            raise RuntimeError(msg)
+    def __call__(self, x, train=True):
+        raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
             self.hidden_dims = [64, 128, 256, 512]
@@ -311,24 +287,22 @@ class ConvNeXtEncoder(nn.Module):
         μ = nn.Dense(self.latent_dim, name=f'μ')(h)
         σ = jax.nn.softplus(nn.Dense(self.latent_dim, name='σ')(h))
 
-        return dists.Normal(loc=μ, scale=σ)
+        return distrax.Normal(loc=μ, scale=σ)
 
 
 class ConvNeXtDecoder(nn.Module):
     image_shape: int
     likelihood: str = 'iso-normal'
     hidden_dims: Optional[List[int]] = None
-    σ_init: Callable = init.constant(_INV_SOFTPLUS_1)
+    σ_init: Callable = init.constant(INV_SOFTPLUS_1)
     σ_min: float = 1e-2
     act_fn: Union[Callable, str] = nn.gelu
     norm_cls: nn.Module = nn.LayerNorm
 
 
     @nn.compact
-    def __call__(self, z, train):
-        if self.likelihood not in _LIKELIHOODS:
-            msg = f'`self.likelihood` should be one of `{_LIKELIHOODS}` but was `{self.likelihood}` instead.'
-            raise RuntimeError(msg)
+    def __call__(self, z, train=True):
+        raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
             self.hidden_dims = [512, 256, 128, 64]
@@ -359,27 +333,4 @@ class ConvNeXtDecoder(nn.Module):
             strides=(1, 1),
         )
 
-        if self.likelihood == 'bernoulli':
-            logits = output_conv(name=f'logits')(h)
-
-            return dists.Bernoulli(logits=logits)
-
-        else:
-            μ = output_conv(name=f'μ')(h)
-
-            if 'hetero' in self.likelihood:
-                if not 'iso' in self.likelihood:
-                    σ = jax.nn.softplus(output_conv(name=f'σ_')(h))
-                else:
-                    σ = jax.nn.softplus(nn.Dense(1, name=f'σ_')(h.flatten()))
-
-            else:
-                σ = jax.nn.softplus(self.param(
-                    'σ_',
-                    self.σ_init,
-                    (1,) if 'iso' in self.likelihood else self.image_shape
-                ))
-                if 'unit' in self.likelihood:
-                    σ = jax.lax.stop_gradient(σ)
-
-            return dists.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+        return create_likelihood(self, h, output_conv, self.image_shape)

@@ -9,9 +9,15 @@ from jax.tree_util import tree_map
 from chex import Array
 from flax import linen as nn
 import flax.linen.initializers as init
-import tensorflow_probability.substrates.jax.distributions as dists
+import distrax
 
-from src.models.enc_dec import FCDecoder, FCEncoder, ConvDecoder, ConvEncoder, ConvNeXtEncoder, ConvNeXtDecoder
+from src.models.enc_dec import (
+    FCDecoder, FCEncoder,
+    ConvDecoder, ConvEncoder,
+    ConvNeXtEncoder, ConvNeXtDecoder,
+    raise_if_not_in_list,
+    INV_SOFTPLUS_1
+)
 
 
 KwArgs = Mapping[str, Any]
@@ -58,14 +64,14 @@ class VAE(nn.Module):
         )
         self.prior_σ = jax.nn.softplus(self.param(
             'prior_σ_',
-            init.constant(jnp.log(jnp.exp(1) - 1.)),
+            init.constant(INV_SOFTPLUS_1),
             # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
             (self.latent_dim,)
         ))
         if not self.learn_prior:
             self.prior_μ = jax.lax.stop_gradient(self.prior_μ)
             self.prior_σ = jax.lax.stop_gradient(self.prior_σ)
-        self.p_z = dists.Normal(loc=self.prior_μ, scale=self.prior_σ)
+        self.p_z = distrax.Normal(loc=self.prior_μ, scale=self.prior_σ)
 
     def __call__(self, x, rng, train=True):
         q_z_x = self.enc(x, train=train)
@@ -84,10 +90,20 @@ class VAE(nn.Module):
             return p_x_z.mode()
 
 
+def _get_agg_fn(agg: str) -> Callable:
+    raise_if_not_in_list(agg, ['mean', 'sum'], 'aggregation')
+
+    if agg == 'mean':
+        return jnp.mean
+    else:
+        return jnp.sum
+
+
 def make_VAE_loss(
     model: VAE,
     x_batch: Array,
     train: bool = True,
+    aggregation: str = 'mean',
 ) -> Callable:
     """Creates a loss function for training a VAE."""
     def batch_loss(params, state, batch_rng, β=1.):
@@ -104,12 +120,13 @@ def make_VAE_loss(
 
             return -elbo, new_state, metrics
 
-        # Broadcast over batch and take mean.
+        # Broadcast over batch and aggregate.
+        agg = _get_agg_fn(aggregation)
         batch_losses, new_state, batch_metrics = jax.vmap(
             loss_fn, out_axes=(0, None, 0), in_axes=(0), axis_name='batch'
         )(x_batch)
-        batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
-        return batch_losses.mean(axis=0), (new_state, batch_metrics)
+        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
+        return agg(batch_losses, axis=0), (new_state, batch_metrics)
 
     return jax.jit(batch_loss)
 
@@ -120,6 +137,7 @@ def make_VAE_eval(
     zs: Array,
     img_shape: Tuple,
     num_recons: int = 16,
+    aggregation: str = 'mean',
 ) -> Callable:
     """Creates a function for evaluating a VAE."""
     def batch_eval(params, state, batch_rng, β=1.):
@@ -127,20 +145,21 @@ def make_VAE_eval(
 
         # Define eval func for 1 example.
         def eval_fn(x):
-            rng1, rng2 = random.split(random.fold_in(eval_rng, lax.axis_index('batch')))
+            z_rng, x_rng = random.split(random.fold_in(eval_rng, lax.axis_index('batch')))
             q_z_x, p_x_z, p_z = model.apply(
-                {'params': params, **state}, x, rng1, train=False
+                {'params': params, **state}, x, z_rng, train=False
             )
 
             metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β)
 
-            return metrics, p_x_z.mode(), p_x_z.sample(seed=rng2, sample_shape=(1,))
+            return metrics, p_x_z.mode(), p_x_z.sample(seed=x_rng, sample_shape=(1,))
 
-        # Broadcast over batch and take mean.
+        # Broadcast over batch and aggregate.
+        agg = _get_agg_fn(aggregation)
         batch_metrics, batch_x_recon_mode, batch_x_recon_sample = jax.vmap(
             eval_fn, out_axes=(0, 0, 0), in_axes=(0,), axis_name='batch'
         )(x_batch)
-        batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
+        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
 
         recon_comparison = jnp.concatenate([
             x_batch[:num_recons].reshape(-1, *img_shape),
