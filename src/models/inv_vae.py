@@ -10,7 +10,12 @@ from chex import Array
 import flax.linen as nn
 
 from src.models.vae import VAE
-from src.models.common import sample_transformed_data, make_invariant_encoder, raise_if_not_in_list, get_agg_fn
+from src.models.common import (
+    sample_transformed_data, make_invariant_encoder,
+    raise_if_not_in_list, get_agg_fn,
+    MAX_η, MIN_η,
+)
+
 
 
 KwArgs = Mapping[str, Any]
@@ -42,11 +47,12 @@ class invVAE(VAE):
         x = sample_transformed_data(xhat, transform_rng, self.η_low, self.η_high)
 
         if self.encoder_invariance in ['full', 'partial']:
-            inv_rot = self.max_rotation if self.encoder_invariance == 'partial' else jnp.pi/2
+            η_low = self.η_low if self.encoder_invariance == 'partial' else MIN_η
+            η_high = self.η_high if self.encoder_invariance == 'partial' else MAX_η
             invariance_samples = nn.merge_param(
                 'invariance_samples', self.invariance_samples, invariance_samples
             )
-            q_z_x = make_invariant_encoder(self.enc, x, self.η_low, self.η_high, invariance_samples, inv_rng, train)
+            q_z_x = make_invariant_encoder(self.enc, x, η_low, η_high, invariance_samples, inv_rng, train)
         else:
             q_z_x = self.enc(x, train=train)
 

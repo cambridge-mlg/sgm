@@ -9,6 +9,11 @@ import tensorflow_probability.substrates.jax.distributions as dists
 from src.transformations.affine import gen_transform_mat, transform_image
 
 
+MIN_η = jnp.array([0., 0., -jnp.pi/2, 0., 0., 0., 0.])
+MAX_η = jnp.array([0., 0., jnp.pi/2, 0., 0., 0., 0.])
+# ^ For now we are just working with rotations, so other transformations are off.
+
+
 INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
 # ^ this value is softplus^{-1}(1), i.e. if we get σ as softplus(σ_),
 # and we init σ_ to this value, we effectively init σ to 1.
