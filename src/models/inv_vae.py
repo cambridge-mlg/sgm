@@ -10,7 +10,7 @@ from chex import Array
 import flax.linen as nn
 
 from src.models.vae import VAE
-from src.models.common import sample_transformed_data, make_invariant_encoder, raise_if_not_in_list
+from src.models.common import sample_transformed_data, make_invariant_encoder, raise_if_not_in_list, get_agg_fn
 
 
 KwArgs = Mapping[str, Any]
@@ -77,6 +77,7 @@ def make_invVAE_loss(
     model: invVAE,
     x_batch: Array,
     train: bool = True,
+    aggregation: str = 'mean',
 ) -> Callable:
     """Creates a loss function for training a VAE."""
     def batch_loss(params, state, batch_rng, β=1.):
@@ -94,12 +95,13 @@ def make_invVAE_loss(
 
             return -elbo, new_state, metrics
 
-        # Broadcast over batch and take mean.
+        # Broadcast over batch and take aggregate.
+        agg = get_agg_fn(aggregation)
         batch_losses, new_state, batch_metrics = jax.vmap(
             loss_fn, out_axes=(0, None, 0), in_axes=(0), axis_name='batch'
         )(x_batch)
-        batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
-        return batch_losses.mean(axis=0), (new_state, batch_metrics)
+        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
+        return agg(batch_losses, axis=0), (new_state, batch_metrics)
 
     return jax.jit(batch_loss)
 
@@ -110,6 +112,7 @@ def make_invVAE_eval(
     zs: Array,
     img_shape: Tuple,
     num_recons: int = 16,
+    aggregation: str = 'mean',
 ) -> Callable:
     """Creates a function for evaluating a VAE."""
     def batch_eval(params, state, batch_rng, β=1.):
@@ -117,20 +120,21 @@ def make_invVAE_eval(
 
         # Define eval func for 1 example.
         def eval_fn(xhat):
-            rng1, rng2 = random.split(random.fold_in(eval_rng, lax.axis_index('batch')))
+            z_rng, x_rng = random.split(random.fold_in(eval_rng, lax.axis_index('batch')))
             q_z_x, p_xhat_z, p_z = model.apply(
-                {'params': params, **state}, xhat, rng1, train=False
+                {'params': params, **state}, xhat, z_rng, train=False
             )
 
             metrics = _calculate_elbo_and_metrics(xhat, q_z_x, p_xhat_z, p_z, β)
 
-            return metrics, p_xhat_z.mode(), p_xhat_z.sample(seed=rng2, sample_shape=(1,))
+            return metrics, p_xhat_z.mode(), p_xhat_z.sample(seed=x_rng, sample_shape=(1,))
 
-        # Broadcast over batch and take mean.
+        # Broadcast over batch and aggregate.
+        agg = get_agg_fn(aggregation)
         batch_metrics, batch_x_recon_mode, batch_x_recon_sample = jax.vmap(
             eval_fn, out_axes=(0, 0, 0), in_axes=(0,), axis_name='batch'
         )(x_batch)
-        batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
+        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
 
         recon_comparison = jnp.concatenate([
             x_batch[:num_recons].reshape(-1, *img_shape),

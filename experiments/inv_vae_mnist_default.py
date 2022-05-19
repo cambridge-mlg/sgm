@@ -32,15 +32,15 @@ def get_config() -> config_dict.ConfigDict:
     config.model.latent_dim = 32
     config.model.learn_prior = False
     config.model.architecture = 'ConvNeXt'  # 'ConvNet'  # 'MLP'
-    config.model.η_max = [0., 0., jnp.pi/4, 0., 0., 0.]
-    config.model.η_min = [0., 0., -jnp.pi/4, 0., 0., 0.]
+    config.model.η_max = [0., 0., jnp.pi/4, 0., 0., 0., 0.]
+    config.model.η_min = [0., 0., -jnp.pi/4, 0., 0., 0., 0.]
     config.model.encoder_invariance = 'partial'  # 'none'  # 'full'
     config.model.invariance_samples = 4
 
     config.β = 10  # 10
     config.β_schedule_name = 'cosine_decay_schedule'
     config.β_schedule = config_dict.ConfigDict()
-    β_end_value = 3
+    config.β_end_value = 3
     config.β_schedule.alpha = β_end_value / config.β
     config.β_schedule.decay_steps = config.epochs * num_batches_per_epoch
 
