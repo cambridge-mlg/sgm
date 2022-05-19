@@ -65,7 +65,7 @@ def create_likelihood(obj, hidden, output_layer, output_shape):
             σ_ = obj.param('σ_', obj.σ_init, (1,))
 
         elif obj.likelihood == 'unit-iso-normal':
-            σ_ = jax.lax.stop_gradient(obj.param('σ_', init.ones, (1,)))
+            σ_ = jax.lax.stop_gradient(obj.param('σ_', init.constant(INV_SOFTPLUS_1), (1,)))
 
         else:
             assert obj.likelihood == 'diag-normal'
@@ -81,7 +81,7 @@ class FCEncoder(nn.Module):
     act_fn: Union[Callable, str] = nn.relu
 
     @nn.compact
-    def __call__(self, x, train):
+    def __call__(self, x, train=True):
         raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
@@ -108,7 +108,7 @@ class FCDecoder(nn.Module):
     act_fn: Union[Callable, str] = nn.relu
 
     @nn.compact
-    def __call__(self, z, train):
+    def __call__(self, z, train=True):
         raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
@@ -132,7 +132,7 @@ class ConvEncoder(nn.Module):
     norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
-    def __call__(self, x, train):
+    def __call__(self, x, train=True):
         raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
@@ -169,7 +169,7 @@ class ConvDecoder(nn.Module):
     norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
-    def __call__(self, z, train):
+    def __call__(self, z, train=True):
         raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
@@ -261,7 +261,7 @@ class ConvNeXtEncoder(nn.Module):
     norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
-    def __call__(self, x, train):
+    def __call__(self, x, train=True):
         raise_if_not_in_list(self.posterior, _POSTERIORS, 'self.posterior')
 
         if self.hidden_dims is None:
@@ -301,7 +301,7 @@ class ConvNeXtDecoder(nn.Module):
 
 
     @nn.compact
-    def __call__(self, z, train):
+    def __call__(self, z, train=True):
         raise_if_not_in_list(self.likelihood, _LIKELIHOODS, 'self.likelihood')
 
         if self.hidden_dims is None:
