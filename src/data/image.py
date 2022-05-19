@@ -50,8 +50,8 @@ class ToNumpy:
 
 
 def _transform_data(data, η_low=None, η_high=None, seed=42):
+    # Identity transform:
     if η_low is None:
-        # Identity transform.
         η_low = jnp.array([0., 0., 0., 0., 0., 0., 0.])
     if η_high is None:
         η_high = jnp.array([0., 0., 0., 0., 0., 0., 0.])
