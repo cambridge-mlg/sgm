@@ -12,7 +12,7 @@ import flax.linen.initializers as init
 import distrax
 
 from src.models.enc_dec import FCDecoder, FCEncoder, ConvDecoder, ConvEncoder, ConvNeXtEncoder, ConvNeXtDecoder
-from src.models.common import raise_if_not_in_list, INV_SOFTPLUS_1, get_agg_fn
+from src.models.common import INV_SOFTPLUS_1, get_agg_fn, raise_if_not_in_list
 
 
 KwArgs = Mapping[str, Any]
@@ -25,6 +25,22 @@ _ARCHITECTURES = [
 ]
 
 
+def get_enc_dec(architecture: str) -> Tuple[nn.Module, nn.Module]:
+    raise_if_not_in_list(architecture, _ARCHITECTURES, 'self.architecture')
+
+    if architecture == 'ConvNet':
+        Encoder = ConvEncoder
+        Decoder = ConvDecoder
+    elif architecture == 'MLP':
+        Encoder = FCEncoder
+        Decoder = FCDecoder
+    else:
+        Encoder = ConvNeXtEncoder
+        Decoder = ConvNeXtDecoder
+
+    return Encoder, Decoder
+
+
 class VAE(nn.Module):
     latent_dim: int = 20
     # TODO: support other priors? e.g.:
@@ -35,17 +51,7 @@ class VAE(nn.Module):
     decoder: Optional[KwArgs] = None
 
     def setup(self):
-        raise_if_not_in_list(self.architecture, _ARCHITECTURES, 'self.architecture')
-
-        if self.architecture == 'ConvNet':
-            Encoder = ConvEncoder
-            Decoder = ConvDecoder
-        elif self.architecture == 'MLP':
-            Encoder = FCEncoder
-            Decoder = FCDecoder
-        else:
-            Encoder = ConvNeXtEncoder
-            Decoder = ConvNeXtDecoder
+        Encoder, Decoder = get_enc_dec(self.architecture)
 
         self.enc = Encoder(latent_dim=self.latent_dim, **(self.encoder or {}))
         self.dec = Decoder(**(self.decoder or {}))
