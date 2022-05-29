@@ -174,8 +174,8 @@ def make_VAE_eval(
 
         x_samples, x_modes = sample_fn(zs)
         samples = jnp.concatenate([
-            x_samples.reshape(-1, *img_shape),
             x_modes.reshape(-1, *img_shape),
+            x_samples.reshape(-1, *img_shape),
         ])
 
         return batch_metrics, recon_comparison, samples
