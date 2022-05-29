@@ -31,3 +31,4 @@ python3.9 -m ipykernel install --user --name=inv
  - [ ] Make CNN implementation match that of [Dubois et al.](https://github.com/YannDubs/lossyless/blob/462af23a52d68f860e5ae2ff9c59f04cfb8c5fd5/lossyless/architectures.py#L235). That is, resize images to be of power 2, then have the CNN downsample in h & w dims at each stage. Use [this](https://jax.readthedocs.io/en/latest/_autosummary/jax.image.resize.html) rather than [this](https://pytorch.org/vision/main/generated/torchvision.transforms.Resize.html).
  - [ ] Try reproduce reconstruction behaviour of Dubois et al. That is, we want reconstructions to not show the symmetry to which they are supposed to be invariant. Perhaps we need more of a bottle neck.
  - [ ] Figure out why the transformed samples for the inv-VAE look less noisy than the original samples.
+ - [ ] Switch to simpler per-batch logging.
