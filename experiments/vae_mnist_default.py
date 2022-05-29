@@ -9,6 +9,7 @@ def get_config() -> config_dict.ConfigDict:
 
     config.epochs = 25
     config.batch_size = 256
+    config.random_seed = 0
 
     config.dataset_name = 'MNIST'
     config.dataset = config_dict.ConfigDict()
@@ -36,18 +37,18 @@ def get_config() -> config_dict.ConfigDict:
     config.lr_schedule.decay_steps = config.epochs * num_batches_per_epoch
     config.lr_schedule.warmup_steps = int(0.2 * config.lr_schedule.decay_steps)
 
-    config.model_name = 'VAE'
-    config.model = config_dict.ConfigDict()
-    config.model.latent_dim = 128
-    config.model.learn_prior = False
-    config.model.architecture = 'ConvNet'
-
     config.β = 10
     config.β_schedule_name = 'cosine_decay_schedule'
     config.β_schedule = config_dict.ConfigDict()
     config.β_end_value = 1
     config.β_schedule.alpha = config.β_end_value / config.β
     config.β_schedule.decay_steps = config.epochs * num_batches_per_epoch
+
+    config.model_name = 'VAE'
+    config.model = config_dict.ConfigDict()
+    config.model.latent_dim = 128
+    config.model.learn_prior = False
+    config.model.architecture = 'ConvNet'
 
     config.model.encoder = config_dict.ConfigDict()
     config.model.encoder.posterior = 'hetero-diag-normal'

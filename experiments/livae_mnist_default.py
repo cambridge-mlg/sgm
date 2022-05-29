@@ -10,6 +10,7 @@ def get_config() -> config_dict.ConfigDict:
 
     config.epochs = 25
     config.batch_size = 256
+    config.random_seed = 0
 
     config.dataset_name = 'MNIST'
     config.dataset = config_dict.ConfigDict()
@@ -27,14 +28,22 @@ def get_config() -> config_dict.ConfigDict:
     config.optim.weight_decay = 1e-4
     config.learning_rate = 1e-4
 
+    num_train, _ = train_val_split_sizes(METADATA['num_train'][config.dataset_name], config.dataset.val_percent)
+    num_batches_per_epoch = ceil(num_train / config.batch_size)
+
     config.lr_schedule_name = 'warmup_cosine_decay_schedule'
     config.lr_schedule = config_dict.ConfigDict()
     config.lr_schedule.peak_value = 3 * config.learning_rate
     config.lr_schedule.end_value = 1/3 * config.learning_rate
-    num_train, _ = train_val_split_sizes(METADATA['num_train'][config.dataset_name], config.dataset.val_percent)
-    num_batches_per_epoch = ceil(num_train / config.batch_size)
     config.lr_schedule.decay_steps = config.epochs * num_batches_per_epoch
     config.lr_schedule.warmup_steps = int(0.2 * config.lr_schedule.decay_steps)
+
+    config.β = 10
+    config.β_schedule_name = 'cosine_decay_schedule'
+    config.β_schedule = config_dict.ConfigDict()
+    config.β_end_value = 1
+    config.β_schedule.alpha = config.β_end_value / config.β
+    config.β_schedule.decay_steps = config.epochs * num_batches_per_epoch
 
     config.model_name = 'LIVAE'
     config.model = config_dict.ConfigDict()
@@ -44,13 +53,6 @@ def get_config() -> config_dict.ConfigDict:
     config.model.encoder_invariance = 'none'  # 'partial'  # 'full'
     config.model.invariance_samples = 0
     config.model.learn_η_prior = True
-
-    config.β = 10
-    config.β_schedule_name = 'cosine_decay_schedule'
-    config.β_schedule = config_dict.ConfigDict()
-    config.β_end_value = 1
-    config.β_schedule.alpha = config.β_end_value / config.β
-    config.β_schedule.decay_steps = config.epochs * num_batches_per_epoch
 
     config.model.encoder = config_dict.ConfigDict()
     config.model.encoder.posterior = 'hetero-diag-normal'
