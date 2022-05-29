@@ -7,17 +7,26 @@ from src.data import METADATA, train_val_split_sizes
 def get_config() -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
 
-    config.dataset_name = 'MNIST'
-    config.val_percent = 0.1
-    config.batch_size = 256
     config.epochs = 25
+    config.batch_size = 256
+
+    config.dataset_name = 'MNIST'
+    config.dataset = config_dict.ConfigDict()
+    config.dataset.data_dir = '/homes/jua23/Git/learning-invariances/raw_data'
+    config.dataset.flatten_img = False
+    config.dataset.val_percent = 0.1
+    config.dataset.random_seed = 42
+    config.dataset.train_augmentations = []
+    config.dataset.test_augmentations = []
+    config.dataset.η_low = None
+    config.dataset.η_high= None
 
     config.optim_name = 'adamw'
     config.optim = config_dict.ConfigDict()
     config.optim.weight_decay = 1e-4
     config.learning_rate = 1e-4
 
-    num_train, _ = train_val_split_sizes(METADATA['num_train'][config.dataset_name], config.val_percent)
+    num_train, _ = train_val_split_sizes(METADATA['num_train'][config.dataset_name], config.dataset.val_percent)
     num_batches_per_epoch = ceil(num_train / config.batch_size)
 
     config.lr_schedule_name = 'warmup_cosine_decay_schedule'
