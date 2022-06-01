@@ -112,7 +112,6 @@ def make_invVAE_loss(
 def make_invVAE_eval(
     model: invVAE,
     x_batch: Array,
-    zs: Array,
     img_shape: Tuple,
     num_recons: int = 16,
     aggregation: str = 'mean',

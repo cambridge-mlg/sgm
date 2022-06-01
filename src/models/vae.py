@@ -126,7 +126,6 @@ def make_VAE_loss(
 def make_VAE_eval(
     model: VAE,
     x_batch: Array,
-    zs: Array,
     img_shape: Tuple,
     num_recons: int = 16,
     aggregation: str = 'mean',

@@ -134,7 +134,6 @@ def make_LIVAE_loss(
 def make_LIVAE_eval(
     model: LIVAE,
     x_batch: Array,
-    zs: Array,
     img_shape: Tuple,
     num_recons: int = 16,
     aggregation: str = 'mean',

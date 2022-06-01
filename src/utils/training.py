@@ -205,7 +205,7 @@ def train_loop(
 
         @partial(jax.jit, static_argnames='metrics_only')
         def eval_step(state, x_batch, rng, metrics_only=False):
-            eval_fn = make_eval_fn(model, x_batch, zs, config.model.decoder.image_shape, aggregation='sum')
+            eval_fn = make_eval_fn(model, x_batch, config.model.decoder.image_shape, aggregation='sum')
 
             metrics, recon_data, sample_data = eval_fn(
                 state.params, state.model_state, rng, state.β,
