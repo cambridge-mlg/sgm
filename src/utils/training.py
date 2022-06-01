@@ -169,8 +169,8 @@ def train_loop(
 
         `make_eval_fn` is a callable with four arguments (model, x_batch, zs, image_shape), that returns
         a function for evaluating the model. The returned evaluation function should take four
-        arguments (params, model_state, rng, β) and return (metrics, recon_comparison, sampled_images).
-        TODO: describe the format for reco_comaprison and sampled_images.
+        arguments (params, model_state, rng, β) and return (metrics, recon_data, sample_data, recon_title, sample_title).
+        TODO: describe the format for reco_comaprison and sample_data, recon_title, sample_title.
 
         If `test_loader` is supplied, on epochs for which the validation loss is the new best, the test set
         will be evaluated using `make_eval_fn` and the results will be added to the W&B summary.
@@ -207,14 +207,14 @@ def train_loop(
         def eval_step(state, x_batch, rng, metrics_only=False):
             eval_fn = make_eval_fn(model, x_batch, zs, config.model.decoder.image_shape, aggregation='sum')
 
-            metrics, recon_comparison, sampled_images = eval_fn(
+            metrics, recon_data, sample_data = eval_fn(
                 state.params, state.model_state, rng, state.β,
             )
 
             if metrics_only:
                 return metrics
             else:
-                return metrics, recon_comparison, sampled_images
+                return metrics, recon_data, sample_data
 
 
         train_losses = []
@@ -237,7 +237,7 @@ def train_loop(
             for i, (x_batch, _) in enumerate(val_loader):
                 rng, eval_rng = random.split(rng)
                 if i==0:
-                    metrics, recon_comparison, sampled_images = eval_step(state, x_batch, eval_rng)
+                    metrics, recon_data, sample_data = eval_step(state, x_batch, eval_rng)
                 else:
                     metrics = eval_step(state, x_batch, eval_rng, metrics_only=True)
                 batch_metrics.append(metrics)
@@ -254,10 +254,8 @@ def train_loop(
             epochs.set_postfix_str(metrics_str)
             print(f'epoch: {epoch:3} - {metrics_str}')
 
-            recon_plot_title = "Reconstructions – Top: original; Mid: mode; Bot: sample"
-            recon_plot = plot_img_array(recon_comparison, title=recon_plot_title)
-            samples_plot_title = "Prior Samples – Top: mode; Bot: sample"
-            samples_plot = plot_img_array(sampled_images, title=samples_plot_title)
+            recon_plot = plot_img_array(recon_data, title=model.recon_title)
+            samples_plot = plot_img_array(sample_data, title=model.sample_title)
             metrics = {
                 'epoch': epoch,
                 'train/loss': train_losses[-1],
@@ -284,7 +282,7 @@ def train_loop(
                     for i, (x_batch, _) in enumerate(test_loader):
                         eval_rng, test_rng = random.split(test_rng)
                         if i==0:
-                            metrics, recon_comparison, sampled_images = eval_step(state, x_batch, eval_rng)
+                            metrics, recon_data, sample_data = eval_step(state, x_batch, eval_rng)
                         else:
                             metrics = eval_step(state, x_batch, eval_rng, metrics_only=True)
                         batch_metrics.append(metrics)
@@ -297,9 +295,7 @@ def train_loop(
                     run.summary['test/loss'] = -test_metrics['elbo']
                     for key, val in test_metrics.items():
                         run.summary['test/' + key] = val
-                    run.summary['test_reconstructions'] = plot_img_array(
-                        recon_comparison, title=recon_plot_title)
-                    run.summary['best_prior_samples'] = plot_img_array(
-                        sampled_images, title=samples_plot_title)
+                    run.summary['test_reconstructions'] = plot_img_array(recon_data, title=model.recon_title)
+                    run.summary['best_prior_samples'] = plot_img_array(sample_data, title=model.sample_title)
 
     return state

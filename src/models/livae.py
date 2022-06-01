@@ -30,6 +30,8 @@ class LIVAE(VAE):
     encoder_invariance: str = 'partial'
     invariance_samples: Optional[int] = None
     learn_η_prior: bool = False
+    recon_title: str = "Reconstructions: original – $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
+    sample_title: str = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
 
     def setup(self):
         super().setup()
@@ -77,7 +79,6 @@ class LIVAE(VAE):
     def generate(self, rng, sample_shape=(), return_mode=False, return_xhat=False):
         z_rng, η_rng, xhat_rng, transform_rng = random.split(rng, 4)
         z = self.p_z.sample(seed=z_rng)
-        η = self.p_η.sample(seed=η_rng)
         p_xhat_z = self.dec(z, train=False)
 
         if not return_mode:
@@ -88,11 +89,13 @@ class LIVAE(VAE):
         if return_xhat:
             return xhat
         else:
+            η = self.p_η.sample(seed=η_rng)
+            # TODO: if return_mode=True, take mode of p_η ^
             T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
-            x_ = transform_image(xhat, T)
+            x = transform_image(xhat, T)
             # TODO: make noisy?
             # TODO: vmap this to deal with more than 1 sample
-            return x_
+            return x
 
 
 def make_LIVAE_loss(
@@ -142,26 +145,34 @@ def make_LIVAE_eval(
 
         # Define eval func for 1 example.
         def eval_fn(x):
-            z_rng, x_rng = random.split(random.fold_in(eval_rng, lax.axis_index('batch')))
+            z_rng, x_hat_rng, x_rng = random.split(random.fold_in(eval_rng, lax.axis_index('batch')), 3)
             q_z_x, q_η_x, p_x_xhat_η, p_xhat_z, p_z, p_η = model.apply(
                 {'params': params, **state}, x, z_rng, train=False
             )
 
             metrics = _calculate_elbo_and_metrics(x, q_z_x, q_η_x, p_x_xhat_η, p_z, p_η, β)
 
-            return metrics, p_xhat_z.mode(), p_xhat_z.sample(seed=x_rng, sample_shape=(1,))
+            x_hat_mode = p_xhat_z.mode()
+            x_hat_sample = p_xhat_z.sample(seed=x_hat_rng, sample_shape=(1,))
+
+            x_mode = p_x_xhat_η.mode()
+            x_sample = p_x_xhat_η.sample(seed=x_rng, sample_shape=(1,))
+
+            return metrics, x_hat_mode, x_hat_sample, x_mode, x_sample
 
         # Broadcast over batch and aggregate.
         agg = get_agg_fn(aggregation)
-        batch_metrics, batch_x_recon_mode, batch_x_recon_sample = jax.vmap(
-            eval_fn, out_axes=(0, 0, 0), in_axes=(0,), axis_name='batch'
+        batch_metrics, batch_x_hat_mode, batch_x_hat_sample, batch_x_mode, batch_x_sample = jax.vmap(
+            eval_fn, out_axes=(0, 0, 0, 0, 0), in_axes=(0,), axis_name='batch'
         )(x_batch)
         batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
 
-        recon_comparison = jnp.concatenate([
+        recon_array = jnp.concatenate([
             x_batch[:num_recons].reshape(-1, *img_shape),
-            batch_x_recon_mode[:num_recons].reshape(-1, *img_shape),
-            batch_x_recon_sample[:num_recons].reshape(-1, *img_shape),
+            batch_x_hat_mode[:num_recons].reshape(-1, *img_shape),
+            batch_x_mode[:num_recons].reshape(-1, *img_shape),
+            batch_x_hat_sample[:num_recons].reshape(-1, *img_shape),
+            batch_x_sample[:num_recons].reshape(-1, *img_shape),
         ])
 
         @partial(jax.vmap, axis_name='batch')
@@ -189,14 +200,14 @@ def make_LIVAE_eval(
             return xhat_mode, x_mode, xhat_sample, x_sample
 
         xhat_modes, x_modes, xhat_samples, x_samples = sample_fn(random.split(sample_rng, num_recons))
-        samples = jnp.concatenate([
+        sample_array = jnp.concatenate([
             xhat_modes.reshape(-1, *img_shape),
             x_modes.reshape(-1, *img_shape),
             xhat_samples.reshape(-1, *img_shape),
             x_samples.reshape(-1, *img_shape),
         ])
 
-        return batch_metrics, recon_comparison, samples
+        return batch_metrics, recon_array, sample_array
 
     return jax.jit(batch_eval)
 

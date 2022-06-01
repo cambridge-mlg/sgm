@@ -28,6 +28,8 @@ class invVAE(VAE):
     η_high: Optional[Union[Array, List]] = None
     encoder_invariance: str = 'partial'
     invariance_samples: Optional[int] = None
+    recon_title: str = "Reconstructions: original – $x$ mode - $x$ sample"
+    sample_title: str = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
 
     def setup(self):
         super().setup()
@@ -137,7 +139,7 @@ def make_invVAE_eval(
         )(x_batch)
         batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
 
-        recon_comparison = jnp.concatenate([
+        recon_array = jnp.concatenate([
             x_batch[:num_recons].reshape(-1, *img_shape),
             batch_x_recon_mode[:num_recons].reshape(-1, *img_shape),
             batch_x_recon_sample[:num_recons].reshape(-1, *img_shape),
@@ -169,14 +171,14 @@ def make_invVAE_eval(
             return xhat_mode, x_mode, xhat_sample, x_sample
 
         xhat_modes, x_modes, xhat_samples, x_samples = sample_fn(zs)
-        samples = jnp.concatenate([
+        sample_array = jnp.concatenate([
             xhat_modes.reshape(-1, *img_shape),
             x_modes.reshape(-1, *img_shape),
             xhat_samples.reshape(-1, *img_shape),
             x_samples.reshape(-1, *img_shape),
         ])
 
-        return batch_metrics, recon_comparison, samples
+        return batch_metrics, recon_array, sample_array
 
     return jax.jit(batch_eval)
 

@@ -49,6 +49,8 @@ class VAE(nn.Module):
     architecture: str = 'MLP'
     encoder: Optional[KwArgs] = None
     decoder: Optional[KwArgs] = None
+    recon_title: str = "Reconstructions: original – $x$ mode - $x$ sample"
+    sample_title: str = "Prior Samples: $x$ mode - $x$ sample"
 
     def setup(self):
         Encoder, Decoder = get_enc_dec(self.architecture)
@@ -151,7 +153,7 @@ def make_VAE_eval(
         )(x_batch)
         batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
 
-        recon_comparison = jnp.concatenate([
+        recon_array = jnp.concatenate([
             x_batch[:num_recons].reshape(-1, *img_shape),
             batch_x_recon_mode[:num_recons].reshape(-1, *img_shape),
             batch_x_recon_sample[:num_recons].reshape(-1, *img_shape),
@@ -173,12 +175,13 @@ def make_VAE_eval(
             return x_sample, x_mode
 
         x_samples, x_modes = sample_fn(zs)
-        samples = jnp.concatenate([
+        sample_array = jnp.concatenate([
             x_modes.reshape(-1, *img_shape),
             x_samples.reshape(-1, *img_shape),
         ])
 
-        return batch_metrics, recon_comparison, samples
+
+        return batch_metrics, recon_array, sample_array
 
     return jax.jit(batch_eval)
 
