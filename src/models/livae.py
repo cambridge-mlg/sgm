@@ -91,8 +91,11 @@ class LIVAE(VAE):
         if return_xhat:
             return xhat
         else:
-            η = self.p_η.sample(seed=η_rng)
-            # TODO: if return_mode=True, take mode of p_η ^
+            if not return_mode:
+                η = self.p_η.sample(seed=η_rng)
+            else:
+                η = self.p_η.mode()
+
             T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
             x = transform_image(xhat, T)
             # TODO: make noisy?
@@ -146,7 +149,7 @@ def make_LIVAE_eval(
 
         # Define eval func for 1 example.
         def eval_fn(x):
-            z_rng, x_hat_rng, x_rng = random.split(random.fold_in(eval_rng, lax.axis_index('batch')), 3)
+            z_rng, x_hat_rng, η_rng = random.split(random.fold_in(eval_rng, lax.axis_index('batch')), 3)
             q_z_x, q_η_x, p_x_xhat_η, p_xhat_z, p_z, p_η = model.apply(
                 {'params': params, **state}, x, z_rng, train=False
             )
@@ -154,10 +157,15 @@ def make_LIVAE_eval(
             metrics = _calculate_elbo_and_metrics(x, q_z_x, q_η_x, p_x_xhat_η, p_z, p_η, β)
 
             x_hat_mode = p_xhat_z.mode()
-            x_hat_sample = p_xhat_z.sample(seed=x_hat_rng, sample_shape=(1,))
+            x_hat_sample = p_xhat_z.sample(seed=x_hat_rng, sample_shape=())
 
-            x_mode = p_x_xhat_η.mode()
-            x_sample = p_x_xhat_η.sample(seed=x_rng, sample_shape=(1,))
+            η = q_η_x.mode()
+            T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
+            x_mode = transform_image(x_hat_mode, T)
+
+            η = q_η_x.sample(seed=η_rng)
+            T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
+            x_sample = transform_image(x_hat_sample, T)
 
             return metrics, x_hat_mode, x_hat_sample, x_mode, x_sample
 
