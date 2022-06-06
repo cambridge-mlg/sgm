@@ -36,6 +36,14 @@ class invVAE(VAE):
             msg = f'`self.η_low` and self.η_high` must be specified, but were ({self.η_low}, {self.η_high}). See src.transformations.affine.gen_transform_mat for specification details.'
             raise RuntimeError(msg)
 
+        if jnp.any(self.n_high < self.n_low):
+            msg = f'`self.n_high` ({self.n_high}) must be greater than or equal to `self.n_low` ({self.n_low}).'
+            raise RuntimeError(msg)
+
+        if jnp.any(self.η_high > MAX_η) or jnp.any(self.η_low < MIN_η):
+            msg = f'`self.η_low` and `self.η_high` must be in the range `[{MIN_η}, {MAX_η}]`, but were ({self.η_low}, {self.η_high}).'
+            raise RuntimeError(msg)
+
     def __call__(self, xhat, rng, train=True, invariance_samples=None):
         raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
 
@@ -43,6 +51,9 @@ class invVAE(VAE):
         x = sample_transformed_data(xhat, transform_rng, self.η_low, self.η_high)
 
         if self.encoder_invariance in ['full', 'partial']:
+            # Here we are choose between having an encoder that is fully invariant to transformations
+            # e.g. in the case of rotations, for angles between -π and π, or partially invariant
+            # as specified by self.η_low and self.η_high.
             η_low = self.η_low if self.encoder_invariance == 'partial' else MIN_η
             η_high = self.η_high if self.encoder_invariance == 'partial' else MAX_η
             invariance_samples = nn.merge_param(
