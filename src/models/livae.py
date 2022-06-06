@@ -46,8 +46,9 @@ class LIVAE(VAE):
             init.constant(INV_SOFTPLUS_1),
             (1,)
         ))
+        # we always fix loc=0 to avoid identifiability issues
+        self.η_prior_μ = jax.lax.stop_gradient(self.η_prior_μ)
         if not self.learn_η_prior:
-            self.η_prior_μ = jax.lax.stop_gradient(self.η_prior_μ)
             self.η_prior_σ = jax.lax.stop_gradient(self.η_prior_σ)
         self.p_η = distrax.Normal(loc=self.η_prior_μ, scale=self.η_prior_σ)
 
@@ -73,6 +74,7 @@ class LIVAE(VAE):
         x_ = transform_image(xhat, T)
         # TODO: make noisy?
         p_x_xhat_η = distrax.Normal(x_, 1.)
+        # TODO: learn scale param here?
 
         return q_z_x, q_η_x, p_x_xhat_η, p_xhat_z, self.p_z, self.p_η
 
