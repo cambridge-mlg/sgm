@@ -32,3 +32,15 @@ python3.9 -m ipykernel install --user --name=inv
  - [ ] Try reproduce reconstruction behaviour of Dubois et al. That is, we want reconstructions to not show the symmetry to which they are supposed to be invariant. Perhaps we need more of a bottle neck.
  - [ ] Figure out why the transformed samples for the inv-VAE look less noisy than the original samples.
  - [ ] Switch to simpler per-batch logging.
+
+
+ ## Javi convo take-aways
+
+  - Fix prior at loc=0 to avoid identifiability issues
+  - Equivariance proof from AGW is only valid when transformation is closed (e.g. rotations in 0 to 2π)
+  - Model from z -> x_hat can be a pretrained monster network from Google. Then q(z|x) just needs to learn to find the zs which produce prototypical inputs
+  - q(z|x) being invariant to η is enough to make p(η) contain all of the information about the transformations. This is because we know the true poserior to be invariant, and so any q which is not invariant must be further from the true posterior, and if p(η) doesn't describe the transofrmations fully then q(z|x) must be explaining some. 
+    - TODO: try to prove this using E_η{KL[q(x_hat|x)||p(x_hat|x)]} >= KL[E_η{q(x_hat|x)}||||p(x_hat|x)] (Note: E_η{p(x_hat|x)}= p(x_hat|x)).
+  - q(z|x) should be partially invariant, since this solves identifiability issues. E.g. imagine a generative model of 6s and 9s and a prior on p(η) with deltas at 0 and π degrees. Then if q(z|x) is fully equivariant, we will generate both 6s and 9s from the same z. 
+  - we may want a generative model in which η depends on x_hat. For example, consider gaussian convariances, here we can view σ_12 as a rotation and σ_1 and σ_2 as being shape params. However, σ_12 depends on σ_1 and σ_2. 2D ellipses might be a nice toy example? 
+  - Do an experiment with rotating digits, make sure that rotating a prototype with rotations drawn from the prior and then encoding a z and then turning that into a new prototype. Hopefully new proto == orig proto.
