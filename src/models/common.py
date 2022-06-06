@@ -9,8 +9,8 @@ import distrax
 from src.transformations.affine import gen_transform_mat, transform_image
 
 
-MIN_η = jnp.array([0., 0., -jnp.pi/2, 0., 0., 0., 0.])
-MAX_η = jnp.array([0., 0., jnp.pi/2, 0., 0., 0., 0.])
+MIN_η = jnp.array([0., 0., -jnp.pi, 0., 0., 0., 0.])
+MAX_η = jnp.array([0., 0., jnp.pi, 0., 0., 0., 0.])
 # ^ For now we are just working with rotations, so other transformations are off.
 
 
