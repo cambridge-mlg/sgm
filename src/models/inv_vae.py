@@ -51,7 +51,7 @@ class invVAE(VAE):
         x = sample_transformed_data(xhat, transform_rng, self.η_low, self.η_high)
 
         if self.encoder_invariance in ['full', 'partial']:
-            # Here we are choose between having an encoder that is fully invariant to transformations
+            # Here we choose between having an encoder that is fully invariant to transformations
             # e.g. in the case of rotations, for angles between -π and π, or partially invariant
             # as specified by self.η_low and self.η_high.
             η_low = self.η_low if self.encoder_invariance == 'partial' else MIN_η
@@ -59,7 +59,11 @@ class invVAE(VAE):
             invariance_samples = nn.merge_param(
                 'invariance_samples', self.invariance_samples, invariance_samples
             )
-            q_z_x = make_invariant_encoder(self.enc, x, η_low, η_high, invariance_samples, inv_rng, train)
+            # The encoder should be invariant to transformations of the observed data x that result in sample x'
+            # the range [η_low, η_high] / [η_min, η_max] *relative to the prototype xhat*. If this was relative to x,
+            # applying two transformations could result in some samples x' being outside of the data distribution /
+            # the allowed maximum transformation ranges.
+            q_z_x = make_invariant_encoder(self.enc, xhat, η_low, η_high, invariance_samples, inv_rng, train)
         else:
             q_z_x = self.enc(x, train=train)
 
