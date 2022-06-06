@@ -8,6 +8,8 @@ from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
 
+from src.models.common import raise_if_not_in_list, INV_SOFTPLUS_1
+
 
 _LIKELIHOODS = [
     'iso-normal',  # Homoskedastic (i.e. not input dependant) isotropic Guassian.
@@ -24,17 +26,6 @@ _POSTERIORS = [
     'hetero-diag-normal',
     # TODO: support Full Cov Normal.
 ]
-
-
-INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
-# ^ this value is softplus^{-1}(1), i.e. if we get σ as softplus(σ_),
-# and we init σ_ to this value, we effectively init σ to 1.
-
-
-def raise_if_not_in_list(val, valid_options, varname):
-    if val not in valid_options:
-       msg = f'`{varname}` should be one of `{valid_options}` but was `{val}` instead.'
-       raise RuntimeError(msg)
 
 
 # This function allows us to either specify activation functions callables,

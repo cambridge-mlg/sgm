@@ -7,6 +7,7 @@ from chex import Array
 import torch
 from torch.utils import data
 from torchvision import transforms, datasets
+import distrax
 
 from src.transformations.affine import transform_image, gen_transform_mat
 
@@ -48,10 +49,12 @@ class ToNumpy:
         return np.array(tensor, dtype=np.float32)
 
 
-def _transform_data(data, η=None, seed=42):
-    if η is None:
-        # Identity transform.
-        η = jnp.array([0., 0., 0., 0., 0., 0.])
+def _transform_data(data, η_low=None, η_high=None, seed=42):
+    # Identity transform:
+    if η_low is None:
+        η_low = jnp.array([0., 0., 0., 0., 0., 0., 0.])
+    if η_high is None:
+        η_high = jnp.array([0., 0., 0., 0., 0., 0., 0.])
 
     N = data.shape[0]
 
@@ -68,22 +71,16 @@ def _transform_data(data, η=None, seed=42):
     if n_dims == 3:
         data = data[:, :, :, np.newaxis]
 
-    key = jax.random.PRNGKey(seed)
-    ε = jax.random.uniform(key, (N, 6), minval=-1, maxval=1)
-    Ts = jax.vmap(gen_transform_mat, in_axes=(None, 0))(η, ε)
-
-    # PyTorch puts the channel dim before width and height, but Jax puts it last,
-    # so we need to move the channel dim for the data so that it works with our transforms.
-    data = np.moveaxis(data, -1, 1)
+    rng = jax.random.PRNGKey(seed)
+    p_η = distrax.Uniform(low=η_low, high=η_high)
+    η = p_η.sample(sample_shape=(N,), seed=rng)
+    Ts = jax.vmap(gen_transform_mat, in_axes=(0))(η)
 
     transformed_data = np.array(jax.vmap(transform_image)(data, Ts))
 
     if n_dims == 3:
         # Remove channel dim in greycale case.
-        transformed_data = np.array(transformed_data)[:, 0, :, :]
-    else:
-        # Move channel dim back in color case.
-        transformed_data = np.moveaxis(np.array(transformed_data), 1, -1)
+        transformed_data = np.array(transformed_data)[:, :, :, 0]
 
     if is_pt:
         transformed_data = torch.from_numpy(transformed_data)
@@ -99,7 +96,8 @@ def get_image_dataset(
     random_seed: int = 42,
     train_augmentations: list[Callable] = [],
     test_augmentations: list[Callable] = [],
-    η: Optional[Array] = None,
+    η_low: Optional[Array] = None,
+    η_high: Optional[Array] = None,
 ) -> Union[Tuple[data.Dataset, data.Dataset], Tuple[data.Dataset, data.Dataset, data.Dataset]]:
     """Provides PyTorch `Dataset`s for the specified image dataset_name.
 
@@ -118,8 +116,9 @@ def get_image_dataset(
 
         test_augmentations: a `list` of augmentations to apply to the test data. (Default: `[]`)
 
-        η: an optional `Array` controlling the affine transformations to apply to the data.
-        For example for rotations of up to π/2 degrees, `η = [0., 0., π/2, 0., 0., 0.]`.
+        η_low, η_high: optional `Array`s controlling the affine transformations to apply to the data.
+        To be concrete, these arrays represent the lower and upper bounds of a uniform distribution
+        from which affine transformation parameters are drawn.
         For more information see `transformations.affine.gen_transform_mat`.
         (Default: `None`)
 
@@ -186,9 +185,9 @@ def get_image_dataset(
         **test_kwargs, transform=transform_test, download=True, root=data_dir,
     )
 
-    if η is not None:
-        test_dataset.data = _transform_data(test_dataset.data, η, random_seed)
-        train_dataset.data = _transform_data(train_dataset.data, η, random_seed)
+    if η_low is not None or η_high is not None:
+        test_dataset.data = _transform_data(test_dataset.data, η_low, η_high, random_seed)
+        train_dataset.data = _transform_data(train_dataset.data, η_low, η_high, random_seed)
 
     if val_percent != 0.:
         num_train, num_val = train_val_split_sizes(len(train_dataset), val_percent)

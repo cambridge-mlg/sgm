@@ -18,6 +18,7 @@ from ml_collections import config_dict
 from clu import parameter_overview
 
 from src.utils.plotting import plot_img_array
+from src.utils.jax import tree_concatenate
 from src.data import NumpyLoader
 import src.models as models
 
@@ -273,7 +274,7 @@ def train_loop(
             rng, test_rng = random.split(rng)
             if val_losses[-1] <= min(val_losses):
                 print("Best val_loss")
-                # TODO add model saving.
+                # TODO: add model saving.
 
                 run.summary['best_epoch'] = epoch
                 run.summary['best_val_loss'] = val_losses[-1]
@@ -302,8 +303,3 @@ def train_loop(
                         sampled_images, title=samples_plot_title)
 
     return state
-
-
-def tree_concatenate(list_of_trees):
-    """Convert a list of trees of identical structure into a single tree of lists."""
-    return tree_map(lambda *xs: jnp.array(list(xs)), *list_of_trees)
