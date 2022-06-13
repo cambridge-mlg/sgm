@@ -39,9 +39,7 @@ class LIVAE(VAE):
         super().setup()
 
         self.η_prior_μ = self.param(
-            'η_prior_μ',
-            init.zeros,
-            (1,)
+            'η_prior_μ', init.zeros, (1,)
         )
         self.η_prior_σ = jax.nn.softplus(self.param(
             'η_prior_σ_',
@@ -55,7 +53,14 @@ class LIVAE(VAE):
             self.η_prior_μ = jax.lax.stop_gradient(self.η_prior_μ)
         if not self.learn_η_scale:
             self.η_prior_σ = jax.lax.stop_gradient(self.η_prior_σ)
-        self.p_η = distrax.Normal(loc=self.η_prior_μ, scale=self.η_prior_σ)
+
+        if 'normal' in self.η_encoder['posterior']:
+            self.p_η = distrax.Normal(loc=self.η_prior_μ, scale=self.η_prior_σ)
+        else:
+            assert self.η_encoder['posterior'] == 'uniform'
+            high = self.η_prior_μ + self.η_prior_σ
+            low = self.η_prior_μ - self.η_prior_σ
+            self.p_η = distrax.Uniform(low=low, high=high)
 
         Encoder, _ = get_enc_dec(self.architecture)
         self.η_enc = Encoder(
