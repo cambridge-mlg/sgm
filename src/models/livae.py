@@ -86,7 +86,7 @@ class LIVAE(VAE):
         if not return_mode:
             xhat = p_xhat_z.sample(seed=xhat_rng, sample_shape=sample_shape)
         else:
-            xhat = p_xhat_z.mode()
+            xhat = p_xhat_z.mean()
 
         if return_xhat:
             return xhat
@@ -94,7 +94,7 @@ class LIVAE(VAE):
             if not return_mode:
                 η = self.p_η.sample(seed=η_rng)
             else:
-                η = self.p_η.mode()
+                η = self.p_η.mean()
 
             T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
             x = transform_image(xhat, T)

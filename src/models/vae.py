@@ -88,7 +88,7 @@ class VAE(nn.Module):
         if not return_mode:
             return p_x_z.sample(seed=rng, sample_shape=sample_shape)
         else:
-            return p_x_z.mode()
+            return p_x_z.mean()
 
 
 def make_VAE_loss(
@@ -143,7 +143,7 @@ def make_VAE_eval(
 
             metrics = _calculate_elbo_and_metrics(x, q_z_x, p_x_z, p_z, β)
 
-            return metrics, p_x_z.mode(), p_x_z.sample(seed=x_rng, sample_shape=(1,))
+            return metrics, p_x_z.mean(), p_x_z.sample(seed=x_rng, sample_shape=(1,))
 
         # Broadcast over batch and aggregate.
         agg = get_agg_fn(aggregation)

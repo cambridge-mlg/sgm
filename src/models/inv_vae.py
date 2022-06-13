@@ -82,7 +82,7 @@ class invVAE(VAE):
         if not return_mode:
             xhat = p_xhat_z.sample(seed=x_rng, sample_shape=sample_shape)
         else:
-            xhat = p_xhat_z.mode()
+            xhat = p_xhat_z.mean()
 
         if return_xhat:
             return xhat
@@ -144,7 +144,7 @@ def make_invVAE_eval(
 
             metrics = _calculate_elbo_and_metrics(xhat, q_z_x, p_xhat_z, p_z, β)
 
-            return metrics, p_xhat_z.mode(), p_xhat_z.sample(seed=x_rng, sample_shape=(1,))
+            return metrics, p_xhat_z.mean(), p_xhat_z.sample(seed=x_rng, sample_shape=(1,))
 
         # Broadcast over batch and aggregate.
         agg = get_agg_fn(aggregation)
