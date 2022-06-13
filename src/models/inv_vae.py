@@ -28,8 +28,6 @@ class invVAE(VAE):
     η_high: Optional[Union[Array, List]] = None
     encoder_invariance: str = 'partial'
     invariance_samples: Optional[int] = None
-    recon_title: str = "Reconstructions: original – $x$ mode - $x$ sample"
-    sample_title: str = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
 
     def setup(self):
         super().setup()
@@ -45,6 +43,9 @@ class invVAE(VAE):
         if jnp.any(self.η_high > MAX_η) or jnp.any(self.η_low < MIN_η):
             msg = f'`self.η_low` and `self.η_high` must be in the range `[{MIN_η}, {MAX_η}]`, but were ({self.η_low}, {self.η_high}).'
             raise RuntimeError(msg)
+
+        self.recon_title = "Reconstructions: original – $x$ mode - $x$ sample"
+        self.sample_title = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
 
     def __call__(self, xhat, rng, train=True, invariance_samples=None):
         raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
