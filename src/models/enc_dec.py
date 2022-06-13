@@ -74,6 +74,8 @@ def create_posterior(obj, hidden, output_layer):
         return distrax.Normal(loc=μ, scale=σ)
 
     elif obj.posterior == 'uniform':
+        # Note: KLD(p, q) between two uniform distrubtions p and q, is infinite if the support of q is greater
+        # than the support of p. Thus, we parameterise q such that the support is always contained in p.
         high_multiplier = jax.nn.sigmoid(output_layer(name=f'high_multiplier_')(hidden))
         low_multiplier = jax.nn.sigmoid(output_layer(name=f'low_multiplier_')(hidden))
 
