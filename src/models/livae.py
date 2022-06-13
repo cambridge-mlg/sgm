@@ -31,6 +31,7 @@ class LIVAE(VAE):
     invariance_samples: Optional[int] = None
     learn_η_loc: bool = False
     learn_η_scale: bool = True
+    η_encoder: Optional[KwArgs] = None
     recon_title: str = "Reconstructions: original – $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
     sample_title: str = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
 
@@ -57,7 +58,9 @@ class LIVAE(VAE):
         self.p_η = distrax.Normal(loc=self.η_prior_μ, scale=self.η_prior_σ)
 
         Encoder, _ = get_enc_dec(self.architecture)
-        self.η_enc = Encoder(latent_dim=1, **(self.encoder or {}))
+        self.η_enc = Encoder(
+            latent_dim=1, **(self.η_encoder or {}), prior=self.p_η
+        )
 
     def __call__(self, x, rng, train=True, invariance_samples=None):
         raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')

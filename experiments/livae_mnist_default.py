@@ -53,6 +53,11 @@ def get_config() -> config_dict.ConfigDict:
     config.model.learn_η_loc = False
     config.model.learn_η_scale = True
 
+    config.model.η_encoder = config_dict.ConfigDict()
+    config.model.η_encoder.posterior = 'uniform'
+    # config.model.η_encoder.posterior = 'hetero-diag-normal'
+    config.model.η_encoder.hidden_dims = [64, 128, 256]
+
     config.model.encoder = config_dict.ConfigDict()
     config.model.encoder.posterior = 'hetero-diag-normal'
     config.model.encoder.hidden_dims = [64, 128, 256]
