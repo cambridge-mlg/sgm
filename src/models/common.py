@@ -35,6 +35,7 @@ def raise_if_not_in_list(val, valid_options, varname):
 
 
 def sample_transformed_data(x, rng, η_low, η_high):
+    # TODO: support other distributions here! This is useful for making invariant encoders that match the prior dist.
     p_η = distrax.Uniform(low=η_low, high=η_high)
     η = p_η.sample(sample_shape=(), seed=rng)
 
