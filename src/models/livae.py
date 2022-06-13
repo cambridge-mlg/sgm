@@ -160,10 +160,10 @@ def make_LIVAE_eval(
 
             metrics = _calculate_elbo_and_metrics(x, q_z_x, q_η_x, p_x_xhat_η, p_z, p_η, β)
 
-            x_hat_mode = p_xhat_z.mode()
+            x_hat_mode = p_xhat_z.mean()
             x_hat_sample = p_xhat_z.sample(seed=x_hat_rng, sample_shape=())
 
-            η = q_η_x.mode()
+            η = q_η_x.mean()
             T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
             x_mode = transform_image(x_hat_mode, T)
 
