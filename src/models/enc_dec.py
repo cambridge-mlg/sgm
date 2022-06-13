@@ -25,6 +25,7 @@ _LIKELIHOODS = [
 _POSTERIORS = [
     'hetero-diag-normal',
     # TODO: support Full Cov Normal.
+    'uniform',
 ]
 
 
@@ -65,6 +66,25 @@ def create_likelihood(obj, hidden, output_layer, output_shape):
         return distrax.Normal(loc=μ, scale=jax.nn.softplus(σ_).clip(min=obj.σ_min))
 
 
+def create_posterior(obj, hidden, output_layer):
+    if obj.posterior == 'hetero-diag-normal':
+        μ = output_layer(name=f'μ')(hidden)
+        σ = jax.nn.softplus(output_layer(name=f'σ_')(hidden))
+
+        return distrax.Normal(loc=μ, scale=σ)
+
+    elif obj.posterior == 'uniform':
+        high_multiplier = jax.nn.sigmoid(output_layer(name=f'high_multiplier_')(hidden))
+        low_multiplier = jax.nn.sigmoid(output_layer(name=f'low_multiplier_')(hidden))
+
+        assert obj.prior is not None
+        assert type(obj.prior) is distrax.Uniform
+        high = obj.prior.high * high_multiplier
+        low = obj.prior.low * low_multiplier
+
+        return distrax.Uniform(low=low, high=high)
+
+
 class FCEncoder(nn.Module):
     latent_dim: int
     posterior: str = 'hetero-diag-normal'
@@ -84,10 +104,7 @@ class FCEncoder(nn.Module):
         for i, hidden_dim in enumerate(self.hidden_dims):
             h = act_fn(nn.Dense(hidden_dim, name=f'hidden{i}')(h))
 
-        μ = nn.Dense(self.latent_dim, name=f'μ')(h)
-        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name=f'σ')(h))
-
-        return distrax.Normal(loc=μ, scale=σ)
+        return create_posterior(self, h, partial(nn.Dense, self.latent_dim))
 
 
 class FCDecoder(nn.Module):
@@ -144,10 +161,7 @@ class ConvEncoder(nn.Module):
 
         h = h.flatten()
 
-        μ = nn.Dense(self.latent_dim, name=f'μ')(h)
-        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name='σ')(h))
-
-        return distrax.Normal(loc=μ, scale=σ)
+        return create_posterior(self, h, partial(nn.Dense, self.latent_dim))
 
 
 class ConvDecoder(nn.Module):
@@ -275,10 +289,7 @@ class ConvNeXtEncoder(nn.Module):
 
         h = h.flatten()
 
-        μ = nn.Dense(self.latent_dim, name=f'μ')(h)
-        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name='σ')(h))
-
-        return distrax.Normal(loc=μ, scale=σ)
+        return create_posterior(self, h, partial(nn.Dense, self.latent_dim))
 
 
 class ConvNeXtDecoder(nn.Module):
