@@ -5,12 +5,14 @@ from jax import numpy as jnp
 
 from src.data import METADATA, train_val_split_sizes
 
+UPPER_ROT = jnp.pi/4
+
 def get_config() -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
 
-    config.epochs = 25
+    config.epochs = 50
     config.batch_size = 256
-    config.random_seed = 0
+    config.random_seed = 1
 
     config.dataset_name = 'MNIST'
     config.dataset = config_dict.ConfigDict()
@@ -20,8 +22,8 @@ def get_config() -> config_dict.ConfigDict:
     config.dataset.random_seed = 42
     config.dataset.train_augmentations = []
     config.dataset.test_augmentations = []
-    config.dataset.η_low = None
-    config.dataset.η_high= None
+    config.dataset.η_low = [0., 0., -UPPER_ROT, 0., 0., 0., 0.]
+    config.dataset.η_high = [0., 0., UPPER_ROT, 0., 0., 0., 0.]
 
     config.optim_name = 'adamw'
     config.optim = config_dict.ConfigDict()
@@ -50,6 +52,8 @@ def get_config() -> config_dict.ConfigDict:
     config.model.latent_dim = 128
     config.model.learn_prior = False
     config.model.architecture = 'ConvNet'
+    config.model.encoder_invariance = 'none'  # 'none'  # 'partial'  # 'full'
+    config.model.invariance_samples = 0
     config.model.learn_η_loc = False
     config.model.learn_η_scale = True
 
