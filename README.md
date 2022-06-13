@@ -44,3 +44,5 @@ python3.9 -m ipykernel install --user --name=inv
   - q(z|x) should be partially invariant, since this solves identifiability issues. E.g. imagine a generative model of 6s and 9s and a prior on p(η) with deltas at 0 and π degrees. Then if q(z|x) is fully equivariant, we will generate both 6s and 9s from the same z. 
   - we may want a generative model in which η depends on x_hat. For example, consider gaussian convariances, here we can view σ_12 as a rotation and σ_1 and σ_2 as being shape params. However, σ_12 depends on σ_1 and σ_2. 2D ellipses might be a nice toy example? 
   - Do an experiment with rotating digits, make sure that rotating a prototype with rotations drawn from the prior and then encoding a z and then turning that into a new prototype. Hopefully new proto == orig proto.
+
+  - Can we learn invariances without the generative model? Should be possible if we have a partially invariant η encoder???
