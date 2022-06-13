@@ -29,7 +29,8 @@ _ENCODER_INVARIANCE_MODES = ['full', 'partial', 'none']
 class LIVAE(VAE):
     encoder_invariance: str = 'partial'
     invariance_samples: Optional[int] = None
-    learn_η_prior: bool = False
+    learn_η_loc: bool = False
+    learn_η_scale: bool = True
     recon_title: str = "Reconstructions: original – $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
     sample_title: str = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
 
@@ -46,9 +47,12 @@ class LIVAE(VAE):
             init.constant(INV_SOFTPLUS_1),
             (1,)
         ))
-        # we always fix loc=0 to avoid identifiability issues
-        self.η_prior_μ = jax.lax.stop_gradient(self.η_prior_μ)
-        if not self.learn_η_prior:
+
+        if not self.learn_η_loc:
+            # Note: this is helpful for identifiability, however, it isn't suitable
+            # when the transformation is not symetric (e.g. a rotation between 0 and π/4)
+            self.η_prior_μ = jax.lax.stop_gradient(self.η_prior_μ)
+        if not self.learn_η_scale:
             self.η_prior_σ = jax.lax.stop_gradient(self.η_prior_σ)
         self.p_η = distrax.Normal(loc=self.η_prior_μ, scale=self.η_prior_σ)
 

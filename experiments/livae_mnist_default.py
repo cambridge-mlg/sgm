@@ -50,9 +50,8 @@ def get_config() -> config_dict.ConfigDict:
     config.model.latent_dim = 128
     config.model.learn_prior = False
     config.model.architecture = 'ConvNet'
-    config.model.encoder_invariance = 'none'  # 'partial'  # 'full'
-    config.model.invariance_samples = 0
-    config.model.learn_η_prior = True
+    config.model.learn_η_loc = False
+    config.model.learn_η_scale = True
 
     config.model.encoder = config_dict.ConfigDict()
     config.model.encoder.posterior = 'hetero-diag-normal'
