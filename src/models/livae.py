@@ -67,9 +67,6 @@ class LIVAE(VAE):
             latent_dim=1, **(self.η_encoder or {}), prior=self.p_η
         )
 
-        self.recon_title = "Reconstructions: original – $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
-        self.sample_title = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
-
     def __call__(self, x, rng, train=True, invariance_samples=None):
         raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
         z_rng, η_rng, xhat_rng, inv_rng = random.split(rng, 4)
