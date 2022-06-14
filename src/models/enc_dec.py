@@ -92,6 +92,7 @@ class FCEncoder(nn.Module):
     posterior: str = 'hetero-diag-normal'
     hidden_dims: Optional[List[int]] = None
     act_fn: Union[Callable, str] = nn.relu
+    prior: Optional[nn.Module] = None
 
     @nn.compact
     def __call__(self, x, train=True):
@@ -140,6 +141,7 @@ class ConvEncoder(nn.Module):
     hidden_dims: Optional[List[int]] = None
     act_fn: Union[Callable, str] = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
+    prior: Optional[nn.Module] = None
 
     @nn.compact
     def __call__(self, x, train=True):
@@ -266,6 +268,7 @@ class ConvNeXtEncoder(nn.Module):
     hidden_dims: Optional[List[int]] = None
     act_fn: Union[Callable, str] = nn.gelu
     norm_cls: nn.Module = nn.LayerNorm
+    prior: Optional[nn.Module] = None
 
     @nn.compact
     def __call__(self, x, train=True):
