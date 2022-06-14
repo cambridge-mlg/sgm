@@ -28,8 +28,8 @@ class invVAE(VAE):
     η_high: Optional[Union[Array, List]] = None
     encoder_invariance: str = 'partial'
     invariance_samples: Optional[int] = None
-    recon_title: str = "Reconstructions: original – $x$ mode - $x$ sample"
-    sample_title: str = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
+    recon_title: str = "Reconstructions: original – $x$ mean - $x$ sample"
+    sample_title: str = "Prior Samples: $\\hat{x}$ mean – $x$ mean - $\\hat{x}$ sample - $x$ sample"
 
     def setup(self):
         super().setup()

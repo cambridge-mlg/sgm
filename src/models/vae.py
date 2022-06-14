@@ -49,8 +49,8 @@ class VAE(nn.Module):
     architecture: str = 'MLP'
     encoder: Optional[KwArgs] = None
     decoder: Optional[KwArgs] = None
-    recon_title: str = "Reconstructions: original – $x$ mode - $x$ sample"
-    sample_title: str = "Prior Samples: $x$ mode - $x$ sample"
+    recon_title: str = "Reconstructions: original – $x$ mean - $x$ sample"
+    sample_title: str = "Prior Samples: $x$ mean - $x$ sample"
 
     def setup(self):
         Encoder, Decoder = get_enc_dec(self.architecture)

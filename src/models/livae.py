@@ -32,8 +32,8 @@ class LIVAE(VAE):
     learn_η_loc: bool = False
     learn_η_scale: bool = True
     η_encoder: Optional[KwArgs] = None
-    recon_title: str = "Reconstructions: original – $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
-    sample_title: str = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
+    recon_title: str = "Reconstructions: original – $\\hat{x}$ mean – $x$ mean - $\\hat{x}$ sample - $x$ sample"
+    sample_title: str = "Prior Samples: $\\hat{x}$ mean – $x$ mean - $\\hat{x}$ sample - $x$ sample"
 
     def setup(self):
         super().setup()
