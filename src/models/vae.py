@@ -49,6 +49,8 @@ class VAE(nn.Module):
     architecture: str = 'MLP'
     encoder: Optional[KwArgs] = None
     decoder: Optional[KwArgs] = None
+    recon_title: str = "Reconstructions: original – $x$ mode - $x$ sample"
+    sample_title: str = "Prior Samples: $x$ mode - $x$ sample"
 
     def setup(self):
         Encoder, Decoder = get_enc_dec(self.architecture)
@@ -71,9 +73,6 @@ class VAE(nn.Module):
             self.prior_μ = jax.lax.stop_gradient(self.prior_μ)
             self.prior_σ = jax.lax.stop_gradient(self.prior_σ)
         self.p_z = distrax.Normal(loc=self.prior_μ, scale=self.prior_σ)
-
-        self.recon_title = "Reconstructions: original – $x$ mode - $x$ sample"
-        self.sample_title = "Prior Samples: $x$ mode - $x$ sample"
 
     def __call__(self, x, rng, train=True):
         q_z_x = self.enc(x, train=train)

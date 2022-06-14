@@ -28,6 +28,8 @@ class invVAE(VAE):
     η_high: Optional[Union[Array, List]] = None
     encoder_invariance: str = 'partial'
     invariance_samples: Optional[int] = None
+    recon_title: str = "Reconstructions: original – $x$ mode - $x$ sample"
+    sample_title: str = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
 
     def setup(self):
         super().setup()
@@ -36,16 +38,14 @@ class invVAE(VAE):
             msg = f'`self.η_low` and self.η_high` must be specified, but were ({self.η_low}, {self.η_high}). See src.transformations.affine.gen_transform_mat for specification details.'
             raise RuntimeError(msg)
 
-        if jnp.any(self.η_high < self.η_low):
-            msg = f'`self.η_high` ({self.η_high}) must be greater than or equal to `self.η_low` ({self.η_low}).'
-            raise RuntimeError(msg)
+        # Temporarily remove checks because they break JIT.
+        # if jnp.any(self.η_high < self.η_low):
+        #     msg = f'`self.η_high` ({self.η_high}) must be greater than or equal to `self.η_low` ({self.η_low}).'
+        #     raise RuntimeError(msg)
 
-        if jnp.any(self.η_high > MAX_η) or jnp.any(self.η_low < MIN_η):
-            msg = f'`self.η_low` and `self.η_high` must be in the range `[{MIN_η}, {MAX_η}]`, but were ({self.η_low}, {self.η_high}).'
-            raise RuntimeError(msg)
-
-        self.recon_title = "Reconstructions: original – $x$ mode - $x$ sample"
-        self.sample_title = "Prior Samples: $\\hat{x}$ mode – $x$ mode - $\\hat{x}$ sample - $x$ sample"
+        # if jnp.any(jnp.array(self.η_high) > MAX_η) or jnp.any(jnp.array(self.η_low) < MIN_η):
+        #     msg = f'`self.η_low` and `self.η_high` must be in the range `[{MIN_η}, {MAX_η}]`, but were ({self.η_low}, {self.η_high}).'
+        #     raise RuntimeError(msg)
 
     def __call__(self, xhat, rng, train=True, invariance_samples=None):
         raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
@@ -76,8 +76,9 @@ class invVAE(VAE):
 
         return q_z_x, p_xhat_z, self.p_z
 
-    def generate(self, z, rng, sample_shape=(), return_mode=False, return_xhat=False):
-        x_rng, transform_rng = random.split(rng)
+    def generate(self, rng, sample_shape=(), return_mode=False, return_xhat=False):
+        x_rng, transform_rng, z_rng = random.split(rng, 3)
+        z = self.p_z.sample(seed=z_rng)
         p_xhat_z = self.dec(z, train=False)
 
         if not return_mode:
@@ -161,31 +162,30 @@ def make_invVAE_eval(
         ])
 
         @partial(jax.vmap, axis_name='batch')
-        def sample_fn(z):
-            rng = random.fold_in(sample_rng, lax.axis_index('batch'))
+        def sample_fn(batch_rng):
             xhat_sample = model.apply(
-                {'params': params, **state}, z, rng, return_mode=False, return_xhat=True,
+                {'params': params, **state}, batch_rng, return_mode=False, return_xhat=True,
                 method=model.generate
             )
 
             x_sample = model.apply(
-                {'params': params, **state}, z, rng, return_mode=False, return_xhat=False,
+                {'params': params, **state}, batch_rng, return_mode=False, return_xhat=False,
                 method=model.generate
             )
 
             xhat_mode = model.apply(
-                {'params': params, **state}, z, rng, return_mode=True, return_xhat=True,
+                {'params': params, **state}, batch_rng, return_mode=True, return_xhat=True,
                 method=model.generate
             )
 
             x_mode = model.apply(
-                {'params': params, **state}, z, rng, return_mode=True, return_xhat=False,
+                {'params': params, **state}, batch_rng, return_mode=True, return_xhat=False,
                 method=model.generate
             )
 
             return xhat_mode, x_mode, xhat_sample, x_sample
 
-        xhat_modes, x_modes, xhat_samples, x_samples = sample_fn(zs)
+        xhat_modes, x_modes, xhat_samples, x_samples = sample_fn(random.split(sample_rng, num_recons))
         sample_array = jnp.concatenate([
             xhat_modes.reshape(-1, *img_shape),
             x_modes.reshape(-1, *img_shape),
