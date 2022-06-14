@@ -193,10 +193,14 @@ def make_LIVAE_eval(
     img_shape: Tuple,
     num_recons: int = 16,
     aggregation: str = 'mean',
+    zs_rng: Optional[jax.random.PRNGKey] = None,
 ) -> Callable:
     """Creates a function for evaluating a VAE."""
-    def batch_eval(params, state, batch_rng, β=1.):
-        eval_rng, sample_rng = random.split(batch_rng)
+    def batch_eval(params, state, eval_rng, β=1.):
+        if zs_rng is None:
+            eval_rng, sample_rng = random.split(eval_rng)
+        else:
+            sample_rng = zs_rng
 
         # Define eval func for 1 example.
         def eval_fn(x):

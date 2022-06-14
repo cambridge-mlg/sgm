@@ -189,8 +189,7 @@ def train_loop(
     # ^ here wandb_kwargs (i.e. whatever the user specifies) takes priority.
 
     with wandb.init(**wandb_kwargs) as run:
-        z_rng, rng = random.split(rng)
-        zs = random.normal(z_rng, (16, config.model.latent_dim))
+        zs_rng, rng = random.split(rng)
 
         @jax.jit
         def train_step(state, x_batch, rng):
@@ -205,7 +204,7 @@ def train_loop(
 
         @partial(jax.jit, static_argnames='metrics_only')
         def eval_step(state, x_batch, rng, metrics_only=False):
-            eval_fn = make_eval_fn(model, x_batch, config.model.decoder.image_shape, aggregation='sum')
+            eval_fn = make_eval_fn(model, x_batch, config.model.decoder.image_shape, aggregation='sum', zs_rng=zs_rng)
 
             metrics, recon_data, sample_data = eval_fn(
                 state.params, state.model_state, rng, state.β,
