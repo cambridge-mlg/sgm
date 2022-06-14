@@ -36,8 +36,8 @@ class invVAE(VAE):
             msg = f'`self.η_low` and self.η_high` must be specified, but were ({self.η_low}, {self.η_high}). See src.transformations.affine.gen_transform_mat for specification details.'
             raise RuntimeError(msg)
 
-        if jnp.any(self.n_high < self.n_low):
-            msg = f'`self.n_high` ({self.n_high}) must be greater than or equal to `self.n_low` ({self.n_low}).'
+        if jnp.any(self.η_high < self.η_low):
+            msg = f'`self.η_high` ({self.η_high}) must be greater than or equal to `self.η_low` ({self.η_low}).'
             raise RuntimeError(msg)
 
         if jnp.any(self.η_high > MAX_η) or jnp.any(self.η_low < MIN_η):
