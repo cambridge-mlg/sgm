@@ -13,9 +13,10 @@ import distrax
 
 from src.models.vae import VAE, get_enc_dec
 from src.models.common import (
-    sample_transformed_data, make_invariant_encoder,
+    make_invariant_encoder,
     raise_if_not_in_list, get_agg_fn,
-    MAX_η, MIN_η, INV_SOFTPLUS_1,
+    MAX_η, MIN_η, INV_SOFTPLUS_1, NUM_TRANSFORM_PARAMS,
+    apply_mask
 )
 from src.transformations.affine import gen_transform_mat, transform_image
 
@@ -32,6 +33,7 @@ class LIVAE(VAE):
     learn_η_loc: bool = False
     learn_η_scale: bool = True
     η_encoder: Optional[KwArgs] = None
+    η_mask: Array = jnp.ones((NUM_TRANSFORM_PARAMS,))
     recon_title: str = "Reconstructions: original – $\\hat{x}$ mean – $x$ mean - $\\hat{x}$ sample - $x$ sample"
     sample_title: str = "Prior Samples: $\\hat{x}$ mean – $x$ mean - $\\hat{x}$ sample - $x$ sample"
 
@@ -39,12 +41,13 @@ class LIVAE(VAE):
         super().setup()
 
         self.η_prior_μ = self.param(
-            'η_prior_μ', init.zeros, (1,)
+            'η_prior_μ', init.zeros, (NUM_TRANSFORM_PARAMS,)
         )
         self.η_prior_σ = jax.nn.softplus(self.param(
             'η_prior_σ_',
+            # init.constant(3.1),
             init.constant(INV_SOFTPLUS_1),
-            (1,)
+            (NUM_TRANSFORM_PARAMS,)
         ))
 
         if not self.learn_η_loc:
@@ -53,6 +56,9 @@ class LIVAE(VAE):
             self.η_prior_μ = jax.lax.stop_gradient(self.η_prior_μ)
         if not self.learn_η_scale:
             self.η_prior_σ = jax.lax.stop_gradient(self.η_prior_σ)
+
+        self.η_prior_μ = apply_mask(self.η_prior_μ, self.η_mask)
+        self.η_prior_σ = apply_mask(self.η_prior_σ, self.η_mask, 1e-18)
 
         if 'normal' in self.η_encoder['posterior']:
             self.p_η = distrax.Normal(loc=self.η_prior_μ, scale=self.η_prior_σ)
@@ -64,44 +70,52 @@ class LIVAE(VAE):
 
         Encoder, _ = get_enc_dec(self.architecture)
         self.η_enc = Encoder(
-            latent_dim=1, **(self.η_encoder or {}), prior=self.p_η
+            latent_dim=7, **(self.η_encoder or {}), prior=self.p_η, output_mask=self.η_mask,
         )
 
     def __call__(self, x, rng, train=True, invariance_samples=None):
         raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
         z_rng, η_rng, xhat_rng, inv_rng = random.split(rng, 4)
 
+        if self.encoder_invariance in ['full', 'partial']:
+            # # Here we choose between having an encoder that is fully invariant to transformations
+            # # e.g. in the case of rotations, for angles between -π and π, or partially invariant
+            # # as specified by the prior on η.
+            # if self.encoder_invariance == 'full':
+            #     p_η = distrax.Uniform(low=MIN_η, high=MAX_η)
+            # else:
+            #     assert self.encoder_invariance == 'partial'
+            #     p_η = self.p_η
+
+            # invariance_samples = nn.merge_param(
+            #     'invariance_samples', self.invariance_samples, invariance_samples
+            # )
+            # # The encoder should be invariant to transformations of the observed data x that result in sample x'
+            # # the range [η_low, η_high] / [η_min, η_max] *relative to the prototype xhat*. If this was relative to x,
+            # # applying two transformations could result in some samples x' being outside of the data distribution /
+            # # the allowed maximum transformation ranges.
+            # η_ = q_η_x.mean()
+            # T = gen_transform_mat(-η_)
+            # # ^ -ve transformation when going from x to xhat
+            # xhat_ = transform_image(x, T)
+            # # TODO: ^ make stochastic?
+            # q_z_x = make_invariant_encoder(self.enc, xhat_, p_η, invariance_samples, inv_rng, train)
+            pass
+        else:
+            q_z_x = self.enc(x, train=train)
+
+        z = q_z_x.sample(seed=z_rng)
+
         # TODO: add equivariance
         q_η_x = self.η_enc(x, train=train)
         η = q_η_x.sample(seed=η_rng)
 
-        if self.encoder_invariance in ['full', 'partial']:
-            # print(self.encoder_invariance)
-            η_low, η_high = self._get_η_bounds()
-            invariance_samples = nn.merge_param(
-                'invariance_samples', self.invariance_samples, invariance_samples
-            )
-            # The encoder should be invariant to transformations of the observed data x that result in sample x'
-            # the range [η_low, η_high] / [η_min, η_max] *relative to the prototype xhat*. If this was relative to x,
-            # applying two transformations could result in some samples x' being outside of the data distribution /
-            # the allowed maximum transformation ranges.
-            η_ = q_η_x.mean()
-            T = gen_transform_mat(jnp.array([0., 0., -η_[0], 0., 0., 0., 0.]))
-            xhat_ = transform_image(x, T)
-            # TODO: ^ make stochastic?
-            q_z_x = make_invariant_encoder(self.enc, xhat_, η_low, η_high, invariance_samples, inv_rng, train)
-        else:
-            q_z_x = self.enc(x, train=train)
-
-        q_z_x = self.enc(x, train=train)
-        z = q_z_x.sample(seed=z_rng)
-
         p_xhat_z = self.dec(z, train=train)
         xhat = p_xhat_z.sample(seed=xhat_rng)
 
-        T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
+        T = gen_transform_mat(η)
         x_ = transform_image(xhat, T)
-        # TODO: make noisy?
+        # TODO: make stochastic?
         p_x_xhat_η = distrax.Normal(x_, 1.)
         # TODO: learn scale param here?
 
@@ -125,30 +139,11 @@ class LIVAE(VAE):
             else:
                 η = self.p_η.mean()
 
-            T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
+            T = gen_transform_mat(η)
             x = transform_image(xhat, T)
             # TODO: make noisy?
             # TODO: vmap this to deal with more than 1 sample
             return x
-
-    def _get_η_bounds(self):
-        # Here we choose between having an encoder that is fully invariant to transformations
-        # e.g. in the case of rotations, for angles between -π and π, or partially invariant
-        # as specified by self.η_low and self.η_high.
-        if self.encoder_invariance == 'full':
-            return MIN_η, MAX_η
-        else:
-            assert self.encoder_invariance == 'partial'
-
-            if type(self.p_η) is distrax.Normal:
-                η_low = self.p_η.loc - self.p_η.scale
-                η_high = self.p_η.loc + self.p_η.scale
-            else:
-                assert type(self.p_η) is distrax.Uniform
-                η_low = self.p_η.low
-                η_high = self.p_η.high
-
-            return jnp.array([0., 0., η_low[0], 0., 0., 0., 0.]), jnp.array([0., 0., η_high[0], 0., 0., 0., 0.])
 
 
 def make_LIVAE_loss(

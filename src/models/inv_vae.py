@@ -8,6 +8,7 @@ from jax import random, lax
 from jax.tree_util import tree_map
 from chex import Array
 import flax.linen as nn
+import distrax
 
 from src.models.vae import VAE
 from src.models.common import (
@@ -51,7 +52,9 @@ class invVAE(VAE):
         raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
 
         z_rng, transform_rng, inv_rng = random.split(rng, 3)
-        x = sample_transformed_data(xhat, transform_rng, self.η_low, self.η_high)
+
+        p_η = distrax.Uniform(low=self.η_low, high=self.η_high)
+        x = sample_transformed_data(xhat, transform_rng, p_η)
 
         if self.encoder_invariance in ['full', 'partial']:
             # Here we choose between having an encoder that is fully invariant to transformations
@@ -66,7 +69,8 @@ class invVAE(VAE):
             # the range [η_low, η_high] / [η_min, η_max] *relative to the prototype xhat*. If this was relative to x,
             # applying two transformations could result in some samples x' being outside of the data distribution /
             # the allowed maximum transformation ranges.
-            q_z_x = make_invariant_encoder(self.enc, xhat, η_low, η_high, invariance_samples, inv_rng, train)
+            p_η = distrax.Uniform(low=η_low, high=η_high)
+            q_z_x = make_invariant_encoder(self.enc, xhat, p_η, invariance_samples, inv_rng, train)
         else:
             q_z_x = self.enc(x, train=train)
 
@@ -89,7 +93,8 @@ class invVAE(VAE):
         if return_xhat:
             return xhat
         else:
-            return sample_transformed_data(xhat, transform_rng, self.η_low, self.η_high)
+            p_η = distrax.Uniform(low=self.η_low, high=self.η_high)
+            return sample_transformed_data(xhat, transform_rng, p_η)
             # TODO: vmap this to handle more than 1 sample of x_hat
 
 
