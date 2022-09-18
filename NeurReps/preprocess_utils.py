@@ -1,6 +1,6 @@
-from configparser import Interpolation
+import math
 import dataclasses
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional
 
 from clu import preprocess_spec
 import tensorflow as tf
@@ -55,19 +55,21 @@ class ValueRange:
 
 @dataclasses.dataclass
 class RandomRotate:
-  """Randomly rotates an image uniformly in the range [θmin, θmax].
+  """Randomly rotates an image uniformly in the range [θ_min, θ_max].
 
   Attributes:
-    θmin: A scalar. The minimum rotation in degrees.
-    θmax: A scalar. The maximim rotation in degrees.
+    θ_min: A scalar. The minimum rotation in degrees.
+    θ_max: A scalar. The maximim rotation in degrees.
     interpolation: Either "bilinear" or "nearest".
+    fill_value: A scalar. The value to fill the empty pixels.
     key: Key of the data to be processed.
     key_result: Key under which to store the result (same as `key` if None).
     rng_key: Key of the random number used for `tf.random.stateless_uniform`.
   """
-  θmin: float = -45
-  θmax: float = 45
+  θ_min: float = -45
+  θ_max: float = 45
   interpolation: str = "bilinear"
+  fill_value: float = 0
   key: str = "image"
   key_result: Optional[str] = None
   rng_key: str = "rng"
@@ -75,10 +77,11 @@ class RandomRotate:
   def __call__(self, features: Features) -> Features:
     image = features[self.key]
     rng = features[self.rng_key]
-    θmin_t = tf.constant(self.θmin, tf.float32)
-    θmax_t = tf.constant(self.θmax, tf.float32)
-    θ = tf.random.stateless_uniform((), rng, θmin_t, θmax_t)
-    image = tfa.image.rotate(image, θ, self.interpolation)
+    self.θ_min = self.θ_min * math.pi / 180
+    self.θ_max = self.θ_max * math.pi / 180
+    θ = tf.random.stateless_uniform((), rng, self.θ_min, self.θ_max)
+    image = tfa.image.rotate(image, θ, self.interpolation,
+                             fill_value=self.fill_value)
     features[self.key_result or self.key] = image
     return features
 
