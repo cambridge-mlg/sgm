@@ -62,6 +62,7 @@ def gen_transform_mat(
 def transform_image(
     image: Array,
     T: Array,
+    fill_value: float = 0.0,
 ) -> Array:
     """Applies an affine transformation to an image.
 
@@ -94,7 +95,7 @@ def transform_image(
 
     # Transform the image by moving the pixels to their new locations
     output = jnp.stack([
-        jax.scipy.ndimage.map_coordinates(image[:, :, i], transformed_pts[::-1], order=1, cval=0)
+        jax.scipy.ndimage.map_coordinates(image[:, :, i], transformed_pts[::-1], order=1, cval=fill_value)
         # Note: usually we would use bicubic interpolation (order=3), but this isn't available
         # in jax, so we have to use linear interpolation.
         for i in range(num_channels)
