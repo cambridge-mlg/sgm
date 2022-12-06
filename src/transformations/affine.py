@@ -103,3 +103,24 @@ def transform_image(
     output = jnp.reshape(output, image.shape)
 
     return output
+
+
+def rotate_image(
+    image: Array,
+    θ: float,
+    fill_value: float = 0.0,
+) -> Array:
+    """Rotates an image by an angle θ.
+
+    Args:
+        image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax image format.
+
+        θ: the angle of rotation in radians.
+
+    Returns:
+        A rotated image of same shape as the input.
+    """
+    assert_rank(image, 3)
+
+    T = gen_transform_mat(jnp.array([0, 0, θ, 0, 0, 0, 0]))
+    return transform_image(image, T, fill_value=fill_value)
