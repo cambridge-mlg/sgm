@@ -68,7 +68,6 @@ class RandomRotate:
   """
   θ_min: float = -45
   θ_max: float = 45
-  interpolation: str = "bilinear"
   fill_value: float = 0
   key: str = "image"
   key_result: Optional[str] = None
@@ -80,8 +79,7 @@ class RandomRotate:
     self.θ_min = self.θ_min * math.pi / 180
     self.θ_max = self.θ_max * math.pi / 180
     θ = tf.random.stateless_uniform((), rng, self.θ_min, self.θ_max)
-    image = tfa.image.rotate(image, θ, self.interpolation,
-                             fill_value=self.fill_value)
+    image = tfa.image.rotate(image, θ, "bilinear", fill_value=self.fill_value)
     features[self.key_result or self.key] = image
     return features
 
