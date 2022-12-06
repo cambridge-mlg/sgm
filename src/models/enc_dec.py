@@ -7,9 +7,8 @@ import jax.numpy as jnp
 from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
-from chex import Array
 
-from src.models.common import raise_if_not_in_list, INV_SOFTPLUS_1, apply_mask
+from src.models.common import raise_if_not_in_list, INV_SOFTPLUS_1
 
 
 _LIKELIHOODS = [
@@ -72,12 +71,6 @@ def create_posterior(obj, hidden, output_layer):
         μ = output_layer(name=f'μ')(hidden)
         σ = jax.nn.softplus(output_layer(name=f'σ_')(hidden))
 
-        if obj.output_mask is not None:
-            # Mask out some of the transformation dimensions. E.g., only work with rotations.
-            μ = apply_mask(μ, obj.output_mask)
-            σ = apply_mask(σ, obj.output_mask, 1e-18)
-            # ^ we add a small epsilon to avoid numerical instability when σ is 0.
-
         return distrax.Normal(loc=μ, scale=σ)
 
     elif obj.posterior == 'uniform':
@@ -88,14 +81,8 @@ def create_posterior(obj, hidden, output_layer):
 
         assert obj.prior is not None
         assert type(obj.prior) is distrax.Uniform
-        high = obj.prior.high * high_multiplier * obj.output_mask + 1e-18
-        low = obj.prior.low * low_multiplier * obj.output_mask - 1e-18
-
-        if obj.output_mask is not None:
-            # Mask out some of the transformation dimensions. E.g., only work with rotations.
-            high = apply_mask(high, obj.mask, 1e-18)
-            low = apply_mask(low, obj.mask, -1e-18)
-            # ^ we add small episilons to avoid numerical instability when the width of the uniform is 0.
+        high = obj.prior.high * high_multiplier
+        low = obj.prior.low * low_multiplier
 
         return distrax.Uniform(low=low, high=high)
 
@@ -106,7 +93,6 @@ class FCEncoder(nn.Module):
     hidden_dims: Optional[List[int]] = None
     act_fn: Union[Callable, str] = nn.relu
     prior: Optional[nn.Module] = None
-    output_mask: Optional[Array] = None
 
     @nn.compact
     def __call__(self, x, train=True):
@@ -156,7 +142,6 @@ class ConvEncoder(nn.Module):
     act_fn: Union[Callable, str] = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
     prior: Optional[nn.Module] = None
-    output_mask: Optional[Array] = None
 
     @nn.compact
     def __call__(self, x, train=True):
@@ -284,7 +269,6 @@ class ConvNeXtEncoder(nn.Module):
     act_fn: Union[Callable, str] = nn.gelu
     norm_cls: nn.Module = nn.LayerNorm
     prior: Optional[nn.Module] = None
-    output_mask: Optional[Array] = None
 
     @nn.compact
     def __call__(self, x, train=True):

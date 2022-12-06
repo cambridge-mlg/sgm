@@ -5,8 +5,6 @@ from jax import numpy as jnp
 
 from src.data import METADATA, train_val_split_sizes
 
-UPPER_ROT = jnp.pi/2
-
 def get_config() -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
 
@@ -22,8 +20,8 @@ def get_config() -> config_dict.ConfigDict:
     config.dataset.random_seed = 42
     config.dataset.train_augmentations = []
     config.dataset.test_augmentations = []
-    config.dataset.η_low = [0., 0., 0, 0., 0., 0., 0.]
-    config.dataset.η_high = [0., 0., UPPER_ROT, 0., 0., 0., 0.]
+    config.dataset.η_low = None
+    config.dataset.η_high= None
 
     config.optim_name = 'adamw'
     config.optim = config_dict.ConfigDict()
@@ -42,8 +40,8 @@ def get_config() -> config_dict.ConfigDict:
 
     config.β = 10
     config.β_schedule_name = 'cosine_decay_schedule'
-    config.β_end_value = 1
     config.β_schedule = config_dict.ConfigDict()
+    config.β_end_value = 1
     config.β_schedule.alpha = config.β_end_value / config.β
     config.β_schedule.decay_steps = config.epochs * num_batches_per_epoch
 
@@ -52,10 +50,10 @@ def get_config() -> config_dict.ConfigDict:
     config.model.latent_dim = 128
     config.model.learn_prior = False
     config.model.architecture = 'ConvNet'
+    config.model.η_high = [0., 0., 0, 0., 0., 0., 0.]
     config.model.η_low = [0., 0., 0, 0., 0., 0., 0.]
-    config.model.η_high = [0., 0., UPPER_ROT, 0., 0., 0., 0.]
-    config.model.encoder_invariance = 'full' # 'none' or 'partial' or 'full'
-    config.model.invariance_samples = 10
+    config.model.encoder_invariance = 'none' # 'none' or 'partial' or 'full'
+    config.model.invariance_samples = 4
 
     config.model.encoder = config_dict.ConfigDict()
     config.model.encoder.posterior = 'hetero-diag-normal'

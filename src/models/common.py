@@ -5,11 +5,9 @@ import jax.numpy as jnp
 from jax import random
 from jax.tree_util import tree_map
 import distrax
-from chex import assert_equal_shape
 
 from src.transformations.affine import gen_transform_mat, transform_image
 
-NUM_TRANSFORM_PARAMS = 7
 
 MIN_η = jnp.array([0., 0., -jnp.pi, 0., 0., 0., 0.])
 MAX_η = jnp.array([0., 0., jnp.pi, 0., 0., 0., 0.])
@@ -36,7 +34,9 @@ def raise_if_not_in_list(val, valid_options, varname):
        raise RuntimeError(msg)
 
 
-def sample_transformed_data(x, rng, p_η):
+def sample_transformed_data(x, rng, η_low, η_high):
+    # TODO: support other distributions here! This is useful for making invariant encoders that match the prior dist.
+    p_η = distrax.Uniform(low=η_low, high=η_high)
     η = p_η.sample(sample_shape=(), seed=rng)
 
     T = gen_transform_mat(η)
@@ -46,11 +46,11 @@ def sample_transformed_data(x, rng, p_η):
     # images, and do the flattening internally.
 
 
-def make_invariant_encoder(enc, x, p_η, num_samples, rng, train):
+def make_invariant_encoder(enc, x, η_low, η_high, num_samples, rng, train):
     rngs = random.split(rng, num_samples)
 
     def sample_q_params(x, rng):
-        x_trans = sample_transformed_data(x, rng, p_η)
+        x_trans = sample_transformed_data(x, rng, η_low, η_high)
         q_z_x = enc(x_trans, train=train)
         return q_z_x.loc, q_z_x.scale
 
@@ -61,8 +61,3 @@ def make_invariant_encoder(enc, x, p_η, num_samples, rng, train):
     # TODO: support other distributions here.
 
     return q_z_x
-
-
-def apply_mask(x, mask, fill=0.):
-    assert_equal_shape([x, mask])
-    return x * mask + fill * (1 - mask)
