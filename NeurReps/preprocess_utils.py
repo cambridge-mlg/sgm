@@ -1,10 +1,14 @@
 import math
 import dataclasses
 from typing import List, Optional
+import functools
 
 from clu import preprocess_spec
 import tensorflow as tf
 import tensorflow_addons as tfa
+from jax.experimental import jax2tf
+
+from src.transformations.affine import rotate_image
 
 
 Features = preprocess_spec.Features
@@ -60,7 +64,6 @@ class RandomRotate:
   Attributes:
     θ_min: A scalar. The minimum rotation in degrees.
     θ_max: A scalar. The maximim rotation in degrees.
-    interpolation: Either "bilinear" or "nearest".
     fill_value: A scalar. The value to fill the empty pixels.
     key: Key of the data to be processed.
     key_result: Key under which to store the result (same as `key` if None).
@@ -79,6 +82,27 @@ class RandomRotate:
     self.θ_min = self.θ_min * math.pi / 180
     self.θ_max = self.θ_max * math.pi / 180
     θ = tf.random.stateless_uniform((), rng, self.θ_min, self.θ_max)
+
+    # tf_rotate_image = jax2tf.convert(rotate_image)
+
+    # tf_rotate_image = tf.function(jax2tf.convert(rotate_image), autograph=False, jit_compile=True)
+
+    # @tf.function(input_signature=[
+    #     tf.TensorSpec([None, None, None], tf.float32),
+    #     tf.TensorSpec([], tf.float32),
+    #     tf.TensorSpec([], tf.float32)
+    # ])
+    # def tf_rotate_image(image, θ, fill_value):
+    #     image = tf.numpy_function(rotate_image, [image, θ, fill_value], tf.float32)
+    #     image = tf.ensure_shape(image, [None, None, None])
+    #     return image
+
+    # image = tf_rotate_image(image, θ, self.fill_value)
+
+    # tf_rotate_image = functools.partial(tf.numpy_function, rotate_image, Tout=tf.float32)
+    # image = tf.ensure_shape(tf_rotate_image([image, θ, self.fill_value]), (None, None, None))
+
+
     image = tfa.image.rotate(image, θ, "bilinear", fill_value=self.fill_value)
     features[self.key_result or self.key] = image
     return features
