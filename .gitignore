@@ -136,3 +136,6 @@ raw_data/
 
 # weights and biases stuff
 wandb/
+
+# results
+results*/
