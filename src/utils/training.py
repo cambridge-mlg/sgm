@@ -1,30 +1,43 @@
-
-from typing import Callable, Mapping, Optional, Tuple, Union
+from typing import Mapping, Optional, Tuple, Union
 from functools import partial
+import logging
 
 import wandb
 from tqdm.auto import trange
+import numpy as np
 import tensorflow as tf
+
 import jax
 from jax import random
 from jax import numpy as jnp
-from jax.tree_util import tree_map
+
+import flax
 from flax.core.frozen_dict import FrozenDict
 from flax.training import train_state
-from flax import struct
 import flax.linen as nn
+
 import optax
+
 from chex import Array
+
 from ml_collections import config_dict
 from clu import parameter_overview
+from clu import preprocess_spec
 
-from src.utils.plotting import plot_img_array
-from src.utils.jax import tree_concatenate
+import src.utils.input as input_utils
+import src.utils.preprocess as preprocess_utils
+import src.utils.plotting as plot_utils
+import src.utils.jax as jax_utils
 import src.models as models
 
 
 PRNGKey = jnp.ndarray
 ScalarOrSchedule = Union[float, optax.Schedule]
+
+
+def _write_note(note):
+    if jax.process_index() == 0:
+        logging.info('%s', note)
 
 
 class TrainState(train_state.TrainState):
@@ -138,6 +151,86 @@ def setup_training(
     )
 
     return model, state
+
+
+def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
+    rng, train_ds_rng = jax.random.split(rng)
+    train_ds_rng = jax.random.fold_in(train_ds_rng, jax.process_index())
+
+    _write_note('Initializing train dataset...')
+    train_ds = input_utils.get_data(
+        dataset=config.dataset,
+        split=config.train_split,
+        rng=train_ds_rng,
+        process_batch_size=local_batch_size,
+        preprocess_fn=preprocess_spec.parse(
+            spec=config.pp_train, available_ops=preprocess_utils.all_ops()),
+        shuffle_buffer_size=config.shuffle_buffer_size,
+        repeat_after_batching=config.get('repeat_after_batching', True),
+        prefetch_size=config.get('prefetch_to_host', 2),
+        data_dir=config.get('data_dir'))
+
+    _write_note('Initializing val dataset...')
+    rng, val_ds_rng = jax.random.split(rng)
+    val_ds_rng = jax.random.fold_in(val_ds_rng, jax.process_index())
+
+    nval_img = input_utils.get_num_examples(
+        config.dataset,
+        split=config.val_split,
+        process_batch_size=local_batch_size_eval,
+        drop_remainder=False,
+        data_dir=config.get('data_dir'))
+    val_steps = int(np.ceil(nval_img / local_batch_size_eval))
+    logging.info('Running validation for %d steps for %s, %s', val_steps,
+                 config.dataset, config.val_split)
+
+    val_ds = input_utils.get_data(
+        dataset=config.dataset,
+        split=config.val_split,
+        rng=val_ds_rng,
+        process_batch_size=local_batch_size_eval,
+        preprocess_fn=preprocess_spec.parse(
+            spec=config.pp_eval, available_ops=preprocess_utils.all_ops()),
+        cache=config.get('val_cache', 'batched'),
+        num_epochs=1,
+        repeat_after_batching=True,
+        shuffle=False,
+        prefetch_size=config.get('prefetch_to_host', 2),
+        drop_remainder=False,
+        data_dir=config.get('data_dir'))
+
+    rng, test_ds_rng = jax.random.split(rng)
+    test_ds_rng = jax.random.fold_in(test_ds_rng, jax.process_index())
+
+    test_ds = None
+    if config.get('test_split', None):
+        _write_note('Initializing test dataset...')
+        ntest_img = input_utils.get_num_examples(
+            config.dataset,
+            split=config.test_split,
+            process_batch_size=local_batch_size_eval,
+            drop_remainder=False,
+            data_dir=config.get('data_dir'))
+        test_steps = int(np.ceil(ntest_img / local_batch_size_eval))
+        logging.info('Running test for %d steps for %s, %s', test_steps,
+                     config.dataset, config.test_split)
+
+        test_ds = input_utils.get_data(
+            dataset=config.dataset,
+            split=config.test_split,
+            rng=test_ds_rng,
+            process_batch_size=local_batch_size_eval,
+            preprocess_fn=preprocess_spec.parse(
+                spec=config.pp_eval, available_ops=preprocess_utils.all_ops()),
+            cache=config.get('test_cache', 'batched'),
+            num_epochs=1,
+            repeat_after_batching=True,
+            shuffle=False,
+            prefetch_size=config.get('prefetch_to_host', 2),
+            drop_remainder=False,
+            data_dir=config.get('data_dir'))
+
+    return train_ds, val_ds, test_ds
 
 
 def train_loop(

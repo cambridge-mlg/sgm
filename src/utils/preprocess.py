@@ -11,20 +11,6 @@ Features = preprocess_spec.Features
 PRNGKey = Any
 
 
-def make_pp_with_rng(pp_spec: str, pp_rng: PRNGKey):
-    preprocess_fn = preprocess_spec.parse(
-        spec=pp_spec, available_ops=all_ops())
-
-    def preprocess_with_rng(example_index: int, features: Features):
-        example_index = tf.cast(example_index, tf.int32)
-        features["rng"] = tf.random.experimental.stateless_fold_in(
-            tf.cast(pp_rng, tf.int64), example_index)
-        processed = preprocess_fn(features)
-        return processed
-
-    return preprocess_with_rng
-
-
 def all_ops():
   """Returns all preprocessing ops defined in this module."""
   return preprocess_spec.get_all_ops(__name__)
@@ -110,3 +96,25 @@ class Keep:
 
   def __call__(self, features: Features) -> Features:
     return {k: v for k, v in features.items() if k in self.keys}
+
+
+# @dataclasses.dataclass
+# class Decode:
+#     """Decodes an encoded image string, see tf.io.decode_image.
+#     Attributes:
+#       channels: Number of image channels.
+#       key: Key of the data to be processed.
+#       key_result: Key under which to store the result (same as `key` if None).
+#     """
+
+#     channels: int = 3
+#     key: str = "image"
+#     key_result: Optional[str] = None
+
+#     def __call__(self, features: Features) -> Features:
+#         image_data = features[self.key]
+#         decoded_image = tf.io.decode_image(
+#             image_data, channels=self.channels, expand_animations=False
+#         )
+#         features[self.key_result or self.key] = decoded_image
+#         return features
