@@ -4,6 +4,7 @@ from functools import partial
 
 import wandb
 from tqdm.auto import trange
+import tensorflow as tf
 import jax
 from jax import random
 from jax import numpy as jnp
@@ -19,7 +20,6 @@ from clu import parameter_overview
 
 from src.utils.plotting import plot_img_array
 from src.utils.jax import tree_concatenate
-from src.data import NumpyLoader
 import src.models as models
 
 
@@ -147,9 +147,9 @@ def train_loop(
     rng: PRNGKey,
     make_loss_fn: Callable,
     make_eval_fn: Callable,
-    train_loader: NumpyLoader,
-    val_loader: NumpyLoader,
-    test_loader: Optional[NumpyLoader] = None,
+    train_ds: tf.data.Dataset,
+    val_ds: tf.data.Dataset,
+    test_ds: Optional[tf.data.Dataset] = None,
     wandb_kwargs: Optional[Mapping] = None,
 ) -> TrainState:
     """Runs the training loop!
@@ -172,7 +172,7 @@ def train_loop(
         arguments (params, model_state, rng, β) and return (metrics, recon_data, sample_data, recon_title, sample_title).
         TODO: describe the format for reco_comaprison and sample_data, recon_title, sample_title.
 
-        If `test_loader` is supplied, on epochs for which the validation loss is the new best, the test set
+        If `test_ds` is supplied, on epochs for which the validation loss is the new best, the test set
         will be evaluated using `make_eval_fn` and the results will be added to the W&B summary.
 
         `wandb_kwargs` are a dictionary for overriding the kwargs passed to `wandb.init`. The only kwargs
@@ -221,19 +221,19 @@ def train_loop(
         epochs = trange(1, config.epochs + 1)
         for epoch in epochs:
             batch_metrics = []
-            for (x_batch, _) in train_loader:
+            for x_batch in train_ds:
                 rng, batch_rng = random.split(rng)
                 state, metrics = train_step(state, x_batch, batch_rng)
                 batch_metrics.append(metrics)
 
             train_metrics = tree_map(
-                lambda x: jnp.sum(x) / len(train_loader.dataset),
+                lambda x: jnp.sum(x) / len(train_ds.dataset),
                 tree_concatenate(batch_metrics)
             )
             train_losses.append(-train_metrics['elbo'])
 
             batch_metrics = []
-            for i, (x_batch, _) in enumerate(val_loader):
+            for i, x_batch in enumerate(val_ds):
                 rng, eval_rng = random.split(rng)
                 if i==0:
                     metrics, recon_data, sample_data = eval_step(state, x_batch, eval_rng)
@@ -242,7 +242,7 @@ def train_loop(
                 batch_metrics.append(metrics)
 
             val_metrics = tree_map(
-                lambda x: jnp.sum(x) / len(val_loader.dataset),
+                lambda x: jnp.sum(x) / len(val_ds.dataset),
                 tree_concatenate(batch_metrics)
             )
             val_losses.append(-val_metrics['elbo'])
@@ -276,9 +276,9 @@ def train_loop(
                 run.summary['best_epoch'] = epoch
                 run.summary['best_val_loss'] = val_losses[-1]
 
-                if test_loader is not None:
+                if test_ds is not None:
                     batch_metrics = []
-                    for i, (x_batch, _) in enumerate(test_loader):
+                    for i, x_batch in enumerate(test_ds):
                         eval_rng, test_rng = random.split(test_rng)
                         if i==0:
                             metrics, recon_data, sample_data = eval_step(state, x_batch, eval_rng)
@@ -287,7 +287,7 @@ def train_loop(
                         batch_metrics.append(metrics)
 
                     test_metrics = tree_map(
-                        lambda x: jnp.sum(x) / len(test_loader.dataset),
+                        lambda x: jnp.sum(x) / len(test_ds.dataset),
                         tree_concatenate(batch_metrics)
                     )
 

@@ -1,17 +1,28 @@
 import math
 import dataclasses
-from typing import List, Optional
-import functools
+from typing import Any, List, Optional
 
 from clu import preprocess_spec
 import tensorflow as tf
 import tensorflow_addons as tfa
-from jax.experimental import jax2tf
-
-from src.transformations.affine import rotate_image
 
 
 Features = preprocess_spec.Features
+PRNGKey = Any
+
+
+def make_pp_with_rng(pp_spec: str, pp_rng: PRNGKey):
+    preprocess_fn = preprocess_spec.parse(
+        spec=pp_spec, available_ops=all_ops())
+
+    def preprocess_with_rng(example_index: int, features: Features):
+        example_index = tf.cast(example_index, tf.int32)
+        features["rng"] = tf.random.experimental.stateless_fold_in(
+            tf.cast(pp_rng, tf.int64), example_index)
+        processed = preprocess_fn(features)
+        return processed
+
+    return preprocess_with_rng
 
 
 def all_ops():
@@ -82,26 +93,6 @@ class RandomRotate:
     self.θ_min = self.θ_min * math.pi / 180
     self.θ_max = self.θ_max * math.pi / 180
     θ = tf.random.stateless_uniform((), rng, self.θ_min, self.θ_max)
-
-    # tf_rotate_image = jax2tf.convert(rotate_image)
-
-    # tf_rotate_image = tf.function(jax2tf.convert(rotate_image), autograph=False, jit_compile=True)
-
-    # @tf.function(input_signature=[
-    #     tf.TensorSpec([None, None, None], tf.float32),
-    #     tf.TensorSpec([], tf.float32),
-    #     tf.TensorSpec([], tf.float32)
-    # ])
-    # def tf_rotate_image(image, θ, fill_value):
-    #     image = tf.numpy_function(rotate_image, [image, θ, fill_value], tf.float32)
-    #     image = tf.ensure_shape(image, [None, None, None])
-    #     return image
-
-    # image = tf_rotate_image(image, θ, self.fill_value)
-
-    # tf_rotate_image = functools.partial(tf.numpy_function, rotate_image, Tout=tf.float32)
-    # image = tf.ensure_shape(tf_rotate_image([image, θ, self.fill_value]), (None, None, None))
-
 
     image = tfa.image.rotate(image, θ, "bilinear", fill_value=self.fill_value)
     features[self.key_result or self.key] = image

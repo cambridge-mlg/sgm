@@ -1,292 +1,178 @@
+"""Definition of the Learnt-Invariance VAE.
+
+A note on notation. In order to distinguish between random variables and their values, we use upper
+and lower case variable names. I.e., p(Z) or `p_Z` is the distribution over the r.v. Z, and is a
+function, while p(z) or `p_z` is the probability that Z=z. Similarly, p(X|Z) or `p_X_given_Z` is a
+a function which returns another function p(X|z) or `p_X_given_z`, which would return the proability
+that X=x|Z=z a.k.k `p_x_given_z`.
+"""
+
 from typing import Any, Callable, Mapping, Optional, Tuple
-from functools import partial
-from math import prod
 
 import jax
-import jax.numpy as jnp
+from jax import numpy as jnp
 from jax import random, lax
 from jax.tree_util import tree_map
 from chex import Array
-import flax.linen as nn
+from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
 
-from src.models.vae import VAE, get_enc_dec
-from src.models.common import (
-    sample_transformed_data, make_invariant_encoder,
-    raise_if_not_in_list, get_agg_fn,
-    MAX_η, MIN_η, INV_SOFTPLUS_1,
-)
-from src.transformations.affine import gen_transform_mat, transform_image
+from src.transformations.affine import rotate_image
+from src.models.common import ConvEncoder, ConvDecoder, DenseEncoder, Bijector, INV_SOFTPLUS_1
 
 KwArgs = Mapping[str, Any]
 
 
-_ENCODER_INVARIANCE_MODES = ['full', 'partial', 'none']
-
-
-# TODO: generalise to more than just rotations
-class LIVAE(VAE):
-    encoder_invariance: str = 'partial'
-    invariance_samples: Optional[int] = None
-    learn_η_loc: bool = False
-    learn_η_scale: bool = True
-    η_encoder: Optional[KwArgs] = None
-    recon_title: str = "Reconstructions: original – $\\hat{x}$ mean – $x$ mean - $\\hat{x}$ sample - $x$ sample"
-    sample_title: str = "Prior Samples: $\\hat{x}$ mean – $x$ mean - $\\hat{x}$ sample - $x$ sample"
+class LIVAE(nn.Module):
+    latent_dim: int = 20
+    image_shape: Tuple[int, int, int] = (28, 28, 1)
+    encoder: Optional[KwArgs] = None
+    decoder: Optional[KwArgs] = None
+    θ_encoder: Optional[KwArgs] = None
+    θ_decoder: Optional[KwArgs] = None
+    θ_bijector: Optional[KwArgs] = None
 
     def setup(self):
-        super().setup()
-
-        self.η_prior_μ = self.param(
-            'η_prior_μ', init.zeros, (1,)
+        # p(Z)
+        self.p_Z = distrax.Normal(
+            loc=self.param(
+                'prior_μ',
+                init.zeros,
+                (self.latent_dim,)
+            ),
+            scale=jax.nn.softplus(self.param(
+                'prior_σ_',
+                init.constant(INV_SOFTPLUS_1),
+                # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
+                (self.latent_dim,)
+            ))  # type: ignore
         )
-        self.η_prior_σ = jax.nn.softplus(self.param(
-            'η_prior_σ_',
-            init.constant(INV_SOFTPLUS_1),
-            (1,)
-        ))
+        # q(Z|X)
+        self.q_Z_given_X = ConvEncoder(latent_dim=self.latent_dim, **(self.encoder or {}))
+        # p(X̂|Z)
+        self.p_Xhat_given_Z = ConvDecoder(image_shape=self.image_shape, **(self.decoder or {}))
+        # p(Θ|Z)
+        p_Θ_given_Z_base = DenseEncoder(latent_dim=1, **(self.θ_decoder or {}))
+        p_Θ_given_Z_bij = Bijector(num_layers=2, num_bins=4, **(self.θ_bijector or {}))
+        self.p_Θ_given_Z = lambda z: distrax.Transformed(p_Θ_given_Z_base(z), p_Θ_given_Z_bij(z))
+        # q(Θ|X)
+        q_Θ_given_X_base = DenseEncoder(latent_dim=1, **(self.θ_decoder or {}))
+        q_Θ_given_X_bij = Bijector(num_layers=2, num_bins=4, **(self.θ_bijector or {}))
+        self.q_Θ_given_X = lambda x: distrax.Transformed(q_Θ_given_X_base(x), q_Θ_given_X_bij(x))
 
-        if not self.learn_η_loc:
-            # Note: this is helpful for identifiability, however, it isn't suitable
-            # when the transformation is not symetric (e.g. a rotation between 0 and π/4)
-            self.η_prior_μ = jax.lax.stop_gradient(self.η_prior_μ)
-        if not self.learn_η_scale:
-            self.η_prior_σ = jax.lax.stop_gradient(self.η_prior_σ)
+    def __call__(self, x, rng):
+        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, rng)
+        z = q_Z_given_x.sample(seed=rng)
 
-        if 'normal' in self.η_encoder['posterior']:
-            self.p_η = distrax.Normal(loc=self.η_prior_μ, scale=self.η_prior_σ)
-        else:
-            assert self.η_encoder['posterior'] == 'uniform'
-            high = self.η_prior_μ + self.η_prior_σ
-            low = self.η_prior_μ - self.η_prior_σ
-            self.p_η = distrax.Uniform(low=low, high=high)
+        p_Θ_given_z = self.p_Θ_given_Z(z)
 
-        Encoder, _ = get_enc_dec(self.architecture)
-        self.η_enc = Encoder(
-            latent_dim=1, **(self.η_encoder or {}), prior=self.p_η
-        )
+        q_Θ_given_x = self.q_Θ_given_X(x)
+        θ = q_Θ_given_x.sample(seed=rng)[0]
 
-    def __call__(self, x, rng, train=True, invariance_samples=None):
-        raise_if_not_in_list(self.encoder_invariance, _ENCODER_INVARIANCE_MODES, 'self.encoder_invariance')
-        z_rng, η_rng, xhat_rng, inv_rng = random.split(rng, 4)
+        p_Xhat_given_z = self.p_Xhat_given_Z(z)
+        xhat = p_Xhat_given_z.sample(seed=rng)
 
-        # TODO: add equivariance
-        q_η_x = self.η_enc(x, train=train)
-        η = q_η_x.sample(seed=η_rng)
+        x_ = rotate_image(xhat, θ, -1)
+        p_X_given_xhat_θ = distrax.Normal(x_, 1.)
 
-        if self.encoder_invariance in ['full', 'partial']:
-            # print(self.encoder_invariance)
-            η_low, η_high = self._get_η_bounds()
-            invariance_samples = nn.merge_param(
-                'invariance_samples', self.invariance_samples, invariance_samples
-            )
-            # The encoder should be invariant to transformations of the observed data x that result in sample x'
-            # the range [η_low, η_high] / [η_min, η_max] *relative to the prototype xhat*. If this was relative to x,
-            # applying two transformations could result in some samples x' being outside of the data distribution /
-            # the allowed maximum transformation ranges.
-            η_ = q_η_x.mean()
-            T = gen_transform_mat(jnp.array([0., 0., -η_[0], 0., 0., 0., 0.]))
-            xhat_ = transform_image(x, T)
-            # TODO: ^ make stochastic?
-            q_z_x = make_invariant_encoder(self.enc, xhat_, η_low, η_high, invariance_samples, inv_rng, train)
-        else:
-            q_z_x = self.enc(x, train=train)
+        return q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Xhat_given_z, p_Θ_given_z, self.p_Z
 
-        q_z_x = self.enc(x, train=train)
-        z = q_z_x.sample(seed=z_rng)
+    def sample(self, rng, prototype=False, sample_xhat=False, sample_θ=False):
+        z = self.p_Z.sample(seed=rng)
 
-        p_xhat_z = self.dec(z, train=train)
-        xhat = p_xhat_z.sample(seed=xhat_rng)
-
-        T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
-        x_ = transform_image(xhat, T)
-        # TODO: make noisy?
-        p_x_xhat_η = distrax.Normal(x_, 1.)
-        # TODO: learn scale param here?
-
-        return q_z_x, q_η_x, p_x_xhat_η, p_xhat_z, self.p_z, self.p_η
-
-    def generate(self, rng, sample_shape=(), return_mode=False, return_xhat=False):
-        z_rng, η_rng, xhat_rng, transform_rng = random.split(rng, 4)
-        z = self.p_z.sample(seed=z_rng)
-        p_xhat_z = self.dec(z, train=False)
-
-        if not return_mode:
-            xhat = p_xhat_z.sample(seed=xhat_rng, sample_shape=sample_shape)
-        else:
-            xhat = p_xhat_z.mean()
-
-        if return_xhat:
+        p_Xhat_given_z = self.p_Xhat_given_Z(z)
+        xhat = p_Xhat_given_z.sample(seed=rng) if sample_xhat else p_Xhat_given_z.mean()
+        if prototype:
             return xhat
-        else:
-            if not return_mode:
-                η = self.p_η.sample(seed=η_rng)
-            else:
-                η = self.p_η.mean()
 
-            T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
-            x = transform_image(xhat, T)
-            # TODO: make noisy?
-            # TODO: vmap this to deal with more than 1 sample
-            return x
+        p_Θ_given_z = self.p_Θ_given_Z(z)
+        θ = p_Θ_given_z.sample(seed=rng)[0] if sample_θ else p_Θ_given_z.mean()[0]
 
-    def _get_η_bounds(self):
-        # Here we choose between having an encoder that is fully invariant to transformations
-        # e.g. in the case of rotations, for angles between -π and π, or partially invariant
-        # as specified by self.η_low and self.η_high.
-        if self.encoder_invariance == 'full':
-            return MIN_η, MAX_η
-        else:
-            assert self.encoder_invariance == 'partial'
+        x = rotate_image(xhat, θ, -1)
+        return x
 
-            if type(self.p_η) is distrax.Normal:
-                η_low = self.p_η.loc - self.p_η.scale
-                η_high = self.p_η.loc + self.p_η.scale
-            else:
-                assert type(self.p_η) is distrax.Uniform
-                η_low = self.p_η.low
-                η_high = self.p_η.high
+    def reconstruct(self, x, rng, prototype=False, sample_z=False,
+                    sample_xhat=False, sample_θ=False):
+        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, rng)
+        z = q_Z_given_x.sample(seed=rng) if sample_z else q_Z_given_x.mean()
 
-            return jnp.array([0., 0., η_low[0], 0., 0., 0., 0.]), jnp.array([0., 0., η_high[0], 0., 0., 0., 0.])
+        p_Xhat_given_z = self.p_Xhat_given_Z(z)
+        xhat = p_Xhat_given_z.sample(seed=rng) if sample_xhat else p_Xhat_given_z.mean()
+        if prototype:
+            return xhat
+
+        q_Θ_given_x = self.q_Θ_given_X(x)
+        θ = q_Θ_given_x.sample(seed=rng)[0] if sample_θ else q_Θ_given_x.mean()[0]
+
+        x_recon = rotate_image(xhat, θ, -1)
+        return x_recon
 
 
-def make_LIVAE_loss(
+# TODO: generalize to other transformations.
+def make_approx_invariant(p_Z_given_X, x, num_samples, rng):
+    """Construct an approximately invariant distribution by sampling parameters
+    of the distribution for rotated inputs and then averaging.
+
+    Args:
+        p_Z_given_X: A distribution whose parameters are a function of x.
+        x: An image.
+        num_samples: The number of samples to take.
+        rng: A random number generator.
+
+    Returns:
+        An approximately invariant distribution of the same type as p.
+    """
+    p_Θ = distrax.Uniform(low=-jnp.pi, high=jnp.pi)
+    rngs = random.split(rng, num_samples)
+
+    def sample_params(x, rng):
+        θ = p_Θ.sample(seed=rng)
+        x_ = rotate_image(x, θ, -1)
+        p_Z_given_x_ = p_Z_given_X(x_)
+        assert type(p_Z_given_x_) == distrax.Normal
+        # TODO: generalise to other distributions.
+        return p_Z_given_x_.loc, p_Z_given_x_.scale
+
+    params = jax.vmap(sample_params, in_axes=(None, 0))(x, rngs)
+    params = tree_map(lambda x: jnp.mean(x, axis=0), params)
+
+    return distrax.Normal(*params)
+
+
+def calculate_livae_elbo(x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_given_z, p_Z, β=1.):
+    ll = p_X_given_xhat_θ.log_prob(x).sum()
+    z_kld = q_Z_given_x.kl_divergence(p_Z).sum()
+    θ_kld = q_Θ_given_x.kl_divergence(p_Θ_given_z).sum()
+
+    elbo = ll - β * z_kld - θ_kld
+    # TODO: add beta term for θ_kld? Use same beta?
+
+    return {'loss': -elbo, 'elbo': elbo, 'll': ll, 'z_kld': z_kld, 'θ_kld': θ_kld}
+
+
+def make_livae_loss(
     model: LIVAE,
     x_batch: Array,
-    train: bool = True,
-    aggregation: str = 'mean',
 ) -> Callable:
-    """Creates a loss function for training a VAE."""
-    def batch_loss(params, state, batch_rng, β=1.):
+    def batch_loss(params, batch_rng, β: float = 1.):
         # TODO: this loss function is a 1 sample estimate, add an option for more samples?
         # Define loss func for 1 example.
         def loss_fn(x):
             rng = random.fold_in(batch_rng, lax.axis_index('batch'))
-            (q_z_x, q_η_x, p_x_xhat_η, _, p_z, p_η), new_state = model.apply(
-                {'params': params, **state}, x, rng,
-                mutable=list(state.keys()) if train else {},
+            q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, _, p_Θ_given_z, p_Z = model.apply(
+                {'params': params}, x, rng,
             )
 
-            metrics = _calculate_elbo_and_metrics(x, q_z_x, q_η_x, p_x_xhat_η, p_z, p_η, β)
-            elbo = metrics['elbo']
+            metrics = calculate_livae_elbo(x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_given_z, p_Z, β)
 
-            return -elbo, new_state, metrics
+            return metrics
 
         # Broadcast over batch and take aggregate.
-        agg = get_agg_fn(aggregation)
-        batch_losses, new_state, batch_metrics = jax.vmap(
-            loss_fn, out_axes=(0, None, 0), in_axes=(0), axis_name='batch'
+        batch_metrics = jax.vmap(
+            loss_fn, out_axes=(0), in_axes=(0), axis_name='batch'
         )(x_batch)
-        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
-        return agg(batch_losses, axis=0), (new_state, batch_metrics)
+        batch_metrics = tree_map(lambda x: x.mean(axis=0), batch_metrics)
+        return batch_metrics['loss'], (batch_metrics)
 
     return jax.jit(batch_loss)
-
-
-def make_LIVAE_eval(
-    model: LIVAE,
-    x_batch: Array,
-    img_shape: Tuple,
-    num_recons: int = 16,
-    aggregation: str = 'mean',
-    zs_rng: Optional[jax.random.PRNGKey] = None,
-) -> Callable:
-    """Creates a function for evaluating a VAE."""
-    def batch_eval(params, state, eval_rng, β=1.):
-        if zs_rng is None:
-            eval_rng, sample_rng = random.split(eval_rng)
-        else:
-            sample_rng = zs_rng
-
-        # Define eval func for 1 example.
-        def eval_fn(x):
-            z_rng, x_hat_rng, η_rng = random.split(random.fold_in(eval_rng, lax.axis_index('batch')), 3)
-            q_z_x, q_η_x, p_x_xhat_η, p_xhat_z, p_z, p_η = model.apply(
-                {'params': params, **state}, x, z_rng, train=False
-            )
-
-            metrics = _calculate_elbo_and_metrics(x, q_z_x, q_η_x, p_x_xhat_η, p_z, p_η, β)
-
-            x_hat_mode = p_xhat_z.mean()
-            x_hat_sample = p_xhat_z.sample(seed=x_hat_rng, sample_shape=())
-
-            η = q_η_x.mean()
-            T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
-            x_mode = transform_image(x_hat_mode, T)
-
-            η = q_η_x.sample(seed=η_rng)
-            T = gen_transform_mat(jnp.array([0., 0., η[0], 0., 0., 0., 0.]))
-            x_sample = transform_image(x_hat_sample, T)
-
-            return metrics, x_hat_mode, x_hat_sample, x_mode, x_sample
-
-        # Broadcast over batch and aggregate.
-        agg = get_agg_fn(aggregation)
-        batch_metrics, batch_x_hat_mode, batch_x_hat_sample, batch_x_mode, batch_x_sample = jax.vmap(
-            eval_fn, out_axes=(0, 0, 0, 0, 0), in_axes=(0,), axis_name='batch'
-        )(x_batch)
-        batch_metrics = tree_map(lambda x: agg(x, axis=0), batch_metrics)
-
-        recon_array = jnp.concatenate([
-            x_batch[:num_recons].reshape(-1, *img_shape),
-            batch_x_hat_mode[:num_recons].reshape(-1, *img_shape),
-            batch_x_mode[:num_recons].reshape(-1, *img_shape),
-            batch_x_hat_sample[:num_recons].reshape(-1, *img_shape),
-            batch_x_sample[:num_recons].reshape(-1, *img_shape),
-        ])
-
-        @partial(jax.vmap, axis_name='batch')
-        def sample_fn(batch_rng):
-            xhat_sample = model.apply(
-                {'params': params, **state}, batch_rng, return_mode=False, return_xhat=True,
-                method=model.generate
-            )
-
-            x_sample = model.apply(
-                {'params': params, **state}, batch_rng, return_mode=False, return_xhat=False,
-                method=model.generate
-            )
-
-            xhat_mode = model.apply(
-                {'params': params, **state}, batch_rng, return_mode=True, return_xhat=True,
-                method=model.generate
-            )
-
-            x_mode = model.apply(
-                {'params': params, **state}, batch_rng, return_mode=True, return_xhat=False,
-                method=model.generate
-            )
-
-            return xhat_mode, x_mode, xhat_sample, x_sample
-
-        xhat_modes, x_modes, xhat_samples, x_samples = sample_fn(random.split(sample_rng, num_recons))
-        sample_array = jnp.concatenate([
-            xhat_modes.reshape(-1, *img_shape),
-            x_modes.reshape(-1, *img_shape),
-            xhat_samples.reshape(-1, *img_shape),
-            x_samples.reshape(-1, *img_shape),
-        ])
-
-        return batch_metrics, recon_array, sample_array
-
-    return jax.jit(batch_eval)
-
-
-def _calculate_elbo_and_metrics(x, q_z_x, q_η_x, p_x_xhat_η, p_z, p_η, β=1.):
-    x_size = prod(p_x_xhat_η.batch_shape)
-
-    ll = p_x_xhat_η.log_prob(x).sum()
-    z_kld = q_z_x.kl_divergence(p_z).sum()
-    η_kld = q_η_x.kl_divergence(p_η).sum()
-    elbo = ll - β * z_kld - η_kld
-    # TODO: add beta term for η_kld? Use same beta?
-
-    return {
-        'll': ll,
-        'kld': z_kld,
-        'η_kld': η_kld,
-        'elbo': elbo / x_size,
-        # ^ We normalise the ELBO by the data size to (hopefully) make LR, etc., more general.
-        'elbo_unnorm': elbo,
-    }

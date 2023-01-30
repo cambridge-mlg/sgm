@@ -1,17 +1,12 @@
-from typing import Callable
+from typing import Callable, Optional, Sequence, Tuple
 
 import jax
-import jax.numpy as jnp
-from jax import random
-from jax.tree_util import tree_map
+from jax import numpy as jnp
+from jax import random, lax
+from chex import Array
+from flax import linen as nn
+import flax.linen.initializers as init
 import distrax
-
-from src.transformations.affine import gen_transform_mat, transform_image
-
-
-MIN_η = jnp.array([0., 0., -jnp.pi, 0., 0., 0., 0.])
-MAX_η = jnp.array([0., 0., jnp.pi, 0., 0., 0., 0.])
-# ^ For now we are just working with rotations, so other transformations are off.
 
 
 INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
@@ -19,45 +14,151 @@ INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
 # and we init σ_ to this value, we effectively init σ to 1.
 
 
-def get_agg_fn(agg: str) -> Callable:
-    raise_if_not_in_list(agg, ['mean', 'sum'], 'aggregation')
+# p(z|x) = N(μ(x), σ(x))
+class DenseEncoder(nn.Module):
+    latent_dim: int
+    hidden_dims: Optional[Sequence[int]] = None
+    act_fn: Callable = nn.relu
+    σ_min: float = 1e-2
 
-    if agg == 'mean':
-        return jnp.mean
-    else:
-        return jnp.sum
+    @nn.compact
+    def __call__(self, x):
+        hidden_dims = self.hidden_dims if self.hidden_dims else [64, 32]
+
+        h = x.reshape(-1)
+        for i, hidden_dim in enumerate(hidden_dims):
+            h = self.act_fn(nn.Dense(hidden_dim, name=f'hidden{i}')(h))
+
+        μ = nn.Dense(self.latent_dim, name='μ')(h)
+        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name='σ_')(h))
+
+        return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
+
+# p(z|x) = N(μ(x), σ(x))
+class ConvEncoder(nn.Module):
+    latent_dim: int
+    hidden_dims: Optional[Sequence[int]] = None
+    act_fn: Callable = nn.relu
+    norm_cls: nn.Module = nn.LayerNorm
+    σ_min: float = 1e-2
+
+    @nn.compact
+    def __call__(self, x):
+        hidden_dims = self.hidden_dims if self.hidden_dims else [64, 128, 256]
+
+        h = x
+        for i, hidden_dim in enumerate(hidden_dims):
+            h = nn.Conv(
+                hidden_dim,
+                kernel_size=(3, 3),
+                strides=(2, 2) if i==0 else (1, 1),
+                name=f'hidden{i}'
+            )(h)
+            h = self.norm_cls(name=f'norm{i}')(h)
+            h = self.act_fn(h)
+
+        h = h.flatten()
+
+        μ = nn.Dense(self.latent_dim, name=f'μ')(h)
+        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name='σ_')(h))
+
+        return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
 
 
-def raise_if_not_in_list(val, valid_options, varname):
-    if val not in valid_options:
-       msg = f'`{varname}` should be one of `{valid_options}` but was `{val}` instead.'
-       raise RuntimeError(msg)
+# p(x|z) = N(μ(z), σ)
+class ConvDecoder(nn.Module):
+    image_shape: Tuple[int, int, int]
+    hidden_dims: Optional[Sequence[int]] = None
+    σ_init: Callable = init.constant(INV_SOFTPLUS_1)
+    σ_min: float = 1e-2
+    act_fn: Callable = nn.relu
+    norm_cls: nn.Module = nn.LayerNorm
+
+    @nn.compact
+    def __call__(self, z):
+        hidden_dims = self.hidden_dims if self.hidden_dims else [256, 128, 64]
+
+        assert self.image_shape[0] == self.image_shape[1], "Images should be square."
+        output_size = self.image_shape[0]
+        first_hidden_size = output_size // 2
+
+        h = nn.Dense(
+            first_hidden_size * first_hidden_size * hidden_dims[0], name=f'resize'
+        )(z)
+        h = h.reshape(first_hidden_size, first_hidden_size, hidden_dims[0])
+
+        for i, hidden_dim in enumerate(hidden_dims):
+            h = nn.ConvTranspose(
+                hidden_dim,
+                kernel_size=(3, 3),
+                strides=(2, 2) if i == 0 else (1, 1),
+                name=f'hidden{i}'
+            )(h)
+            h = self.norm_cls(name=f'norm{i}')(h)
+            h = self.act_fn(h)
+
+        μ = nn.Conv(
+            self.image_shape[-1],
+            kernel_size=(3, 3),
+            strides=(1, 1),
+            name=f'μ'
+        )(h)
+        σ = jax.nn.softplus(self.param('σ_', self.σ_init, self.image_shape))
+
+        return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
 
 
-def sample_transformed_data(x, rng, η_low, η_high):
-    # TODO: support other distributions here! This is useful for making invariant encoders that match the prior dist.
-    p_η = distrax.Uniform(low=η_low, high=η_high)
-    η = p_η.sample(sample_shape=(), seed=rng)
+# Adapted from https://github.com/deepmind/distrax/blob/master/examples/flow.py.
+class Conditioner(nn.Module):
+    output_dim: int
+    hidden_dims: Optional[Sequence[int]] = None
+    act_fn: Callable = nn.relu
 
-    T = gen_transform_mat(η)
-    return transform_image(x, T)
-    # TODO: this ^ breaks for flattened images, i.e. with a FC decoder.
-    # A possible easiest fix is to make the FC encoder & decoder take and return
-    # images, and do the flattening internally.
+    @nn.compact
+    def __call__(self, x):
+        hidden_dims = self.hidden_dims if self.hidden_dims else [64, 32]
+
+        h = x.reshape(-1)
+        for i, hidden_dim in enumerate(hidden_dims):
+            h = self.act_fn(nn.Dense(hidden_dim, name=f'hidden{i}')(h))
+
+        y = nn.Dense(
+            self.output_dim,
+            kernel_init=init.zeros,
+            bias_init=init.zeros,
+            name=f'final',
+        )(h)
+
+        return y
 
 
-def make_invariant_encoder(enc, x, η_low, η_high, num_samples, rng, train):
-    rngs = random.split(rng, num_samples)
+# Adapted from https://github.com/deepmind/distrax/blob/master/examples/flow.py.
+class Bijector(nn.Module):
+    num_layers: int
+    num_bins: int
+    hidden_dims: Optional[Sequence[int]] = None
 
-    def sample_q_params(x, rng):
-        x_trans = sample_transformed_data(x, rng, η_low, η_high)
-        q_z_x = enc(x_trans, train=train)
-        return q_z_x.loc, q_z_x.scale
+    @nn.compact
+    def __call__(self, x):
+        hidden_dims = self.hidden_dims if self.hidden_dims else [64, 128]
 
-    params = jax.vmap(sample_q_params, in_axes=(None, 0))(x, rngs)
-    params = tree_map(lambda x: jnp.mean(x, axis=0), params)
+        def bijector_fn(params: Array):
+            return distrax.RationalQuadraticSpline(
+                params, range_min=0., range_max=1.)
 
-    q_z_x = distrax.Normal(*params)
-    # TODO: support other distributions here.
+        # Number of parameters for the rational-quadratic spline:
+        # - `num_bins` bin widths
+        # - `num_bins` bin heights
+        # - `num_bins + 1` knot slopes
+        # for a total of `3 * num_bins + 1` parameters.
+        num_bijector_params = 3 * self.num_bins + 1
 
-    return q_z_x
+        layers = []
+        for i in range(self.num_layers):
+            params = Conditioner(num_bijector_params, hidden_dims,
+                                 name=f'cond{i}')(x)
+            layers.append(bijector_fn(params))
+
+        # We invert the flow so that the `forward` method is called with `log_prob`.
+        bijector = distrax.Inverse(distrax.Chain(layers))
+        return bijector
