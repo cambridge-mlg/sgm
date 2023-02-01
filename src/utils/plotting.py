@@ -16,21 +16,24 @@ def plot_img_array(array, ncol=16, padding=2, pad_value=0.0, title=None):
     ymaps = int(math.ceil(float(nmaps) / xmaps))
     height, width = int(array.shape[1] + padding), int(array.shape[2] + padding)
     num_channels = array.shape[3]
-    grid = jnp.full((height * ymaps + padding, width * xmaps + padding, num_channels), pad_value).astype(jnp.float32)
+    grid = jnp.full(
+        (height * ymaps + padding, width * xmaps + padding, num_channels), pad_value
+    ).astype(jnp.float32)
     k = 0
     for y in range(ymaps):
         for x in range(xmaps):
             if k >= nmaps:
                 break
-            grid = grid.at[y * height + padding:(y + 1) * height,
-                           x * width + padding:(x + 1) * width].set(array[k])
+            grid = grid.at[
+                y * height + padding : (y + 1) * height, x * width + padding : (x + 1) * width
+            ].set(array[k])
             k = k + 1
 
-    grid = jnp.clip((grid + 1.) * 127.0 + 0.5, 0, 255).astype(jnp.uint8)
+    grid = jnp.clip((grid + 1.0) * 127.0 + 0.5, 0, 255).astype(jnp.uint8)
 
     fig = plt.figure(figsize=(2 * xmaps, 2 * ymaps), dpi=400)
     plt.imshow(grid)
-    plt.axis('off')
+    plt.axis("off")
     plt.tight_layout()
     if title is not None:
         plt.title(title)

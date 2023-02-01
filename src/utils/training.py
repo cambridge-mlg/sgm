@@ -42,13 +42,13 @@ def _write_note(note):
 
 class TrainState(train_state.TrainState):
     """A Flax TrainState which also tracks model state (e.g. BatchNorm running averages) and schedules β."""
+
     model_state: FrozenDict
     β: float
     β_val_or_schedule: ScalarOrSchedule = flax.struct.field(pytree_node=False)
 
     def apply_gradients(self, *, grads, **kwargs):
-        updates, new_opt_state = self.tx.update(
-            grads, self.opt_state, self.params)
+        updates, new_opt_state = self.tx.update(grads, self.opt_state, self.params)
         new_params = optax.apply_updates(self.params, updates)
         return self.replace(
             step=self.step + 1,
@@ -88,21 +88,20 @@ def setup_model(
     rng: PRNGKey,
     train_ds: tf.data.Dataset,
 ) -> Tuple[nn.Module, TrainState]:
-    """Helper which returns the model object and the corresponding initialised train state for a given config.
-    """
-    _write_note('Initializing model...')
-    _write_note(f'config.model_name = {config.model_name}')
-    _write_note(f'config.model = {config.model}')
+    """Helper which returns the model object and the corresponding initialised train state for a given config."""
+    _write_note("Initializing model...")
+    _write_note(f"config.model_name = {config.model_name}")
+    _write_note(f"config.model = {config.model}")
 
-    input_size = tuple(train_ds.element_spec['image'].shape[2:])
-    _write_note(f'input_size = {input_size}')
+    input_size = tuple(train_ds.element_spec["image"].shape[2:])
+    _write_note(f"input_size = {input_size}")
 
     model_cls = getattr(models, config.model_name)
     model = model_cls(image_shape=input_size, **config.model.to_dict())
 
-    _write_note('Initializing model...')
+    _write_note("Initializing model...")
 
-    @partial(jax.jit, backend='cpu')
+    @partial(jax.jit, backend="cpu")
     def init(rng):
         dummy_input = jnp.zeros(input_size, jnp.float32)
 
@@ -119,15 +118,12 @@ def setup_model(
         parameter_overview.log_parameter_overview(variables_cpu)
         # writer.write_scalars(step=0, scalars={'num_params': num_params})
 
-    model_state, params = variables_cpu.pop('params')
+    model_state, params = variables_cpu.pop("params")
     del variables_cpu
 
-    if config.get('lr_schedule_name', None):
+    if config.get("lr_schedule_name", None):
         schedule = getattr(optax, config.lr_schedule_name)
-        lr = schedule(
-            init_value=config.learning_rate,
-            **config.lr_schedule.to_dict()
-        )
+        lr = schedule(init_value=config.learning_rate, **config.lr_schedule.to_dict())
     else:
         lr = config.learning_rate
 
@@ -135,12 +131,9 @@ def setup_model(
     optim = optax.inject_hyperparams(optim)
     # This ^ allows us to access the lr as opt_state.hyperparams['learning_rate'].
 
-    if config.get('β_schedule_name', None):
+    if config.get("β_schedule_name", None):
         schedule = getattr(optax, config.β_schedule_name)
-        β = schedule(
-            init_value=config.β,
-            **config.β_schedule.to_dict()
-        )
+        β = schedule(init_value=config.β, **config.β_schedule.to_dict())
     else:
         β = config.β
 
@@ -159,21 +152,23 @@ def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
     rng, train_ds_rng = jax.random.split(rng)
     train_ds_rng = jax.random.fold_in(train_ds_rng, jax.process_index())
 
-    _write_note('Initializing train dataset...')
+    _write_note("Initializing train dataset...")
     train_ds = input_utils.get_data(
         dataset=config.dataset,
         split=config.train_split,
         rng=train_ds_rng,
         process_batch_size=local_batch_size,
         preprocess_fn=preprocess_spec.parse(
-            spec=config.pp_train, available_ops=preprocess_utils.all_ops()),
+            spec=config.pp_train, available_ops=preprocess_utils.all_ops()
+        ),
         shuffle_buffer_size=config.shuffle_buffer_size,
-        repeat_after_batching=config.get('repeat_after_batching', True),
-        prefetch_size=config.get('prefetch_to_host', 2),
+        repeat_after_batching=config.get("repeat_after_batching", True),
+        prefetch_size=config.get("prefetch_to_host", 2),
         drop_remainder=False,
-        data_dir=config.get('data_dir'))
+        data_dir=config.get("data_dir"),
+    )
 
-    _write_note('Initializing val dataset...')
+    _write_note("Initializing val dataset...")
     rng, val_ds_rng = jax.random.split(rng)
     val_ds_rng = jax.random.fold_in(val_ds_rng, jax.process_index())
 
@@ -182,9 +177,12 @@ def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
         split=config.val_split,
         process_batch_size=local_batch_size_eval,
         drop_remainder=False,
-        data_dir=config.get('data_dir'))
+        data_dir=config.get("data_dir"),
+    )
     val_steps = int(np.ceil(nval_img / local_batch_size_eval))
-    logging.info(f'Running validation for {val_steps} steps for {config.dataset}, {config.val_split}')
+    logging.info(
+        f"Running validation for {val_steps} steps for {config.dataset}, {config.val_split}"
+    )
 
     val_ds = input_utils.get_data(
         dataset=config.dataset,
@@ -192,29 +190,34 @@ def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
         rng=val_ds_rng,
         process_batch_size=local_batch_size_eval,
         preprocess_fn=preprocess_spec.parse(
-            spec=config.pp_eval, available_ops=preprocess_utils.all_ops()),
-        cache=config.get('val_cache', 'batched'),
+            spec=config.pp_eval, available_ops=preprocess_utils.all_ops()
+        ),
+        cache=config.get("val_cache", "batched"),
         num_epochs=1,
         repeat_after_batching=True,
         shuffle=False,
-        prefetch_size=config.get('prefetch_to_host', 2),
+        prefetch_size=config.get("prefetch_to_host", 2),
         drop_remainder=False,
-        data_dir=config.get('data_dir'))
+        data_dir=config.get("data_dir"),
+    )
 
     rng, test_ds_rng = jax.random.split(rng)
     test_ds_rng = jax.random.fold_in(test_ds_rng, jax.process_index())
 
     test_ds = None
-    if config.get('test_split', None):
-        _write_note('Initializing test dataset...')
+    if config.get("test_split", None):
+        _write_note("Initializing test dataset...")
         ntest_img = input_utils.get_num_examples(
             config.dataset,
             split=config.test_split,
             process_batch_size=local_batch_size_eval,
             drop_remainder=False,
-            data_dir=config.get('data_dir'))
+            data_dir=config.get("data_dir"),
+        )
         test_steps = int(np.ceil(ntest_img / local_batch_size_eval))
-        logging.info(f'Running test for {test_steps} steps for {config.dataset}, {config.test_split}')
+        logging.info(
+            f"Running test for {test_steps} steps for {config.dataset}, {config.test_split}"
+        )
 
         test_ds = input_utils.get_data(
             dataset=config.dataset,
@@ -222,14 +225,16 @@ def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
             rng=test_ds_rng,
             process_batch_size=local_batch_size_eval,
             preprocess_fn=preprocess_spec.parse(
-                spec=config.pp_eval, available_ops=preprocess_utils.all_ops()),
-            cache=config.get('test_cache', 'batched'),
+                spec=config.pp_eval, available_ops=preprocess_utils.all_ops()
+            ),
+            cache=config.get("test_cache", "batched"),
             num_epochs=1,
             repeat_after_batching=True,
             shuffle=False,
-            prefetch_size=config.get('prefetch_to_host', 2),
+            prefetch_size=config.get("prefetch_to_host", 2),
             drop_remainder=False,
-            data_dir=config.get('data_dir'))
+            data_dir=config.get("data_dir"),
+        )
 
     return train_ds, val_ds, test_ds
 
@@ -243,72 +248,81 @@ def train_loop(
     test_ds: Optional[tf.data.Dataset] = None,
     wandb_kwargs: Optional[Mapping] = None,
 ) -> TrainState:
-    """Runs the training loop!
-    """
+    """Runs the training loop!"""
     wandb_kwargs = {
-        'project': 'learning-invariances',
-        'entity': 'invariance-learners',
-        'notes': '',
-        'config': config.to_dict()
+        "project": "learning-invariances",
+        "entity": "invariance-learners",
+        "notes": "",
+        "config": config.to_dict(),
     } | (wandb_kwargs or {})
     # ^ whatever the user specifies takes priority.
 
     with wandb.init(**wandb_kwargs) as run:
-
-        seed = config.get('seed', 0)
+        seed = config.get("seed", 0)
         rng = jax.random.PRNGKey(seed)
         rng, visualisation_rng = jax.random.split(rng)
         tf.random.set_seed(seed)
 
-        _write_note('Setting up datasets...')
+        _write_note("Setting up datasets...")
 
         batch_size = config.batch_size
-        batch_size_eval = config.get('batch_size_eval', batch_size)
-        if (batch_size % jax.device_count() != 0 or
-                batch_size_eval % jax.device_count() != 0):
-            raise ValueError(f'Batch sizes ({batch_size} and {batch_size_eval}) must '
-                             f'be divisible by device number ({jax.device_count()})')
+        batch_size_eval = config.get("batch_size_eval", batch_size)
+        if batch_size % jax.device_count() != 0 or batch_size_eval % jax.device_count() != 0:
+            raise ValueError(
+                f"Batch sizes ({batch_size} and {batch_size_eval}) must "
+                f"be divisible by device number ({jax.device_count()})"
+            )
 
         local_batch_size = batch_size // jax.process_count()
         local_batch_size_eval = batch_size_eval // jax.process_count()
         _write_note(
-            'Global batch size %d on %d hosts results in %d local batch size. '
-            'With %d devices per host (%d devices total), that\'s a %d per-device '
-            'batch size.' % (batch_size, jax.process_count(), local_batch_size,
-            jax.local_device_count(), jax.device_count(),
-            local_batch_size // jax.local_device_count()))
+            "Global batch size %d on %d hosts results in %d local batch size. "
+            "With %d devices per host (%d devices total), that's a %d per-device "
+            "batch size."
+            % (
+                batch_size,
+                jax.process_count(),
+                local_batch_size,
+                jax.local_device_count(),
+                jax.device_count(),
+                local_batch_size // jax.local_device_count(),
+            )
+        )
 
-        train_ds, val_ds, test_ds = get_dataset_splits(config, rng, local_batch_size,
-                                                       local_batch_size_eval)
+        train_ds, val_ds, test_ds = get_dataset_splits(
+            config, rng, local_batch_size, local_batch_size_eval
+        )
 
         ntrain_img = input_utils.get_num_examples(
             config.dataset,
             split=config.train_split,
             process_batch_size=local_batch_size,
-            data_dir=config.get('data_dir'), drop_remainder=False)
+            data_dir=config.get("data_dir"),
+            drop_remainder=False,
+        )
         steps_per_epoch = ntrain_img // batch_size
 
-        if config.get('num_epochs'):
-            assert not config.get('total_steps'), 'Set either num_epochs or total_steps'
+        if config.get("num_epochs"):
+            assert not config.get("total_steps"), "Set either num_epochs or total_steps"
             total_steps = int(config.num_epochs * steps_per_epoch)
         else:
             total_steps = config.total_steps
 
-        _write_note(f'Total train data points: {ntrain_img}')
+        _write_note(f"Total train data points: {ntrain_img}")
         _write_note(
-            f'Running for {total_steps} steps, that means {total_steps * batch_size / ntrain_img}'
-            f' epochs and {steps_per_epoch} steps per epoch.'
+            f"Running for {total_steps} steps, that means {total_steps * batch_size / ntrain_img}"
+            f" epochs and {steps_per_epoch} steps per epoch."
         )
 
-        @partial(jax.pmap, axis_name='device', in_axes=(None, 0, None), out_axes=None)
+        @partial(jax.pmap, axis_name="device", in_axes=(None, 0, None), out_axes=None)
         def update_fn(state, x_batch, rng):
-            rng_local = jax.random.fold_in(rng, jax.lax.axis_index('device'))
+            rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))
 
             @jax.jit
             def batch_loss(params, x_batch, rng, β):
                 # Broadcast loss over batch and aggregate.
                 loss, metrics = jax.vmap(
-                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name='batch'
+                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"
                 )(model, params, x_batch, rng, β)
                 loss, metrics = jax.tree_util.tree_map(partial(jnp.mean, axis=0), (loss, metrics))
                 # TODO: replace this tree_map with a pmean call.
@@ -316,61 +330,63 @@ def train_loop(
 
             grad_fn = jax.value_and_grad(batch_loss, has_aux=True)
             (loss, metrics), grad = grad_fn(state.params, x_batch, rng_local, state.β)
-            grad, loss, metrics = jax.lax.pmean((grad, loss, metrics), axis_name='device')
+            grad, loss, metrics = jax.lax.pmean((grad, loss, metrics), axis_name="device")
 
             # Update the state.
             new_state = state.apply_gradients(grads=grad)
 
             return new_state, loss, metrics
 
-        @partial(jax.pmap, axis_name='device', in_axes=(None, 0, 0, None), out_axes=None)
+        @partial(jax.pmap, axis_name="device", in_axes=(None, 0, 0, None), out_axes=None)
         def eval_fn(state, x_batch, mask, rng):
-            rng_local = jax.random.fold_in(rng, jax.lax.axis_index('device'))
+            rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))
 
             @jax.jit
             def batch_loss(params, x_batch, mask, rng, β):
                 # Broadcast loss over batch and aggregate.
                 loss, metrics = jax.vmap(
-                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name='batch'
+                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"
                 )(model, params, x_batch, rng, β)
-                loss, metrics, mask = jax.tree_util.tree_map(partial(jnp.sum, axis=0), (loss, metrics, mask))
+                loss, metrics, mask = jax.tree_util.tree_map(
+                    partial(jnp.sum, axis=0), (loss, metrics, mask)
+                )
                 # TODO: replace this tree_map with a psum call.
                 return loss, metrics, mask
 
             loss, metrics, mask = batch_loss(state.params, x_batch, mask, rng_local, state.β)
-            loss, metrics, n_examples = jax.lax.psum((loss, metrics, mask), axis_name='device')
+            loss, metrics, n_examples = jax.lax.psum((loss, metrics, mask), axis_name="device")
 
             return loss, metrics, n_examples
 
-        train_iter = input_utils.start_input_pipeline(train_ds, config.get('prefetch_to_device', 1))
+        train_iter = input_utils.start_input_pipeline(train_ds, config.get("prefetch_to_device", 1))
 
-        _write_note('Starting training loop...')
+        _write_note("Starting training loop...")
 
         best_val_loss = jnp.inf
 
         for step in (steps := trange(total_steps)):
             train_batch = next(train_iter)
             rng, train_rng, val_rng, test_rng = jax.random.split(rng, 4)
-            state, loss, metrics = update_fn(state, train_batch['image'], train_rng)
+            state, loss, metrics = update_fn(state, train_batch["image"], train_rng)
 
-            if step % config.get('log_every', 1) == 0:
-                steps.set_postfix_str(f'Loss: {loss:.4f}')
-                run.log({'train/loss': loss, 'train/β': state.β}, step=step)
+            if step % config.get("log_every", 1) == 0:
+                steps.set_postfix_str(f"Loss: {loss:.4f}")
+                run.log({"train/loss": loss, "train/β": state.β}, step=step)
                 for k, v in metrics.items():
-                    run.log({f'train/{k}': v}, step=step)
+                    run.log({f"train/{k}": v}, step=step)
 
-            if step % config.get('eval_every', 1000) == 0:
-                val_iter = input_utils.start_input_pipeline(val_ds,
-                                                            config.get('prefetch_to_device', 1))
+            if step % config.get("eval_every", 1000) == 0:
+                val_iter = input_utils.start_input_pipeline(
+                    val_ds, config.get("prefetch_to_device", 1)
+                )
                 batch_losses = []
                 batch_metrics = []
                 n_val = 0
                 val_batch_0 = None
                 for i, val_batch in enumerate(val_iter):
-                    loss, metrics, n_examples = eval_fn(state,
-                                                        val_batch['image'],
-                                                        val_batch['mask'],
-                                                        val_rng)
+                    loss, metrics, n_examples = eval_fn(
+                        state, val_batch["image"], val_batch["mask"], val_rng
+                    )
 
                     batch_losses.append(loss)
                     batch_metrics.append(metrics)
@@ -380,108 +396,134 @@ def train_loop(
                         val_batch_0 = val_batch
 
                 batch_metrics = jax_utils.tree_concatenate(batch_metrics)
-                val_loss, val_metrics = jax.tree_util.tree_map(lambda x: jnp.sum(x) / n_val,
-                                                               (jnp.array(batch_losses), batch_metrics))
+                val_loss, val_metrics = jax.tree_util.tree_map(
+                    lambda x: jnp.sum(x) / n_val, (jnp.array(batch_losses), batch_metrics)
+                )
 
-                run.log({'val/loss': val_loss}, step=step)
+                run.log({"val/loss": val_loss}, step=step)
                 for k, v in val_metrics.items():
-                    run.log({f'val/{k}': v}, step=step)
+                    run.log({f"val/{k}": v}, step=step)
 
                 # do some reconstruction visualizations
-                n_visualize = config.get('n_visualize', 24)
+                n_visualize = config.get("n_visualize", 24)
 
                 def make_reconstruction_plot(x):
-                    @partial(jax.jit, static_argnames=('prototype', 'sample_z', 'sample_xhat', 'sample_θ'))
-                    def reconstruct(x, prototype=False, sample_z=False,
-                                    sample_xhat=False, sample_θ=False):
-                        rng = random.fold_in(visualisation_rng, jax.lax.axis_index('image'))
-                        return model.apply({'params': state.params}, x, rng,
-                                        prototype=prototype, sample_z=sample_z,
-                                        sample_xhat=sample_xhat, sample_θ=sample_θ,
-                                        method=model.reconstruct)
+                    @partial(
+                        jax.jit,
+                        static_argnames=("prototype", "sample_z", "sample_xhat", "sample_θ"),
+                    )
+                    def reconstruct(
+                        x, prototype=False, sample_z=False, sample_xhat=False, sample_θ=False
+                    ):
+                        rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))
+                        return model.apply(
+                            {"params": state.params},
+                            x,
+                            rng,
+                            prototype=prototype,
+                            sample_z=sample_z,
+                            sample_xhat=sample_xhat,
+                            sample_θ=sample_θ,
+                            method=model.reconstruct,
+                        )
 
                     x_proto_modes = jax.vmap(
-                        reconstruct, axis_name='image', in_axes=(0, None, None, None, None)
+                        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)
                     )(x, True, False, False, True)
 
                     x_recon_modes = jax.vmap(
-                        reconstruct, axis_name='image', in_axes=(0, None, None, None, None)
+                        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)
                     )(x, False, False, False, True)
 
                     recon_fig = plot_utils.plot_img_array(
                         jnp.concatenate((x, x_proto_modes, x_recon_modes), axis=0),
-                        ncol=n_visualize, pad_value=1, padding=1,
-                        title='Original | Prototype | Reconstruction')
+                        ncol=n_visualize,
+                        pad_value=1,
+                        padding=1,
+                        title="Original | Prototype | Reconstruction",
+                    )
 
                     return recon_fig
 
-                val_x = val_batch_0['image'][0, :n_visualize]
+                val_x = val_batch_0["image"][0, :n_visualize]
                 val_recon_fig = make_reconstruction_plot(val_x)
 
                 # do some sampling visualizations
                 def make_sampling_plot():
-                    @partial(jax.jit, static_argnames=('prototype', 'sample_xhat', 'sample_θ'))
+                    @partial(jax.jit, static_argnames=("prototype", "sample_xhat", "sample_θ"))
                     def sample(rng, prototype=False, sample_xhat=False, sample_θ=False):
-                        return model.apply({'params': state.params}, rng,
-                                        prototype=prototype, sample_xhat=sample_xhat, sample_θ=sample_θ,
-                                        method=model.sample)
+                        return model.apply(
+                            {"params": state.params},
+                            rng,
+                            prototype=prototype,
+                            sample_xhat=sample_xhat,
+                            sample_θ=sample_θ,
+                            method=model.sample,
+                        )
 
-                    sampled_protos = jax.vmap(
-                        sample, in_axes=(0, None, None, None)
-                    )(jax.random.split(visualisation_rng, n_visualize), True, True, True)
+                    sampled_protos = jax.vmap(sample, in_axes=(0, None, None, None))(
+                        jax.random.split(visualisation_rng, n_visualize), True, True, True
+                    )
 
-                    sampled_data = jax.vmap(
-                        sample, in_axes=(0, None, None, None)
-                    )(jax.random.split(visualisation_rng, n_visualize), False, True, True)
+                    sampled_data = jax.vmap(sample, in_axes=(0, None, None, None))(
+                        jax.random.split(visualisation_rng, n_visualize), False, True, True
+                    )
 
                     sample_fig = plot_utils.plot_img_array(
                         jnp.concatenate((sampled_protos, sampled_data), axis=0),
-                        ncol=n_visualize, pad_value=1, padding=1,
-                        title='Sampled prototypes | Sampled data')
+                        ncol=n_visualize,
+                        pad_value=1,
+                        padding=1,
+                        title="Sampled prototypes | Sampled data",
+                    )
                     return sample_fig
 
                 sample_fig = make_sampling_plot()
 
-                run.log({'val_reconstructions': wandb.Image(val_recon_fig)}, step=step)
-                run.log({'prior_samples': wandb.Image(sample_fig)}, step=step)
+                run.log({"val_reconstructions": wandb.Image(val_recon_fig)}, step=step)
+                run.log({"prior_samples": wandb.Image(sample_fig)}, step=step)
 
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
-                    run.summary['best_val_loss'] = best_val_loss
+                    run.summary["best_val_loss"] = best_val_loss
                     best_val_metrics = val_metrics
                     for k, v in best_val_metrics.items():
-                        run.summary[f'best_val_{k}'] = v
+                        run.summary[f"best_val_{k}"] = v
                     best_val_step = step
-                    run.summary['best_val_step'] = best_val_step
-                    run.summary['best_prior_samples'] = wandb.Image(sample_fig)
+                    run.summary["best_val_step"] = best_val_step
+                    run.summary["best_prior_samples"] = wandb.Image(sample_fig)
 
                     if test_ds:
-                        test_iter = input_utils.start_input_pipeline(test_ds, config.get('prefetch_to_device', 1))
+                        test_iter = input_utils.start_input_pipeline(
+                            test_ds, config.get("prefetch_to_device", 1)
+                        )
 
                         batch_losses = []
                         batch_metrics = []
                         n_test = 0
                         for test_batch in test_iter:
-                            loss, metrics, n_examples = eval_fn(state, test_batch['image'],
-                                                                test_batch['mask'], test_rng)
+                            loss, metrics, n_examples = eval_fn(
+                                state, test_batch["image"], test_batch["mask"], test_rng
+                            )
 
                             batch_losses.append(loss)
                             batch_metrics.append(metrics)
                             n_test += n_examples
 
                         batch_metrics = jax_utils.tree_concatenate(batch_metrics)
-                        test_loss, test_metrics = jax.tree_util.tree_map(lambda x: jnp.sum(x) / n_test,
-                                                                        (jnp.array(batch_losses), batch_metrics))
+                        test_loss, test_metrics = jax.tree_util.tree_map(
+                            lambda x: jnp.sum(x) / n_test, (jnp.array(batch_losses), batch_metrics)
+                        )
 
-                        run.summary['test_loss'] = test_loss
+                        run.summary["test_loss"] = test_loss
                         for k, v in test_metrics.items():
-                            run.summary[f'test_{k}'] = v
+                            run.summary[f"test_{k}"] = v
 
-                        test_x = test_batch['image'][:n_visualize]
+                        test_x = test_batch["image"][:n_visualize]
                         test_recon_fig = make_reconstruction_plot(test_x)
 
-                        run.summary['test_reconstructions'] = wandb.Image(test_recon_fig)
+                        run.summary["test_reconstructions"] = wandb.Image(test_recon_fig)
 
-        _write_note('Training finished.')
+        _write_note("Training finished.")
 
     return state

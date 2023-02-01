@@ -83,8 +83,7 @@ def transform_image(
     A = T[:2, :]
 
     # (x_t, y_t, 1), eq (1) in Jaderberg et al.
-    x_t, y_t = jnp.meshgrid(jnp.linspace(-1, 1, width),
-                            jnp.linspace(-1, 1, height))
+    x_t, y_t = jnp.meshgrid(jnp.linspace(-1, 1, width), jnp.linspace(-1, 1, height))
     ones = jnp.ones(x_t.size)
     input_pts = jnp.vstack([x_t.flatten(), y_t.flatten(), ones])
 
@@ -94,12 +93,17 @@ def transform_image(
     transformed_pts = transformed_pts * jnp.array([[width], [height]])
 
     # Transform the image by moving the pixels to their new locations
-    output = jnp.stack([
-        jax.scipy.ndimage.map_coordinates(image[:, :, i], transformed_pts[::-1], order=1, cval=fill_value)
-        # Note: usually we would use bicubic interpolation (order=3), but this isn't available
-        # in jax, so we have to use linear interpolation.
-        for i in range(num_channels)
-    ], axis=-1)
+    output = jnp.stack(
+        [
+            jax.scipy.ndimage.map_coordinates(
+                image[:, :, i], transformed_pts[::-1], order=1, cval=fill_value
+            )
+            # Note: usually we would use bicubic interpolation (order=3), but this isn't available
+            # in jax, so we have to use linear interpolation.
+            for i in range(num_channels)
+        ],
+        axis=-1,
+    )
     output = jnp.reshape(output, image.shape)
 
     return output

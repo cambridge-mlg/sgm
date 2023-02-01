@@ -35,28 +35,30 @@ class LIVAE(nn.Module):
     def setup(self):
         # p(Z)
         self.p_Z = distrax.Normal(
-            loc=self.param(
-                'prior_μ',
-                init.zeros,
-                (self.latent_dim,)
-            ),
-            scale=jax.nn.softplus(self.param(
-                'prior_σ_',
-                init.constant(INV_SOFTPLUS_1),
-                # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
-                (self.latent_dim,)
-            ))  # type: ignore
+            loc=self.param("prior_μ", init.zeros, (self.latent_dim,)),
+            scale=jax.nn.softplus(
+                self.param(
+                    "prior_σ_",
+                    init.constant(INV_SOFTPLUS_1),
+                    # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
+                    (self.latent_dim,),
+                )
+            ),  # type: ignore
         )
         # q(Z|X)
         self.q_Z_given_X = ConvEncoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
         # p(X̂|Z)
         self.p_Xhat_given_Z = ConvDecoder(image_shape=self.image_shape, **(self.Xhat_given_Z or {}))
         # p(Θ|Z)
-        self.p_Θ_given_Z_base = DenseEncoder(latent_dim=1, **(self.Eta_given_Z or {}).get('base', {}))
-        self.p_Θ_given_Z_bij = Bijector(**(self.Eta_given_Z or {}).get('bijector', {}))
+        self.p_Θ_given_Z_base = DenseEncoder(
+            latent_dim=1, **(self.Eta_given_Z or {}).get("base", {})
+        )
+        self.p_Θ_given_Z_bij = Bijector(**(self.Eta_given_Z or {}).get("bijector", {}))
         # q(Θ|X)
-        self.q_Θ_given_X_base = DenseEncoder(latent_dim=1, **(self.Eta_given_X or {}).get('base', {}))
-        self.q_Θ_given_X_bij = Bijector(**(self.Eta_given_X or {}).get('bijector', {}))
+        self.q_Θ_given_X_base = DenseEncoder(
+            latent_dim=1, **(self.Eta_given_X or {}).get("base", {})
+        )
+        self.q_Θ_given_X_bij = Bijector(**(self.Eta_given_X or {}).get("bijector", {}))
 
     def __call__(self, x, rng):
         inv_rng, z_rng, xhat_rng, θ_rng = random.split(rng, 4)
@@ -78,7 +80,7 @@ class LIVAE(nn.Module):
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
         xhat = p_Xhat_given_z.sample(seed=xhat_rng)
 
-        p_X_given_xhat_θ = distrax.Normal(rotate_image(xhat, θ, -1), 1.)
+        p_X_given_xhat_θ = distrax.Normal(rotate_image(xhat, θ, -1), 1.0)
 
         return q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Xhat_given_z, p_Θ_given_z, self.p_Z
 
@@ -97,8 +99,9 @@ class LIVAE(nn.Module):
         x = rotate_image(xhat, θ, -1)
         return x
 
-    def reconstruct(self, x, rng, prototype=False, sample_z=False,
-                    sample_xhat=False, sample_θ=False):
+    def reconstruct(
+        self, x, rng, prototype=False, sample_z=False, sample_xhat=False, sample_θ=False
+    ):
         z_rng, xhat_rng, θ_rng = random.split(rng, 3)
         q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, z_rng)
         z = q_Z_given_x.sample(seed=rng) if sample_z else q_Z_given_x.mean()
@@ -146,7 +149,7 @@ def make_approx_invariant(p_Z_given_X, x, num_samples, rng):
     return distrax.Normal(*params)
 
 
-def calculate_livae_elbo(x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_given_z, p_Z, β=1.):
+def calculate_livae_elbo(x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_given_z, p_Z, β=1.0):
     ll = p_X_given_xhat_θ.log_prob(x).sum()
     z_kld = q_Z_given_x.kl_divergence(p_Z).sum()
 
@@ -168,18 +171,21 @@ def calculate_livae_elbo(x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_g
     elbo = ll - β * z_kld - θ_kld
     # TODO: add beta term for θ_kld? Use same beta?
 
-    return -elbo, {'elbo': elbo, 'll': ll, 'z_kld': z_kld, 'θ_kld': θ_kld}
+    return -elbo, {"elbo": elbo, "ll": ll, "z_kld": z_kld, "θ_kld": θ_kld}
 
 
-def livae_loss_fn(model, params, x, rng, β: float = 1.):
+def livae_loss_fn(model, params, x, rng, β: float = 1.0):
     """Single example loss function for LIVAE."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
-    rng_local = random.fold_in(rng, lax.axis_index('batch'))
+    rng_local = random.fold_in(rng, lax.axis_index("batch"))
     q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, _, p_Θ_given_z, p_Z = model.apply(
-        {'params': params}, x, rng_local,
+        {"params": params},
+        x,
+        rng_local,
     )
 
     loss, metrics = calculate_livae_elbo(
-        x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_given_z, p_Z, β)
+        x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_given_z, p_Z, β
+    )
 
     return loss, metrics
