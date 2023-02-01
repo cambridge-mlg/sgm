@@ -2,7 +2,6 @@ from typing import Callable, Optional, Sequence, Tuple
 
 import jax
 from jax import numpy as jnp
-from jax import random, lax
 from chex import Array
 from flax import linen as nn
 import flax.linen.initializers as init
@@ -23,7 +22,7 @@ class DenseEncoder(nn.Module):
     σ_min: float = 1e-2
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x: Array) -> distrax.Normal:
         hidden_dims = self.hidden_dims if self.hidden_dims else [64, 32]
 
         h = x.reshape(-1)
@@ -46,7 +45,7 @@ class ConvEncoder(nn.Module):
     σ_min: float = 1e-2
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x: Array) -> distrax.Normal:
         hidden_dims = self.hidden_dims if self.hidden_dims else [64, 128, 256]
 
         h = x
@@ -79,7 +78,7 @@ class ConvDecoder(nn.Module):
     norm_cls: nn.Module = nn.LayerNorm
 
     @nn.compact
-    def __call__(self, z):
+    def __call__(self, z: Array) -> distrax.Normal:
         hidden_dims = self.hidden_dims if self.hidden_dims else [256, 128, 64]
 
         assert self.image_shape[0] == self.image_shape[1], "Images should be square."
@@ -114,7 +113,7 @@ class Conditioner(nn.Module):
     act_fn: Callable = nn.relu
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x: Array) -> Array:
         hidden_dims = self.hidden_dims if self.hidden_dims else [64, 32]
 
         h = x.reshape(-1)
@@ -138,7 +137,7 @@ class Bijector(nn.Module):
     hidden_dims: Optional[Sequence[int]] = None
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x: Array) -> distrax.BijectorLike:
         hidden_dims = self.hidden_dims if self.hidden_dims else [64, 128]
 
         def bijector_fn(params: Array):

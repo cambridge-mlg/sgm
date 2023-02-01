@@ -1,4 +1,4 @@
-from typing import Mapping, Optional, Tuple, Union
+from typing import Any, Mapping, Optional, Tuple, Union
 from functools import partial
 
 import wandb
@@ -31,11 +31,11 @@ import src.utils.jax as jax_utils
 import src.models as models
 
 
-PRNGKey = jnp.ndarray
+PRNGKey = Any
 ScalarOrSchedule = Union[float, optax.Schedule]
 
 
-def _write_note(note):
+def _write_note(note: str):
     if jax.process_index() == 0:
         logging.info(note)
 
@@ -96,13 +96,13 @@ def setup_model(
     input_size = tuple(train_ds.element_spec["image"].shape[2:])
     _write_note(f"input_size = {input_size}")
 
-    model_cls = getattr(models, config.model_name)
-    model = model_cls(image_shape=input_size, **config.model.to_dict())
+    model_cls = getattr(models, config.model_name)  # type: ignore
+    model = model_cls(image_shape=input_size, **config.model.to_dict())  # type: ignore
 
     _write_note("Initializing model...")
 
     @partial(jax.jit, backend="cpu")
-    def init(rng):
+    def init(rng: PRNGKey) -> nn.FrozenDict:
         dummy_input = jnp.zeros(input_size, jnp.float32)
 
         fwd_rng, init_rng = jax.random.split(rng)
@@ -122,25 +122,25 @@ def setup_model(
     del variables_cpu
 
     if config.get("lr_schedule_name", None):
-        schedule = getattr(optax, config.lr_schedule_name)
-        lr = schedule(init_value=config.learning_rate, **config.lr_schedule.to_dict())
+        schedule = getattr(optax, config.lr_schedule_name)  # type: ignore
+        lr = schedule(init_value=config.learning_rate, **config.lr_schedule.to_dict())  # type: ignore
     else:
         lr = config.learning_rate
 
-    optim = getattr(optax, config.optim_name)
+    optim = getattr(optax, config.optim_name)  # type: ignore
     optim = optax.inject_hyperparams(optim)
     # This ^ allows us to access the lr as opt_state.hyperparams['learning_rate'].
 
     if config.get("β_schedule_name", None):
-        schedule = getattr(optax, config.β_schedule_name)
-        β = schedule(init_value=config.β, **config.β_schedule.to_dict())
+        schedule = getattr(optax, config.β_schedule_name)  # type: ignore
+        β = schedule(init_value=config.β, **config.β_schedule.to_dict())  # type: ignore
     else:
         β = config.β
 
     state = TrainState.create(
         apply_fn=model.apply,
         params=params,
-        tx=optim(learning_rate=lr, **config.optim.to_dict()),
+        tx=optim(learning_rate=lr, **config.optim.to_dict()),  # type: ignore
         model_state=model_state,
         β_val_or_schedule=β,
     )
@@ -148,24 +148,26 @@ def setup_model(
     return model, state
 
 
-def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
+def get_dataset_splits(
+    config: config_dict.ConfigDict, rng: PRNGKey, local_batch_size: int, local_batch_size_eval: int
+) -> Tuple[tf.data.Dataset, tf.data.Dataset, Optional[tf.data.Dataset]]:
     rng, train_ds_rng = jax.random.split(rng)
     train_ds_rng = jax.random.fold_in(train_ds_rng, jax.process_index())
 
     _write_note("Initializing train dataset...")
     train_ds = input_utils.get_data(
         dataset=config.dataset,
-        split=config.train_split,
+        split=config.train_split,  # type: ignore
         rng=train_ds_rng,
         process_batch_size=local_batch_size,
         preprocess_fn=preprocess_spec.parse(
-            spec=config.pp_train, available_ops=preprocess_utils.all_ops()
+            spec=config.pp_train, available_ops=preprocess_utils.all_ops()  # type: ignore
         ),
-        shuffle_buffer_size=config.shuffle_buffer_size,
-        repeat_after_batching=config.get("repeat_after_batching", True),
-        prefetch_size=config.get("prefetch_to_host", 2),
+        shuffle_buffer_size=config.shuffle_buffer_size,  # type: ignore
+        repeat_after_batching=config.get("repeat_after_batching", True),  # type: ignore
+        prefetch_size=config.get("prefetch_to_host", 2),  # type: ignore
         drop_remainder=False,
-        data_dir=config.get("data_dir"),
+        data_dir=config.get("data_dir"),  # type: ignore
     )
 
     _write_note("Initializing val dataset...")
@@ -174,10 +176,10 @@ def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
 
     nval_img = input_utils.get_num_examples(
         config.dataset,
-        split=config.val_split,
+        split=config.val_split,  # type: ignore
         process_batch_size=local_batch_size_eval,
         drop_remainder=False,
-        data_dir=config.get("data_dir"),
+        data_dir=config.get("data_dir"),  # type: ignore
     )
     val_steps = int(np.ceil(nval_img / local_batch_size_eval))
     logging.info(
@@ -186,19 +188,19 @@ def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
 
     val_ds = input_utils.get_data(
         dataset=config.dataset,
-        split=config.val_split,
+        split=config.val_split,  # type: ignore
         rng=val_ds_rng,
         process_batch_size=local_batch_size_eval,
         preprocess_fn=preprocess_spec.parse(
-            spec=config.pp_eval, available_ops=preprocess_utils.all_ops()
+            spec=config.pp_eval, available_ops=preprocess_utils.all_ops()  # type: ignore
         ),
-        cache=config.get("val_cache", "batched"),
+        cache=config.get("val_cache", "batched"),  # type: ignore
         num_epochs=1,
         repeat_after_batching=True,
         shuffle=False,
-        prefetch_size=config.get("prefetch_to_host", 2),
+        prefetch_size=config.get("prefetch_to_host", 2),  # type: ignore
         drop_remainder=False,
-        data_dir=config.get("data_dir"),
+        data_dir=config.get("data_dir"),  # type: ignore
     )
 
     rng, test_ds_rng = jax.random.split(rng)
@@ -209,10 +211,10 @@ def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
         _write_note("Initializing test dataset...")
         ntest_img = input_utils.get_num_examples(
             config.dataset,
-            split=config.test_split,
+            split=config.test_split,  # type: ignore
             process_batch_size=local_batch_size_eval,
             drop_remainder=False,
-            data_dir=config.get("data_dir"),
+            data_dir=config.get("data_dir"),  # type: ignore
         )
         test_steps = int(np.ceil(ntest_img / local_batch_size_eval))
         logging.info(
@@ -221,19 +223,19 @@ def get_dataset_splits(config, rng, local_batch_size, local_batch_size_eval):
 
         test_ds = input_utils.get_data(
             dataset=config.dataset,
-            split=config.test_split,
+            split=config.test_split,  # type: ignore
             rng=test_ds_rng,
             process_batch_size=local_batch_size_eval,
             preprocess_fn=preprocess_spec.parse(
-                spec=config.pp_eval, available_ops=preprocess_utils.all_ops()
+                spec=config.pp_eval, available_ops=preprocess_utils.all_ops()  # type: ignore
             ),
-            cache=config.get("test_cache", "batched"),
+            cache=config.get("test_cache", "batched"),  # type: ignore
             num_epochs=1,
             repeat_after_batching=True,
             shuffle=False,
-            prefetch_size=config.get("prefetch_to_host", 2),
+            prefetch_size=config.get("prefetch_to_host", 2),  # type: ignore
             drop_remainder=False,
-            data_dir=config.get("data_dir"),
+            data_dir=config.get("data_dir"),  # type: ignore
         )
 
     return train_ds, val_ds, test_ds
@@ -257,9 +259,9 @@ def train_loop(
     } | (wandb_kwargs or {})
     # ^ whatever the user specifies takes priority.
 
-    with wandb.init(**wandb_kwargs) as run:
+    with wandb.init(**wandb_kwargs) as run:  # type: ignore
         seed = config.get("seed", 0)
-        rng = jax.random.PRNGKey(seed)
+        rng = jax.random.PRNGKey(seed)  # type: ignore
         rng, visualisation_rng = jax.random.split(rng)
         tf.random.set_seed(seed)
 
@@ -267,14 +269,14 @@ def train_loop(
 
         batch_size = config.batch_size
         batch_size_eval = config.get("batch_size_eval", batch_size)
-        if batch_size % jax.device_count() != 0 or batch_size_eval % jax.device_count() != 0:
+        if batch_size % jax.device_count() != 0 or batch_size_eval % jax.device_count() != 0:  # type: ignore
             raise ValueError(
                 f"Batch sizes ({batch_size} and {batch_size_eval}) must "
                 f"be divisible by device number ({jax.device_count()})"
             )
 
-        local_batch_size = batch_size // jax.process_count()
-        local_batch_size_eval = batch_size_eval // jax.process_count()
+        local_batch_size = batch_size // jax.process_count()  # type: ignore
+        local_batch_size_eval = batch_size_eval // jax.process_count()  # type: ignore
         _write_note(
             "Global batch size %d on %d hosts results in %d local batch size. "
             "With %d devices per host (%d devices total), that's a %d per-device "
@@ -295,12 +297,12 @@ def train_loop(
 
         ntrain_img = input_utils.get_num_examples(
             config.dataset,
-            split=config.train_split,
+            split=config.train_split,  # type: ignore
             process_batch_size=local_batch_size,
-            data_dir=config.get("data_dir"),
+            data_dir=config.get("data_dir"),  # type: ignore
             drop_remainder=False,
         )
-        steps_per_epoch = ntrain_img // batch_size
+        steps_per_epoch = ntrain_img // batch_size  # type: ignore
 
         if config.get("num_epochs"):
             assert not config.get("total_steps"), "Set either num_epochs or total_steps"
@@ -310,19 +312,19 @@ def train_loop(
 
         _write_note(f"Total train data points: {ntrain_img}")
         _write_note(
-            f"Running for {total_steps} steps, that means {total_steps * batch_size / ntrain_img}"
+            f"Running for {total_steps} steps, that means {total_steps * batch_size / ntrain_img}"  # type: ignore
             f" epochs and {steps_per_epoch} steps per epoch."
         )
 
-        @partial(jax.pmap, axis_name="device", in_axes=(None, 0, None), out_axes=None)
+        @partial(jax.pmap, axis_name="device", in_axes=(None, 0, None), out_axes=None)  # type: ignore
         def update_fn(state, x_batch, rng):
-            rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))
+            rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
             @jax.jit
             def batch_loss(params, x_batch, rng, β):
                 # Broadcast loss over batch and aggregate.
                 loss, metrics = jax.vmap(
-                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"
+                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"  # type: ignore
                 )(model, params, x_batch, rng, β)
                 loss, metrics = jax.tree_util.tree_map(partial(jnp.mean, axis=0), (loss, metrics))
                 # TODO: replace this tree_map with a pmean call.
@@ -337,15 +339,15 @@ def train_loop(
 
             return new_state, loss, metrics
 
-        @partial(jax.pmap, axis_name="device", in_axes=(None, 0, 0, None), out_axes=None)
+        @partial(jax.pmap, axis_name="device", in_axes=(None, 0, 0, None), out_axes=None)  # type: ignore
         def eval_fn(state, x_batch, mask, rng):
-            rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))
+            rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
             @jax.jit
             def batch_loss(params, x_batch, mask, rng, β):
                 # Broadcast loss over batch and aggregate.
                 loss, metrics = jax.vmap(
-                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"
+                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"  # type: ignore
                 )(model, params, x_batch, rng, β)
                 loss, metrics, mask = jax.tree_util.tree_map(
                     partial(jnp.sum, axis=0), (loss, metrics, mask)
@@ -364,18 +366,18 @@ def train_loop(
 
         best_val_loss = jnp.inf
 
-        for step in (steps := trange(total_steps)):
+        for step in (steps := trange(total_steps)):  # type: ignore
             train_batch = next(train_iter)
             rng, train_rng, val_rng, test_rng = jax.random.split(rng, 4)
             state, loss, metrics = update_fn(state, train_batch["image"], train_rng)
 
-            if step % config.get("log_every", 1) == 0:
+            if step % config.get("log_every", 1) == 0:  # type: ignore
                 steps.set_postfix_str(f"Loss: {loss:.4f}")
                 run.log({"train/loss": loss, "train/β": state.β}, step=step)
                 for k, v in metrics.items():
                     run.log({f"train/{k}": v}, step=step)
 
-            if step % config.get("eval_every", 1000) == 0:
+            if step % config.get("eval_every", 1000) == 0:  # type: ignore
                 val_iter = input_utils.start_input_pipeline(
                     val_ds, config.get("prefetch_to_device", 1)
                 )
@@ -397,7 +399,7 @@ def train_loop(
 
                 batch_metrics = jax_utils.tree_concatenate(batch_metrics)
                 val_loss, val_metrics = jax.tree_util.tree_map(
-                    lambda x: jnp.sum(x) / n_val, (jnp.array(batch_losses), batch_metrics)
+                    lambda x: jnp.sum(x) / n_val, (jnp.array(batch_losses), batch_metrics)  # type: ignore
                 )
 
                 run.log({"val/loss": val_loss}, step=step)
@@ -415,7 +417,7 @@ def train_loop(
                     def reconstruct(
                         x, prototype=False, sample_z=False, sample_xhat=False, sample_θ=False
                     ):
-                        rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))
+                        rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
                         return model.apply(
                             {"params": state.params},
                             x,
@@ -428,16 +430,16 @@ def train_loop(
                         )
 
                     x_proto_modes = jax.vmap(
-                        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)
+                        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)  # type: ignore
                     )(x, True, False, False, True)
 
                     x_recon_modes = jax.vmap(
-                        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)
+                        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)  # type: ignore
                     )(x, False, False, False, True)
 
                     recon_fig = plot_utils.plot_img_array(
                         jnp.concatenate((x, x_proto_modes, x_recon_modes), axis=0),
-                        ncol=n_visualize,
+                        ncol=n_visualize,  # type: ignore
                         pad_value=1,
                         padding=1,
                         title="Original | Prototype | Reconstruction",
@@ -445,7 +447,7 @@ def train_loop(
 
                     return recon_fig
 
-                val_x = val_batch_0["image"][0, :n_visualize]
+                val_x = val_batch_0["image"][0, :n_visualize]  # type: ignore
                 val_recon_fig = make_reconstruction_plot(val_x)
 
                 # do some sampling visualizations
@@ -461,17 +463,17 @@ def train_loop(
                             method=model.sample,
                         )
 
-                    sampled_protos = jax.vmap(sample, in_axes=(0, None, None, None))(
-                        jax.random.split(visualisation_rng, n_visualize), True, True, True
+                    sampled_protos = jax.vmap(sample, in_axes=(0, None, None, None))(  # type: ignore
+                        jax.random.split(visualisation_rng, n_visualize), True, True, True  # type: ignore
                     )
 
-                    sampled_data = jax.vmap(sample, in_axes=(0, None, None, None))(
-                        jax.random.split(visualisation_rng, n_visualize), False, True, True
+                    sampled_data = jax.vmap(sample, in_axes=(0, None, None, None))(  # type: ignore
+                        jax.random.split(visualisation_rng, n_visualize), False, True, True  # type: ignore
                     )
 
                     sample_fig = plot_utils.plot_img_array(
                         jnp.concatenate((sampled_protos, sampled_data), axis=0),
-                        ncol=n_visualize,
+                        ncol=n_visualize,  # type: ignore
                         pad_value=1,
                         padding=1,
                         title="Sampled prototypes | Sampled data",
@@ -512,14 +514,14 @@ def train_loop(
 
                         batch_metrics = jax_utils.tree_concatenate(batch_metrics)
                         test_loss, test_metrics = jax.tree_util.tree_map(
-                            lambda x: jnp.sum(x) / n_test, (jnp.array(batch_losses), batch_metrics)
+                            lambda x: jnp.sum(x) / n_test, (jnp.array(batch_losses), batch_metrics)  # type: ignore
                         )
 
                         run.summary["test_loss"] = test_loss
                         for k, v in test_metrics.items():
                             run.summary[f"test_{k}"] = v
 
-                        test_x = test_batch["image"][:n_visualize]
+                        test_x = test_batch["image"][:n_visualize]  # type: ignore
                         test_recon_fig = make_reconstruction_plot(test_x)
 
                         run.summary["test_reconstructions"] = wandb.Image(test_recon_fig)

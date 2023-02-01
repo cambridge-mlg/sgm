@@ -50,7 +50,7 @@ class ValueRange:
         image = self.vmin + image * (self.vmax - self.vmin)
         if self.clip_values:
             image = tf.clip_by_value(image, self.vmin, self.vmax)
-        features[self.key_result or self.key] = image
+        features[self.key_result or self.key] = image  # type: ignore
         return features
 
 
@@ -79,9 +79,9 @@ class RandomRotate:
         rng = features[self.rng_key]
         self.θ_min = self.θ_min * math.pi / 180
         self.θ_max = self.θ_max * math.pi / 180
-        θ = tf.random.stateless_uniform((), rng, self.θ_min, self.θ_max)
+        θ = tf.random.stateless_uniform((), rng, self.θ_min, self.θ_max)  # type: ignore
 
-        image = tfa.image.rotate(image, θ, "bilinear", fill_value=self.fill_value)
+        image = tfa.image.rotate(image, θ, "bilinear", fill_value=self.fill_value)  # type: ignore
         features[self.key_result or self.key] = image
         return features
 
@@ -97,25 +97,3 @@ class Keep:
 
     def __call__(self, features: Features) -> Features:
         return {k: v for k, v in features.items() if k in self.keys}
-
-
-# @dataclasses.dataclass
-# class Decode:
-#     """Decodes an encoded image string, see tf.io.decode_image.
-#     Attributes:
-#       channels: Number of image channels.
-#       key: Key of the data to be processed.
-#       key_result: Key under which to store the result (same as `key` if None).
-#     """
-
-#     channels: int = 3
-#     key: str = "image"
-#     key_result: Optional[str] = None
-
-#     def __call__(self, features: Features) -> Features:
-#         image_data = features[self.key]
-#         decoded_image = tf.io.decode_image(
-#             image_data, channels=self.channels, expand_animations=False
-#         )
-#         features[self.key_result or self.key] = decoded_image
-#         return features

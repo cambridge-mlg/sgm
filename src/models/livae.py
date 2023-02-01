@@ -22,6 +22,7 @@ from src.transformations.affine import rotate_image
 from src.models.common import ConvEncoder, ConvDecoder, DenseEncoder, Bijector, INV_SOFTPLUS_1
 
 KwArgs = Mapping[str, Any]
+PRNGKey = Any
 
 
 class LIVAE(nn.Module):
@@ -60,7 +61,7 @@ class LIVAE(nn.Module):
         )
         self.q_Θ_given_X_bij = Bijector(**(self.Eta_given_X or {}).get("bijector", {}))
 
-    def __call__(self, x, rng):
+    def __call__(self, x: Array, rng: PRNGKey) -> Tuple[distrax.Distribution, ...]:
         inv_rng, z_rng, xhat_rng, θ_rng = random.split(rng, 4)
         q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng)
         z = q_Z_given_x.sample(seed=z_rng)
@@ -84,7 +85,13 @@ class LIVAE(nn.Module):
 
         return q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Xhat_given_z, p_Θ_given_z, self.p_Z
 
-    def sample(self, rng, prototype=False, sample_xhat=False, sample_θ=False):
+    def sample(
+        self,
+        rng: PRNGKey,
+        prototype: bool = False,
+        sample_xhat: bool = False,
+        sample_θ: bool = False,
+    ) -> Array:
         z_rng, xhat_rng, θ_rng = random.split(rng, 3)
         z = self.p_Z.sample(seed=z_rng)
 
@@ -100,8 +107,14 @@ class LIVAE(nn.Module):
         return x
 
     def reconstruct(
-        self, x, rng, prototype=False, sample_z=False, sample_xhat=False, sample_θ=False
-    ):
+        self,
+        x: Array,
+        rng: PRNGKey,
+        prototype: bool = False,
+        sample_z: bool = False,
+        sample_xhat: bool = False,
+        sample_θ: bool = False,
+    ) -> Array:
         z_rng, xhat_rng, θ_rng = random.split(rng, 3)
         q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, z_rng)
         z = q_Z_given_x.sample(seed=rng) if sample_z else q_Z_given_x.mean()
@@ -119,7 +132,9 @@ class LIVAE(nn.Module):
 
 
 # TODO: generalize to other transformations.
-def make_approx_invariant(p_Z_given_X, x, num_samples, rng):
+def make_approx_invariant(
+    p_Z_given_X: distrax.Normal, x: Array, num_samples: int, rng: PRNGKey
+) -> distrax.Normal:
     """Construct an approximately invariant distribution by sampling parameters
     of the distribution for rotated inputs and then averaging.
 
@@ -149,7 +164,15 @@ def make_approx_invariant(p_Z_given_X, x, num_samples, rng):
     return distrax.Normal(*params)
 
 
-def calculate_livae_elbo(x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_given_z, p_Z, β=1.0):
+def calculate_livae_elbo(
+    x: Array,
+    q_Z_given_x: distrax.Distribution,
+    q_Θ_given_x: distrax.Distribution,
+    p_X_given_xhat_θ: distrax.Distribution,
+    p_Θ_given_z: distrax.Distribution,
+    p_Z: distrax.Distribution,
+    β: int = 1.0,
+) -> Tuple[float, Mapping[str, float]]:
     ll = p_X_given_xhat_θ.log_prob(x).sum()
     z_kld = q_Z_given_x.kl_divergence(p_Z).sum()
 
@@ -174,7 +197,9 @@ def calculate_livae_elbo(x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_g
     return -elbo, {"elbo": elbo, "ll": ll, "z_kld": z_kld, "θ_kld": θ_kld}
 
 
-def livae_loss_fn(model, params, x, rng, β: float = 1.0):
+def livae_loss_fn(
+    model: nn.Module, params: nn.FrozenDict, x: Array, rng: PRNGKey, β: float = 1.0
+) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for LIVAE."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))

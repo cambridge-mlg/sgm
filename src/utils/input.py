@@ -2,7 +2,7 @@
 # https://github.com/google/uncertainty-baselines/blob/b538c7fbecdb599cb5eb9299cfae0c5b1f06fb9c/baselines/jft/input_utils.py
 """Input pipeline utilities."""
 import math
-from typing import Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 from absl import logging
 import flax
@@ -12,6 +12,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
+Array = Any
 Tensor = Union[tf.Tensor, tf.SparseTensor, tf.RaggedTensor]
 Features = Dict[str, Tensor]
 
@@ -181,7 +182,7 @@ def _build_dataset(
 def get_data(
     dataset: Union[str, tfds.core.DatasetBuilder],
     split: str,
-    rng: Optional[jnp.ndarray],
+    rng: Optional[Array],
     process_batch_size: int,
     preprocess_fn: Optional[Callable[[Features], Features]],
     cache: Union[str, bool] = False,
