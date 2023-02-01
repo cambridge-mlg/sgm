@@ -14,8 +14,8 @@ INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.)
 # and we init σ_ to this value, we effectively init σ to 1.
 
 
-# p(z|x) = N(μ(x), σ(x))
 class DenseEncoder(nn.Module):
+    """p(z|x) = N(μ(x), σ(x)), where μ(x) and σ(x) are dense neural networks."""
     latent_dim: int
     hidden_dims: Optional[Sequence[int]] = None
     act_fn: Callable = nn.relu
@@ -34,8 +34,9 @@ class DenseEncoder(nn.Module):
 
         return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
 
-# p(z|x) = N(μ(x), σ(x))
+
 class ConvEncoder(nn.Module):
+    """p(z|x) = N(μ(x), σ(x)), where μ(x) and σ(x) are convolutional neural networks."""
     latent_dim: int
     hidden_dims: Optional[Sequence[int]] = None
     act_fn: Callable = nn.relu
@@ -65,8 +66,8 @@ class ConvEncoder(nn.Module):
         return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
 
 
-# p(x|z) = N(μ(z), σ)
 class ConvDecoder(nn.Module):
+    """p(x|z) = N(μ(z), σ), where μ(z) is a convolutional neural network."""
     image_shape: Tuple[int, int, int]
     hidden_dims: Optional[Sequence[int]] = None
     σ_init: Callable = init.constant(INV_SOFTPLUS_1)
@@ -110,6 +111,7 @@ class ConvDecoder(nn.Module):
 
 # Adapted from https://github.com/deepmind/distrax/blob/master/examples/flow.py.
 class Conditioner(nn.Module):
+    """A neural network that predicts the parameters of a flow given an input."""
     output_dim: int
     hidden_dims: Optional[Sequence[int]] = None
     act_fn: Callable = nn.relu
@@ -126,7 +128,7 @@ class Conditioner(nn.Module):
             self.output_dim,
             kernel_init=init.zeros,
             bias_init=init.zeros,
-            name=f'final',
+            name='final',
         )(h)
 
         return y
@@ -134,8 +136,8 @@ class Conditioner(nn.Module):
 
 # Adapted from https://github.com/deepmind/distrax/blob/master/examples/flow.py.
 class Bijector(nn.Module):
-    num_layers: int
-    num_bins: int
+    num_layers: int = 2
+    num_bins: int = 4
     hidden_dims: Optional[Sequence[int]] = None
 
     @nn.compact
