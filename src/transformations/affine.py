@@ -62,6 +62,7 @@ def gen_transform_mat(
 def transform_image(
     image: Array,
     T: Array,
+    mode: str = "nearest",
     fill_value: float = 0.0,
 ) -> Array:
     """Applies an affine transformation to an image.
@@ -96,7 +97,7 @@ def transform_image(
     output = jnp.stack(
         [
             jax.scipy.ndimage.map_coordinates(
-                image[:, :, i], transformed_pts[::-1], order=1, cval=fill_value
+                image[:, :, i], transformed_pts[::-1], order=1, mode=mode, cval=fill_value
             )
             # Note: usually we would use bicubic interpolation (order=3), but this isn't available
             # in jax, so we have to use linear interpolation.
@@ -117,7 +118,7 @@ def rotate_image(
     """Rotates an image by an angle θ.
 
     Args:
-        image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax image format.
+        image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax/TF image format.
 
         θ: the angle of rotation in radians.
 

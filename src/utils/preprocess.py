@@ -60,8 +60,9 @@ class RandomRotate:
 
     Attributes:
       θ_min: A scalar. The minimum rotation in degrees.
-      θ_max: A scalar. The maximim rotation in degrees.
-      fill_value: A scalar. The value to fill the empty pixels.
+      θ_max: A scalar. The maximum rotation in degrees.
+      fill_mode: A string. The fill mode. One of 'constant', 'reflect', 'wrap', 'nearest'.
+      fill_value: A scalar. The value to fill the empty pixels when using 'constant' fill mode.
       key: Key of the data to be processed.
       key_result: Key under which to store the result (same as `key` if None).
       rng_key: Key of the random number used for `tf.random.stateless_uniform`.
@@ -69,7 +70,8 @@ class RandomRotate:
 
     θ_min: float = -45
     θ_max: float = 45
-    fill_value: float = 0
+    fill_mode: str = "nearest"
+    fill_value: float = 0.0
     key: str = "image"
     key_result: Optional[str] = None
     rng_key: str = "rng"
@@ -81,6 +83,7 @@ class RandomRotate:
         self.θ_max = self.θ_max * math.pi / 180
         θ = tf.random.stateless_uniform((), rng, self.θ_min, self.θ_max)  # type: ignore
 
+        image = tfa.image.rotate(image, θ, "bilinear", fill_mode=self.fill_mode, fill_value=self.fill_value)  # type: ignore
         image = tfa.image.rotate(image, θ, "bilinear", fill_value=self.fill_value)  # type: ignore
         features[self.key_result or self.key] = image
         return features
