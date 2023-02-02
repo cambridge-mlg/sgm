@@ -84,7 +84,52 @@ class RandomRotate:
         θ = tf.random.stateless_uniform((), rng, self.θ_min, self.θ_max)  # type: ignore
 
         image = tfa.image.rotate(image, θ, "bilinear", fill_mode=self.fill_mode, fill_value=self.fill_value)  # type: ignore
-        image = tfa.image.rotate(image, θ, "bilinear", fill_value=self.fill_value)  # type: ignore
+        features[self.key_result or self.key] = image
+        return features
+
+
+@dataclasses.dataclass
+class RandomZoom:
+    """Randomly zooms an image.
+
+    Attributes:
+      x_min: A scalar. The minimum x-axis stretch factor.
+      x_max: A scalar. The maximum x-axis stretch factor.
+      y_min: A scalar. The minimum y-axis stretch factor.
+      y_max: A scalar. The maximum y-axis stretch factor.
+      fill_mode: A string. The fill mode. One of 'constant', 'reflect', 'wrap', 'nearest'.
+      fill_value: A scalar. The value to fill the empty pixels when using 'constant' fill mode.
+      key: Key of the data to be processed.
+      key_result: Key under which to store the result (same as `key` if None).
+      rng_key: Key of the random number used for `tf.random.stateless_uniform`.
+    """
+
+    x_min: float = 2 / 3
+    x_max: float = 1.5
+    y_min: float = 2 / 3
+    y_max: float = 1.5
+    fill_mode: str = "nearest"
+    fill_value: float = 0.0
+    key: str = "image"
+    key_result: Optional[str] = None
+    rng_key: str = "rng"
+
+    def __call__(self, features: Features) -> Features:
+        image = features[self.key]
+        rng = features[self.rng_key]
+        x_rng, y_rng = tf.unstack(tf.random.experimental.stateless_split(rng, 2))
+        x_zoom = 1/tf.random.stateless_uniform((), x_rng, self.x_min, self.x_max)  # type: ignore
+        y_zoom = 1/tf.random.stateless_uniform((), y_rng, self.y_min, self.y_max)  # type: ignore
+
+        image_shape = tf.shape(image)
+        image_height = tf.cast(image_shape[-3], tf.float32)
+        image_width = tf.cast(image_shape[-2], tf.float32)
+        x_offset = ((image_width - 1.0) / 2.0) * (1.0 - x_zoom)
+        y_offset = ((image_height - 1.0) / 2.0) * (1.0 - y_zoom)
+
+        transforms = tf.stack([x_zoom, 0, x_offset, 0, y_zoom, y_offset, 0, 0], axis=0)
+
+        image = tfa.image.transform(image, transforms, "bilinear", fill_mode=self.fill_mode, fill_value=self.fill_value)  # type: ignore
         features[self.key_result or self.key] = image
         return features
 
