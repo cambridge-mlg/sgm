@@ -93,10 +93,10 @@ class RandomZoom:
     """Randomly zooms an image.
 
     Attributes:
-      x_min: A scalar. The minimum x-axis stretch factor.
-      x_max: A scalar. The maximum x-axis stretch factor.
-      y_min: A scalar. The minimum y-axis stretch factor.
-      y_max: A scalar. The maximum y-axis stretch factor.
+      x_min: A scalar. The exponential of the minimum x-axis zoom out factor. I.e., if the desired minimum zoom out is 2x, then x_min = log(2).
+      x_max: A scalar. The exponential of the maximum x-axis zoom out factor.
+      y_min: A scalar. The exponential of the minimum y-axis zoom out factor.
+      y_max: A scalar. The exponential of the maximum y-axis zoom out factor.
       fill_mode: A string. The fill mode. One of 'constant', 'reflect', 'wrap', 'nearest'.
       fill_value: A scalar. The value to fill the empty pixels when using 'constant' fill mode.
       key: Key of the data to be processed.
@@ -118,8 +118,10 @@ class RandomZoom:
         image = features[self.key]
         rng = features[self.rng_key]
         x_rng, y_rng = tf.unstack(tf.random.experimental.stateless_split(rng, 2))
-        x_zoom = 1/tf.random.stateless_uniform((), x_rng, self.x_min, self.x_max)  # type: ignore
-        y_zoom = 1/tf.random.stateless_uniform((), y_rng, self.y_min, self.y_max)  # type: ignore
+        x_zoom = tf.random.stateless_uniform((), x_rng, self.x_min, self.x_max)  # type: ignore
+        y_zoom = tf.random.stateless_uniform((), y_rng, self.y_min, self.y_max)  # type: ignore
+
+        x_zoom, y_zoom = tf.math.exp(x_zoom), tf.math.exp(y_zoom)
 
         image_shape = tf.shape(image)
         image_height = tf.cast(image_shape[-3], tf.float32)
