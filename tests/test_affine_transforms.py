@@ -10,7 +10,11 @@ import torch.nn.functional as F
 from torchdiffeq import odeint
 from PIL import Image
 
-from src.transformations.affine import transform_image, gen_transform_mat, create_generator_matrices
+from src.transformations.affine import (
+    _transform_image,
+    gen_transform_mat,
+    create_generator_matrices,
+)
 
 
 def _pytorch_transform_image(image, G):
@@ -35,7 +39,7 @@ class AffineTransformTests(parameterized.TestCase):
     def test_identity(self):
         T = gen_transform_mat(jnp.zeros(7, dtype=jnp.float32))
 
-        jax_output = transform_image(self.input_array, T)
+        jax_output = _transform_image(self.input_array, T)
         pt_output = _pytorch_transform_image(np.array(self.input_array), np.array(T))
 
         self.assertLess(jnp.mean(jnp.abs(jax_output - self.input_array)) / 255, 0.02)
@@ -69,7 +73,7 @@ class AffineTransformTests(parameterized.TestCase):
     def test_vs_pytorch(self, η):
         T = gen_transform_mat(jnp.array(η))
 
-        jax_output = transform_image(self.input_array, T)
+        jax_output = _transform_image(self.input_array, T)
         pt_output = _pytorch_transform_image(np.array(self.input_array), np.array(T))
 
         self.assertLess(jnp.mean(jnp.abs(jax_output - pt_output)) / 255, 0.02)
