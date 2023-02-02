@@ -67,7 +67,7 @@ class LIVAE(nn.Module):
         z = q_Z_given_x.sample(seed=z_rng)
 
         x_ = jnp.sum(z) * 0 + x
-        # TODO: this ^ is a hack to get the jaxprs to match up. Not clear why this is necessary.
+        # TODO: this ^ is a hack to get jaxprs to match up. It isn't clear why this is necessary.
         # But without the hack the jaxpr for the p_Θ_given_Z_bij is different from the jaxpr for the
         # p_Θ_given_Z2_bij, where the difference comes from registers being on device0 vs not being
         # commited to a device. This is a problem because the take the KLD between the p_Θ_given_Z
@@ -171,7 +171,7 @@ def calculate_livae_elbo(
     p_X_given_xhat_θ: distrax.Distribution,
     p_Θ_given_z: distrax.Distribution,
     p_Z: distrax.Distribution,
-    β: int = 1.0,
+    β: float = 1.0,
 ) -> Tuple[float, Mapping[str, float]]:
     ll = p_X_given_xhat_θ.log_prob(x).sum()
     z_kld = q_Z_given_x.kl_divergence(p_Z).sum()
