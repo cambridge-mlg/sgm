@@ -18,11 +18,14 @@ from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
 
-from src.transformations.affine import rotate_image
+from src.transformations.affine import transform_image
 from src.models.common import ConvEncoder, ConvDecoder, DenseEncoder, Bijector, INV_SOFTPLUS_1
 
 KwArgs = Mapping[str, Any]
 PRNGKey = Any
+
+
+UPPER_BOUNDS = [.5, .5, jnp.pi, .5, .5, jnp.pi / 6, jnp.pi / 6]
 
 
 class LIVAE(nn.Module):
@@ -50,49 +53,49 @@ class LIVAE(nn.Module):
         self.q_Z_given_X = ConvEncoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
         # p(X̂|Z)
         self.p_Xhat_given_Z = ConvDecoder(image_shape=self.image_shape, **(self.Xhat_given_Z or {}))
-        # p(Θ|Z)
-        self.p_Θ_given_Z_base = DenseEncoder(
-            latent_dim=1, **(self.Eta_given_Z or {}).get("base", {})
+        # p(Η|Z)
+        self.p_Η_given_Z_base = DenseEncoder(
+            latent_dim=7, **(self.Eta_given_Z or {}).get("base", {})
         )
-        self.p_Θ_given_Z_bij = Bijector(**(self.Eta_given_Z or {}).get("bijector", {}))
-        # q(Θ|X)
-        self.q_Θ_given_X_base = DenseEncoder(
-            latent_dim=1, **(self.Eta_given_X or {}).get("base", {})
+        self.p_Η_given_Z_bij = Bijector(**(self.Eta_given_Z or {}).get("bijector", {}))
+        # q(Η|X)
+        self.q_Η_given_X_base = DenseEncoder(
+            latent_dim=7, **(self.Eta_given_X or {}).get("base", {})
         )
-        self.q_Θ_given_X_bij = Bijector(**(self.Eta_given_X or {}).get("bijector", {}))
+        self.q_Η_given_X_bij = Bijector(**(self.Eta_given_X or {}).get("bijector", {}))
 
     def __call__(self, x: Array, rng: PRNGKey) -> Tuple[distrax.Distribution, ...]:
-        inv_rng, z_rng, xhat_rng, θ_rng = random.split(rng, 4)
+        inv_rng, z_rng, xhat_rng, η_rng = random.split(rng, 4)
         q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng)
         z = q_Z_given_x.sample(seed=z_rng)
 
         x_ = jnp.sum(z) * 0 + x
         # TODO: this ^ is a hack to get jaxprs to match up. It isn't clear why this is necessary.
-        # But without the hack the jaxpr for the p_Θ_given_Z_bij is different from the jaxpr for the
-        # p_Θ_given_Z2_bij, where the difference comes from registers being on device0 vs not being
-        # commited to a device. This is a problem because the take the KLD between the p_Θ_given_Z
-        # and the q_Θ_given_x, the jaxprs must match up.
+        # But without the hack the jaxpr for the p_Η_given_Z_bij is different from the jaxpr for the
+        # p_Η_given_Z2_bij, where the difference comes from registers being on device0 vs not being
+        # commited to a device. This is a problem because the take the KLD between the p_Η_given_Z
+        # and the q_Η_given_x, the jaxprs must match up.
 
-        p_Θ_given_z = distrax.Transformed(self.p_Θ_given_Z_base(z), self.p_Θ_given_Z_bij(z))
+        p_Η_given_z = distrax.Transformed(self.p_Η_given_Z_base(z), self.p_Η_given_Z_bij(z))
 
-        q_Θ_given_x = distrax.Transformed(self.q_Θ_given_X_base(x_), self.q_Θ_given_X_bij(x_))
-        θ = q_Θ_given_x.sample(seed=θ_rng)[0]
+        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
+        η = q_Η_given_x.sample(seed=η_rng)
 
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
         xhat = p_Xhat_given_z.sample(seed=xhat_rng)
 
-        p_X_given_xhat_θ = distrax.Normal(rotate_image(xhat, θ, -1), 1.0)
+        p_X_given_xhat_η = distrax.Normal(transform_image(xhat, η), 1.0)
 
-        return q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Xhat_given_z, p_Θ_given_z, self.p_Z
+        return q_Z_given_x, q_Η_given_x, p_X_given_xhat_η, p_Xhat_given_z, p_Η_given_z, self.p_Z
 
     def sample(
         self,
         rng: PRNGKey,
         prototype: bool = False,
         sample_xhat: bool = False,
-        sample_θ: bool = False,
+        sample_η: bool = False,
     ) -> Array:
-        z_rng, xhat_rng, θ_rng = random.split(rng, 3)
+        z_rng, xhat_rng, η_rng = random.split(rng, 3)
         z = self.p_Z.sample(seed=z_rng)
 
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
@@ -100,10 +103,10 @@ class LIVAE(nn.Module):
         if prototype:
             return xhat
 
-        p_Θ_given_z = distrax.Transformed(self.p_Θ_given_Z_base(z), self.p_Θ_given_Z_bij(z))
-        θ = p_Θ_given_z.sample(seed=θ_rng)[0] if sample_θ else p_Θ_given_z.mean()[0]
+        p_Η_given_z = distrax.Transformed(self.p_Η_given_Z_base(z), self.p_Η_given_Z_bij(z))
+        η = p_Η_given_z.sample(seed=η_rng) if sample_η else p_Η_given_z.mean()
 
-        x = rotate_image(xhat, θ, -1)
+        x = transform_image(xhat, η)
         return x
 
     def reconstruct(
@@ -113,10 +116,10 @@ class LIVAE(nn.Module):
         prototype: bool = False,
         sample_z: bool = False,
         sample_xhat: bool = False,
-        sample_θ: bool = False,
+        sample_η: bool = False,
     ) -> Array:
-        z_rng, xhat_rng, θ_rng = random.split(rng, 3)
-        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, z_rng)
+        z_rng, xhat_rng, η_rng = random.split(rng, 3)
+        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 100, z_rng)
         z = q_Z_given_x.sample(seed=rng) if sample_z else q_Z_given_x.mean()
 
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
@@ -124,10 +127,10 @@ class LIVAE(nn.Module):
         if prototype:
             return xhat
 
-        q_Θ_given_x = distrax.Transformed(self.q_Θ_given_X_base(x), self.q_Θ_given_X_bij(x))
-        θ = q_Θ_given_x.sample(seed=θ_rng)[0] if sample_θ else q_Θ_given_x.mean()[0]
+        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
+        η = q_Η_given_x.sample(seed=η_rng) if sample_η else q_Η_given_x.mean()
 
-        x_recon = rotate_image(xhat, θ, -1)
+        x_recon = transform_image(xhat, η)
         return x_recon
 
 
@@ -147,12 +150,13 @@ def make_approx_invariant(
     Returns:
         An approximately invariant distribution of the same type as p.
     """
-    p_Θ = distrax.Uniform(low=-jnp.pi, high=jnp.pi)
+    p_Η = distrax.Uniform(low=-1 * jnp.array(UPPER_BOUNDS), high=jnp.array(UPPER_BOUNDS))
     rngs = random.split(rng, num_samples)
+    # TODO: investigate scaling of num_samples with the size of η. 
 
     def sample_params(x, rng):
-        θ = p_Θ.sample(seed=rng)
-        x_ = rotate_image(x, θ, -1)
+        η = p_Η.sample(seed=rng)
+        x_ = transform_image(x, η)
         p_Z_given_x_ = p_Z_given_X(x_)
         assert type(p_Z_given_x_) == distrax.Normal
         # TODO: generalise to other distributions.
@@ -167,34 +171,34 @@ def make_approx_invariant(
 def calculate_livae_elbo(
     x: Array,
     q_Z_given_x: distrax.Distribution,
-    q_Θ_given_x: distrax.Distribution,
-    p_X_given_xhat_θ: distrax.Distribution,
-    p_Θ_given_z: distrax.Distribution,
+    q_Η_given_x: distrax.Distribution,
+    p_X_given_xhat_η: distrax.Distribution,
+    p_Η_given_z: distrax.Distribution,
     p_Z: distrax.Distribution,
     β: float = 1.0,
 ) -> Tuple[float, Mapping[str, float]]:
-    ll = p_X_given_xhat_θ.log_prob(x).sum()
+    ll = p_X_given_xhat_η.log_prob(x).sum()
     z_kld = q_Z_given_x.kl_divergence(p_Z).sum()
 
-    # dist1 = q_Θ_given_x
+    # dist1 = q_Η_given_x
     # input_hint1 = jnp.zeros(
     #       dist1.distribution.event_shape, dtype=dist1.distribution.dtype)
     # jaxpr_bij1 = jax.make_jaxpr(dist1.bijector.forward)(input_hint1)
     # print(jaxpr_bij1)
     # print('XXXX')
-    # dist2 = p_Θ_given_z
+    # dist2 = p_Η_given_z
     # input_hint2 = jnp.zeros(
     #       dist2.distribution.event_shape, dtype=dist2.distribution.dtype)
     # input_hint2 = jax.device_put(input_hint2)
     # jaxpr_bij2 = jax.make_jaxpr(dist2.bijector.forward)(input_hint2)
     # print(jaxpr_bij2)
 
-    θ_kld = q_Θ_given_x.kl_divergence(p_Θ_given_z).sum()
+    η_kld = q_Η_given_x.kl_divergence(p_Η_given_z).sum()
 
-    elbo = ll - β * z_kld - θ_kld
-    # TODO: add beta term for θ_kld? Use same beta?
+    elbo = ll - β * z_kld - η_kld
+    # TODO: add beta term for η_kld? Use same beta?
 
-    return -elbo, {"elbo": elbo, "ll": ll, "z_kld": z_kld, "θ_kld": θ_kld}
+    return -elbo, {"elbo": elbo, "ll": ll, "z_kld": z_kld, "η_kld": η_kld}
 
 
 def livae_loss_fn(
@@ -203,14 +207,14 @@ def livae_loss_fn(
     """Single example loss function for LIVAE."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))
-    q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, _, p_Θ_given_z, p_Z = model.apply(
+    q_Z_given_x, q_Η_given_x, p_X_given_xhat_η, _, p_Η_given_z, p_Z = model.apply(
         {"params": params},
         x,
         rng_local,
     )
 
     loss, metrics = calculate_livae_elbo(
-        x, q_Z_given_x, q_Θ_given_x, p_X_given_xhat_θ, p_Θ_given_z, p_Z, β
+        x, q_Z_given_x, q_Η_given_x, p_X_given_xhat_η, p_Η_given_z, p_Z, β
     )
 
     return loss, metrics
