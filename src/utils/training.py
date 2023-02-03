@@ -412,10 +412,10 @@ def train_loop(
                 def make_reconstruction_plot(x):
                     @partial(
                         jax.jit,
-                        static_argnames=("prototype", "sample_z", "sample_xhat", "sample_θ"),
+                        static_argnames=("prototype", "sample_z", "sample_xhat", "sample_η"),
                     )
                     def reconstruct(
-                        x, prototype=False, sample_z=False, sample_xhat=False, sample_θ=False
+                        x, prototype=False, sample_z=False, sample_xhat=False, sample_η=False
                     ):
                         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
                         return model.apply(
@@ -425,7 +425,7 @@ def train_loop(
                             prototype=prototype,
                             sample_z=sample_z,
                             sample_xhat=sample_xhat,
-                            sample_θ=sample_θ,
+                            sample_η=sample_η,
                             method=model.reconstruct,
                         )
 
@@ -452,14 +452,14 @@ def train_loop(
 
                 # do some sampling visualizations
                 def make_sampling_plot():
-                    @partial(jax.jit, static_argnames=("prototype", "sample_xhat", "sample_θ"))
-                    def sample(rng, prototype=False, sample_xhat=False, sample_θ=False):
+                    @partial(jax.jit, static_argnames=("prototype", "sample_xhat", "sample_η"))
+                    def sample(rng, prototype=False, sample_xhat=False, sample_η=False):
                         return model.apply(
                             {"params": state.params},
                             rng,
                             prototype=prototype,
                             sample_xhat=sample_xhat,
-                            sample_θ=sample_θ,
+                            sample_η=sample_η,
                             method=model.sample,
                         )
 
