@@ -41,11 +41,13 @@ def _write_note(note: str):
 
 
 class TrainState(train_state.TrainState):
-    """A Flax TrainState which also tracks model state (e.g. BatchNorm running averages) and schedules β."""
+    """A Flax TrainState which also tracks model state (e.g. BatchNorm running averages) and schedules β/α."""
 
     model_state: FrozenDict
     β: float
     β_val_or_schedule: ScalarOrSchedule = flax.struct.field(pytree_node=False)
+    α: float
+    α_val_or_schedule: ScalarOrSchedule = flax.struct.field(pytree_node=False)
 
     def apply_gradients(self, *, grads, **kwargs):
         updates, new_opt_state = self.tx.update(grads, self.opt_state, self.params)
@@ -54,12 +56,13 @@ class TrainState(train_state.TrainState):
             step=self.step + 1,
             params=new_params,
             opt_state=new_opt_state,
-            β=_get_β_for_step(self.step, self.β_val_or_schedule),
+            β=_get_value_for_step(self.step, self.β_val_or_schedule),
+            α=_get_value_for_step(self.step, self.α_val_or_schedule),
             **kwargs,
         )
 
     @classmethod
-    def create(cls, *, apply_fn, params, tx, β_val_or_schedule, **kwargs):
+    def create(cls, *, apply_fn, params, tx, β_val_or_schedule, α_val_or_schedule, **kwargs):
         opt_state = tx.init(params)
         return cls(
             step=0,
@@ -68,19 +71,21 @@ class TrainState(train_state.TrainState):
             tx=tx,
             opt_state=opt_state,
             β_val_or_schedule=β_val_or_schedule,
-            β=_get_β_for_step(0, β_val_or_schedule),
+            β=_get_value_for_step(0, β_val_or_schedule),
+            α_val_or_schedule=α_val_or_schedule,
+            α=_get_value_for_step(0, α_val_or_schedule),
             **kwargs,
         )
 
 
-# Helper which helps us deal with the fact that we can either specify a fixed β
-# or a schedule for adjusting β. This is a pattern similar to the one used by
+# Helper which helps us deal with the fact that we can either specify a fixed β/α
+# or a schedule for adjusting β/α. This is a pattern similar to the one used by
 # optax for dealing with LRs either being specified as a constant or schedule.
-def _get_β_for_step(step, β_val_or_schedule):
-    if callable(β_val_or_schedule):
-        return β_val_or_schedule(step)
+def _get_value_for_step(step, val_or_schedule):
+    if callable(val_or_schedule):
+        return val_or_schedule(step)
     else:
-        return β_val_or_schedule
+        return val_or_schedule
 
 
 def setup_model(
@@ -137,12 +142,19 @@ def setup_model(
     else:
         β = config.β
 
+    if config.get("α_schedule_name", None):
+        schedule = getattr(optax, config.α_schedule_name)  # type: ignore
+        α = schedule(init_value=config.α, **config.α_schedule.to_dict())  # type: ignore
+    else:
+        α = config.α
+
     state = TrainState.create(
         apply_fn=model.apply,
         params=params,
         tx=optim(learning_rate=lr, **config.optim.to_dict()),  # type: ignore
         model_state=model_state,
         β_val_or_schedule=β,
+        α_val_or_schedule=α,
     )
 
     return model, state
@@ -321,17 +333,17 @@ def train_loop(
             rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
             @jax.jit
-            def batch_loss(params, x_batch, rng, β):
+            def batch_loss(params, x_batch, rng, β, α):
                 # Broadcast loss over batch and aggregate.
                 loss, metrics = jax.vmap(
-                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"  # type: ignore
-                )(model, params, x_batch, rng, β)
+                    models.livae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
+                )(model, params, x_batch, rng, β, α)
                 loss, metrics = jax.tree_util.tree_map(partial(jnp.mean, axis=0), (loss, metrics))
                 # TODO: replace this tree_map with a pmean call.
                 return loss, metrics
 
             grad_fn = jax.value_and_grad(batch_loss, has_aux=True)
-            (loss, metrics), grad = grad_fn(state.params, x_batch, rng_local, state.β)
+            (loss, metrics), grad = grad_fn(state.params, x_batch, rng_local, state.β, state.α)
             grad, loss, metrics = jax.lax.pmean((grad, loss, metrics), axis_name="device")
 
             # Update the state.
@@ -344,18 +356,20 @@ def train_loop(
             rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
             @jax.jit
-            def batch_loss(params, x_batch, mask, rng, β):
+            def batch_loss(params, x_batch, mask, rng, β, α):
                 # Broadcast loss over batch and aggregate.
                 loss, metrics = jax.vmap(
-                    models.livae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"  # type: ignore
-                )(model, params, x_batch, rng, β)
+                    models.livae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
+                )(model, params, x_batch, rng, β, α)
                 loss, metrics, mask = jax.tree_util.tree_map(
                     partial(jnp.sum, axis=0), (loss, metrics, mask)
                 )
                 # TODO: replace this tree_map with a psum call.
                 return loss, metrics, mask
 
-            loss, metrics, mask = batch_loss(state.params, x_batch, mask, rng_local, state.β)
+            loss, metrics, mask = batch_loss(
+                state.params, x_batch, mask, rng_local, state.β, state.α
+            )
             loss, metrics, n_examples = jax.lax.psum((loss, metrics, mask), axis_name="device")
 
             return loss, metrics, n_examples
@@ -373,7 +387,11 @@ def train_loop(
 
             if step % config.get("log_every", 1) == 0:  # type: ignore
                 steps.set_postfix_str(f"Loss: {loss:.4f}")
-                run.log({"train/loss": loss, "train/β": state.β}, step=step)
+                learning_rate = state.opt_state.hyperparams["learning_rate"]
+                run.log(
+                    {"train/loss": loss, "β": state.β, "α": state.α, "learing_rate": learning_rate},
+                    step=step,
+                )
                 for k, v in metrics.items():
                     run.log({f"train/{k}": v}, step=step)
 
@@ -426,6 +444,7 @@ def train_loop(
                             sample_z=sample_z,
                             sample_xhat=sample_xhat,
                             sample_η=sample_η,
+                            α=state.α,
                             method=model.reconstruct,
                         )
 
@@ -461,6 +480,7 @@ def train_loop(
                             sample_xhat=sample_xhat,
                             sample_η=sample_η,
                             method=model.sample,
+                            α=state.α,
                         )
 
                     sampled_protos = jax.vmap(sample, in_axes=(0, None, None, None))(  # type: ignore

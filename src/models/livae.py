@@ -25,7 +25,8 @@ KwArgs = Mapping[str, Any]
 PRNGKey = Any
 
 
-UPPER_BOUNDS = [.5, .5, jnp.pi, .5, .5, jnp.pi / 6, jnp.pi / 6]
+UPPER_BOUNDS = [0.5, 0.5, jnp.pi, 0.5, 0.5, jnp.pi / 6, jnp.pi / 6]
+# TODO: use this to clip distributions over η.
 
 
 class LIVAE(nn.Module):
@@ -64,9 +65,9 @@ class LIVAE(nn.Module):
         )
         self.q_Η_given_X_bij = Bijector(**(self.Eta_given_X or {}).get("bijector", {}))
 
-    def __call__(self, x: Array, rng: PRNGKey) -> Tuple[distrax.Distribution, ...]:
+    def __call__(self, x: Array, rng: PRNGKey, α: float = 1.0) -> Tuple[distrax.Distribution, ...]:
         inv_rng, z_rng, xhat_rng, η_rng = random.split(rng, 4)
-        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng)
+        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng, α)
         z = q_Z_given_x.sample(seed=z_rng)
 
         x_ = jnp.sum(z) * 0 + x
@@ -80,6 +81,7 @@ class LIVAE(nn.Module):
 
         q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
         η = q_Η_given_x.sample(seed=η_rng)
+        η = jnp.clip(η, -1 * jnp.array(UPPER_BOUNDS) * α, jnp.array(UPPER_BOUNDS) * α)
 
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
         xhat = p_Xhat_given_z.sample(seed=xhat_rng)
@@ -94,6 +96,7 @@ class LIVAE(nn.Module):
         prototype: bool = False,
         sample_xhat: bool = False,
         sample_η: bool = False,
+        α: float = 1.0,
     ) -> Array:
         z_rng, xhat_rng, η_rng = random.split(rng, 3)
         z = self.p_Z.sample(seed=z_rng)
@@ -105,6 +108,7 @@ class LIVAE(nn.Module):
 
         p_Η_given_z = distrax.Transformed(self.p_Η_given_Z_base(z), self.p_Η_given_Z_bij(z))
         η = p_Η_given_z.sample(seed=η_rng) if sample_η else p_Η_given_z.mean()
+        η = jnp.clip(η, -1 * jnp.array(UPPER_BOUNDS) * α, jnp.array(UPPER_BOUNDS) * α)
 
         x = transform_image(xhat, η)
         return x
@@ -117,9 +121,10 @@ class LIVAE(nn.Module):
         sample_z: bool = False,
         sample_xhat: bool = False,
         sample_η: bool = False,
+        α: float = 1.0,
     ) -> Array:
         z_rng, xhat_rng, η_rng = random.split(rng, 3)
-        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 100, z_rng)
+        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 100, z_rng, α)
         z = q_Z_given_x.sample(seed=rng) if sample_z else q_Z_given_x.mean()
 
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
@@ -129,6 +134,7 @@ class LIVAE(nn.Module):
 
         q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
         η = q_Η_given_x.sample(seed=η_rng) if sample_η else q_Η_given_x.mean()
+        η = jnp.clip(η, -1 * jnp.array(UPPER_BOUNDS) * α, jnp.array(UPPER_BOUNDS) * α)
 
         x_recon = transform_image(xhat, η)
         return x_recon
@@ -136,7 +142,7 @@ class LIVAE(nn.Module):
 
 # TODO: generalize to other transformations.
 def make_approx_invariant(
-    p_Z_given_X: distrax.Normal, x: Array, num_samples: int, rng: PRNGKey
+    p_Z_given_X: distrax.Normal, x: Array, num_samples: int, rng: PRNGKey, α: float = 1.0
 ) -> distrax.Normal:
     """Construct an approximately invariant distribution by sampling parameters
     of the distribution for rotated inputs and then averaging.
@@ -150,9 +156,9 @@ def make_approx_invariant(
     Returns:
         An approximately invariant distribution of the same type as p.
     """
-    p_Η = distrax.Uniform(low=-1 * jnp.array(UPPER_BOUNDS), high=jnp.array(UPPER_BOUNDS))
+    p_Η = distrax.Uniform(low=-1 * jnp.array(UPPER_BOUNDS) * α, high=jnp.array(UPPER_BOUNDS) * α)
     rngs = random.split(rng, num_samples)
-    # TODO: investigate scaling of num_samples with the size of η. 
+    # TODO: investigate scaling of num_samples with the size of η.
 
     def sample_params(x, rng):
         η = p_Η.sample(seed=rng)
@@ -202,7 +208,7 @@ def calculate_livae_elbo(
 
 
 def livae_loss_fn(
-    model: nn.Module, params: nn.FrozenDict, x: Array, rng: PRNGKey, β: float = 1.0
+    model: nn.Module, params: nn.FrozenDict, x: Array, rng: PRNGKey, β: float = 1.0, α: float = 1.0
 ) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for LIVAE."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
@@ -211,6 +217,7 @@ def livae_loss_fn(
         {"params": params},
         x,
         rng_local,
+        α,
     )
 
     loss, metrics = calculate_livae_elbo(
