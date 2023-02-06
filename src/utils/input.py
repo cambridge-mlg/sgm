@@ -12,6 +12,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
+tf.config.experimental.set_visible_devices([], "GPU")
+
 Array = Any
 Tensor = Union[tf.Tensor, tf.SparseTensor, tf.RaggedTensor]
 Features = Dict[str, Tensor]
