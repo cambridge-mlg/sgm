@@ -46,3 +46,9 @@ python3.9 -m ipykernel install --user --name=inv
   - Do an experiment with rotating digits, make sure that rotating a prototype with rotations drawn from the prior and then encoding a z and then turning that into a new prototype. Hopefully new proto == orig proto.
 
   - Can we learn invariances without the generative model? Should be possible if we have a partially invariant η encoder???
+
+
+  ## JAvi convo 6 Feb
+
+    - Make prior on η depend on x rather than x_hat, and simply be rotationally invariant network? That way it doesn't depend on the quality of the z|x or xhat|x inference network? 
+    - Can't model η independently since we know that the prior is not independent (i.e. to get a an x from an x)hat we could rotate or we could shear but not both?)
