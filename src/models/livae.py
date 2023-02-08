@@ -25,10 +25,6 @@ KwArgs = Mapping[str, Any]
 PRNGKey = Any
 
 
-UPPER_BOUNDS = [0.5, 0.5, jnp.pi, 0.5, 0.5, jnp.pi / 6, jnp.pi / 6]
-# TODO: use this to clip distributions over η.
-
-
 class LIVAE(nn.Module):
     latent_dim: int = 20
     image_shape: Tuple[int, int, int] = (28, 28, 1)
@@ -36,6 +32,15 @@ class LIVAE(nn.Module):
     Xhat_given_Z: Optional[KwArgs] = None
     Eta_given_Z: Optional[KwArgs] = None
     Eta_given_X: Optional[KwArgs] = None
+    bounds: Tuple[float, float, float, float, float, float, float] = (
+        0.25,
+        0.25,
+        jnp.pi,
+        0.25,
+        0.25,
+        jnp.pi / 6,
+        jnp.pi / 6,
+    )
 
     def setup(self):
         # p(Z)
@@ -67,7 +72,7 @@ class LIVAE(nn.Module):
 
     def __call__(self, x: Array, rng: PRNGKey, α: float = 1.0) -> Tuple[distrax.Distribution, ...]:
         inv_rng, z_rng, xhat_rng, η_rng = random.split(rng, 4)
-        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng, α)
+        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng, self.bounds, α)
         z = q_Z_given_x.sample(seed=z_rng)
 
         x_ = jnp.sum(z) * 0 + x
@@ -81,7 +86,7 @@ class LIVAE(nn.Module):
 
         q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
         η = q_Η_given_x.sample(seed=η_rng)
-        η = jnp.clip(η, -1 * jnp.array(UPPER_BOUNDS) * α, jnp.array(UPPER_BOUNDS) * α)
+        η = jnp.clip(η, -1 * jnp.array(self.bounds) * α, jnp.array(self.bounds) * α)
 
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
         xhat = p_Xhat_given_z.sample(seed=xhat_rng)
@@ -108,7 +113,7 @@ class LIVAE(nn.Module):
 
         p_Η_given_z = distrax.Transformed(self.p_Η_given_Z_base(z), self.p_Η_given_Z_bij(z))
         η = p_Η_given_z.sample(seed=η_rng) if sample_η else p_Η_given_z.mean()
-        η = jnp.clip(η, -1 * jnp.array(UPPER_BOUNDS) * α, jnp.array(UPPER_BOUNDS) * α)
+        η = jnp.clip(η, -1 * jnp.array(self.bounds) * α, jnp.array(self.bounds) * α)
 
         x = transform_image(xhat, η)
         return x
@@ -124,7 +129,7 @@ class LIVAE(nn.Module):
         α: float = 1.0,
     ) -> Array:
         z_rng, xhat_rng, η_rng = random.split(rng, 3)
-        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 100, z_rng, α)
+        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 100, z_rng, self.bounds, α)
         z = q_Z_given_x.sample(seed=rng) if sample_z else q_Z_given_x.mean()
 
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
@@ -134,7 +139,7 @@ class LIVAE(nn.Module):
 
         q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
         η = q_Η_given_x.sample(seed=η_rng) if sample_η else q_Η_given_x.mean()
-        η = jnp.clip(η, -1 * jnp.array(UPPER_BOUNDS) * α, jnp.array(UPPER_BOUNDS) * α)
+        η = jnp.clip(η, -1 * jnp.array(self.bounds) * α, jnp.array(self.bounds) * α)
 
         x_recon = transform_image(xhat, η)
         return x_recon
@@ -142,7 +147,12 @@ class LIVAE(nn.Module):
 
 # TODO: generalize to other transformations.
 def make_approx_invariant(
-    p_Z_given_X: distrax.Normal, x: Array, num_samples: int, rng: PRNGKey, α: float = 1.0
+    p_Z_given_X: distrax.Normal,
+    x: Array,
+    num_samples: int,
+    rng: PRNGKey,
+    bounds: Tuple[float, float, float, float, float, float, float],
+    α: float = 1.0,
 ) -> distrax.Normal:
     """Construct an approximately invariant distribution by sampling parameters
     of the distribution for rotated inputs and then averaging.
@@ -156,13 +166,13 @@ def make_approx_invariant(
     Returns:
         An approximately invariant distribution of the same type as p.
     """
-    p_Η = distrax.Uniform(low=-1 * jnp.array(UPPER_BOUNDS) * α, high=jnp.array(UPPER_BOUNDS) * α)
+    p_Η = distrax.Uniform(low=-1 * jnp.array(bounds) * α, high=jnp.array(bounds) * α)
     rngs = random.split(rng, num_samples)
     # TODO: investigate scaling of num_samples with the size of η.
 
     def sample_params(x, rng):
         η = p_Η.sample(seed=rng)
-        x_ = transform_image(x, η)
+        x_ = transform_image(x, -η)
         p_Z_given_x_ = p_Z_given_X(x_)
         assert type(p_Z_given_x_) == distrax.Normal
         # TODO: generalise to other distributions.
