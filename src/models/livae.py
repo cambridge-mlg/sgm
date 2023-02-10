@@ -13,7 +13,7 @@ import jax
 from jax import numpy as jnp
 from jax import random, lax
 from jax.tree_util import tree_map
-from chex import Array
+from chex import Array, assert_rank, assert_shape
 from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
@@ -23,6 +23,24 @@ from src.models.common import ConvEncoder, ConvDecoder, DenseEncoder, Bijector, 
 
 KwArgs = Mapping[str, Any]
 PRNGKey = Any
+
+
+def make_η_bounded(η, bounds):
+    """Converts η to a bounded representation.
+
+    Args:
+        η: a rank-1 array of length 7.
+        bounds: a rank-1 array of length 7.
+    """
+    assert_rank(η, 1)
+    assert_shape(η, (7,))
+    assert_rank(bounds, 1)
+    assert_shape(bounds, (7,))
+
+    # η = bounds * jnp.sin(η * 0.5 * (jnp.pi + 1e-8) / (bounds + 1e-8))
+    η = η.clip(-bounds, bounds)
+
+    return η
 
 
 class LIVAE(nn.Module):
@@ -43,6 +61,7 @@ class LIVAE(nn.Module):
     )
 
     def setup(self):
+        self.bounds_array = jnp.array(self.bounds)
         # p(Z)
         self.p_Z = distrax.Normal(
             loc=self.param("prior_μ", init.zeros, (self.latent_dim,)),
@@ -72,13 +91,13 @@ class LIVAE(nn.Module):
 
     def __call__(self, x: Array, rng: PRNGKey, α: float = 1.0) -> Tuple[distrax.Distribution, ...]:
         inv_rng, z_rng, xhat_rng, η_rng = random.split(rng, 4)
-        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng, self.bounds, α)
+        q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng, self.bounds_array, α)
         z = q_Z_given_x.sample(seed=z_rng)
 
         x_ = jnp.sum(z) * 0 + x
         # TODO: this ^ is a hack to get jaxprs to match up. It isn't clear why this is necessary.
         # But without the hack the jaxpr for the p_Η_given_Z_bij is different from the jaxpr for the
-        # p_Η_given_Z2_bij, where the difference comes from registers being on device0 vs not being
+        # q_Η_given_X_bij, where the difference comes from registers being on device0 vs not being
         # commited to a device. This is a problem because the take the KLD between the p_Η_given_Z
         # and the q_Η_given_x, the jaxprs must match up.
 
@@ -86,7 +105,7 @@ class LIVAE(nn.Module):
 
         q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
         η = q_Η_given_x.sample(seed=η_rng)
-        η = jnp.clip(η, -1 * jnp.array(self.bounds) * α, jnp.array(self.bounds) * α)
+        η = make_η_bounded(η, self.bounds_array * α)
 
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
         xhat = p_Xhat_given_z.sample(seed=xhat_rng)
@@ -113,7 +132,7 @@ class LIVAE(nn.Module):
 
         p_Η_given_z = distrax.Transformed(self.p_Η_given_Z_base(z), self.p_Η_given_Z_bij(z))
         η = p_Η_given_z.sample(seed=η_rng) if sample_η else p_Η_given_z.mean()
-        η = jnp.clip(η, -1 * jnp.array(self.bounds) * α, jnp.array(self.bounds) * α)
+        η = make_η_bounded(η, self.bounds_array * α)
 
         x = transform_image(xhat, η)
         return x
@@ -139,13 +158,12 @@ class LIVAE(nn.Module):
 
         q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
         η = q_Η_given_x.sample(seed=η_rng) if sample_η else q_Η_given_x.mean()
-        η = jnp.clip(η, -1 * jnp.array(self.bounds) * α, jnp.array(self.bounds) * α)
+        η = make_η_bounded(η, self.bounds_array * α)
 
         x_recon = transform_image(xhat, η)
         return x_recon
 
 
-# TODO: generalize to other transformations.
 def make_approx_invariant(
     p_Z_given_X: distrax.Normal,
     x: Array,
@@ -154,8 +172,7 @@ def make_approx_invariant(
     bounds: Tuple[float, float, float, float, float, float, float],
     α: float = 1.0,
 ) -> distrax.Normal:
-    """Construct an approximately invariant distribution by sampling parameters
-    of the distribution for rotated inputs and then averaging.
+    """Construct an approximately invariant distribution by sampling transformations then averaging.
 
     Args:
         p_Z_given_X: A distribution whose parameters are a function of x.
@@ -170,6 +187,7 @@ def make_approx_invariant(
     rngs = random.split(rng, num_samples)
     # TODO: investigate scaling of num_samples with the size of η.
 
+    # TODO: this function is not aware of the bounds for η.
     def sample_params(x, rng):
         η = p_Η.sample(seed=rng)
         x_ = transform_image(x, -η)
