@@ -26,12 +26,8 @@ python3.9 -m ipykernel install --user --name=inv
 
  - [ ] Setup expiriment sweep code
  - [ ] Run sweep over different augmentations in MNIST and see if LIVAE learns the mean
- - [ ] Fix z_sample rng
  - [ ] Run experiments for inv-VAEs with rotations in the data. We expect that in this case the inv encoders will perform better than non-inv ones. 
  - [ ] Make CNN implementation match that of [Dubois et al.](https://github.com/YannDubs/lossyless/blob/462af23a52d68f860e5ae2ff9c59f04cfb8c5fd5/lossyless/architectures.py#L235). That is, resize images to be of power 2, then have the CNN downsample in h & w dims at each stage. Use [this](https://jax.readthedocs.io/en/latest/_autosummary/jax.image.resize.html) rather than [this](https://pytorch.org/vision/main/generated/torchvision.transforms.Resize.html).
- - [ ] Try reproduce reconstruction behaviour of Dubois et al. That is, we want reconstructions to not show the symmetry to which they are supposed to be invariant. Perhaps we need more of a bottle neck.
- - [ ] Figure out why the transformed samples for the inv-VAE look less noisy than the original samples.
- - [ ] Switch to simpler per-batch logging.
 
 
  ## Javi convo take-aways
@@ -48,7 +44,7 @@ python3.9 -m ipykernel install --user --name=inv
   - Can we learn invariances without the generative model? Should be possible if we have a partially invariant η encoder???
 
 
-  ## JAvi convo 6 Feb
+## JAvi convo 6 Feb
 
-    - Make prior on η depend on x rather than x_hat, and simply be rotationally invariant network? That way it doesn't depend on the quality of the z|x or xhat|x inference network? 
-    - Can't model η independently since we know that the prior is not independent (i.e. to get a an x from an x)hat we could rotate or we could shear but not both?)
+  - Make prior on η depend on x rather than x_hat, and simply be rotationally invariant network? That way it doesn't depend on the quality of the z|x or xhat|x inference network? 
+  - Can't model η independently since we know that the prior is not independent (i.e. to get a an x from an x)hat we could rotate or we could shear but not both?)
