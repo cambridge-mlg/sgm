@@ -40,6 +40,11 @@ def _write_note(note: str):
         logging.info(note)
 
 
+def _tree_concatenate(list_of_trees):
+    """Convert a list of trees of identical structure into a single tree of lists."""
+    return jax.tree_map(lambda *xs: jnp.array(list(xs)), *list_of_trees)
+
+
 class TrainState(train_state.TrainState):
     """A Flax TrainState which also tracks model state (e.g. BatchNorm running averages) and schedules β/α."""
 
@@ -415,7 +420,7 @@ def train_loop(
                     if i == 0:
                         val_batch_0 = val_batch
 
-                batch_metrics = jax_utils.tree_concatenate(batch_metrics)
+                batch_metrics = jax_utils._tree_concatenate(batch_metrics)
                 val_loss, val_metrics = jax.tree_util.tree_map(
                     lambda x: jnp.sum(x) / n_val, (jnp.array(batch_losses), batch_metrics)  # type: ignore
                 )
@@ -532,7 +537,7 @@ def train_loop(
                             batch_metrics.append(metrics)
                             n_test += n_examples
 
-                        batch_metrics = jax_utils.tree_concatenate(batch_metrics)
+                        batch_metrics = jax_utils._tree_concatenate(batch_metrics)
                         test_loss, test_metrics = jax.tree_util.tree_map(
                             lambda x: jnp.sum(x) / n_test, (jnp.array(batch_losses), batch_metrics)  # type: ignore
                         )
