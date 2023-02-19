@@ -27,7 +27,6 @@ from absl import logging
 import src.utils.input as input_utils
 import src.utils.preprocess as preprocess_utils
 import src.utils.plotting as plot_utils
-import src.utils.jax as jax_utils
 import src.models as models
 
 
@@ -420,7 +419,7 @@ def train_loop(
                     if i == 0:
                         val_batch_0 = val_batch
 
-                batch_metrics = jax_utils._tree_concatenate(batch_metrics)
+                batch_metrics = _tree_concatenate(batch_metrics)
                 val_loss, val_metrics = jax.tree_util.tree_map(
                     lambda x: jnp.sum(x) / n_val, (jnp.array(batch_losses), batch_metrics)  # type: ignore
                 )
@@ -537,7 +536,7 @@ def train_loop(
                             batch_metrics.append(metrics)
                             n_test += n_examples
 
-                        batch_metrics = jax_utils._tree_concatenate(batch_metrics)
+                        batch_metrics = _tree_concatenate(batch_metrics)
                         test_loss, test_metrics = jax.tree_util.tree_map(
                             lambda x: jnp.sum(x) / n_test, (jnp.array(batch_losses), batch_metrics)  # type: ignore
                         )

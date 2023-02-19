@@ -1,4 +1,4 @@
-"""Definition of the Learnt-Invariance VAE.
+"""Learnt-Invariance VAE definition.
 
 A note on notation. In order to distinguish between random variables and their values, we use upper
 and lower case variable names. I.e., p(Z) or `p_Z` is the distribution over the r.v. Z, and is a
@@ -19,7 +19,14 @@ import flax.linen.initializers as init
 import distrax
 
 from src.transformations.affine import transform_image
-from src.models.common import ConvEncoder, ConvDecoder, DenseEncoder, Bijector, INV_SOFTPLUS_1
+from src.models.common import (
+    ConvEncoder,
+    ConvDecoder,
+    DenseEncoder,
+    Bijector,
+    INV_SOFTPLUS_1,
+    make_approx_invariant,
+)
 
 KwArgs = Mapping[str, Any]
 PRNGKey = Any
@@ -162,44 +169,6 @@ class LIVAE(nn.Module):
 
         x_recon = transform_image(xhat, η)
         return x_recon
-
-
-def make_approx_invariant(
-    p_Z_given_X: distrax.Normal,
-    x: Array,
-    num_samples: int,
-    rng: PRNGKey,
-    bounds: Tuple[float, float, float, float, float, float, float],
-    α: float = 1.0,
-) -> distrax.Normal:
-    """Construct an approximately invariant distribution by sampling transformations then averaging.
-
-    Args:
-        p_Z_given_X: A distribution whose parameters are a function of x.
-        x: An image.
-        num_samples: The number of samples to use for the approximation.
-        rng: A random number generator.
-
-    Returns:
-        An approximately invariant distribution of the same type as p.
-    """
-    p_Η = distrax.Uniform(low=-1 * jnp.array(bounds) * α, high=jnp.array(bounds) * α)
-    rngs = random.split(rng, num_samples)
-    # TODO: investigate scaling of num_samples with the size of η.
-
-    # TODO: this function is not aware of the bounds for η.
-    def sample_params(x, rng):
-        η = p_Η.sample(seed=rng)
-        x_ = transform_image(x, -η)
-        p_Z_given_x_ = p_Z_given_X(x_)
-        assert type(p_Z_given_x_) == distrax.Normal
-        # TODO: generalise to other distributions.
-        return p_Z_given_x_.loc, p_Z_given_x_.scale
-
-    params = jax.vmap(sample_params, in_axes=(None, 0))(x, rngs)
-    params = tree_map(lambda x: jnp.mean(x, axis=0), params)
-
-    return distrax.Normal(*params)
 
 
 def calculate_livae_elbo(
