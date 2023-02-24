@@ -139,3 +139,6 @@ wandb/
 
 # results
 results*/
+
+# logging
+logs/
