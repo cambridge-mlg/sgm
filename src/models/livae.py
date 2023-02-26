@@ -13,8 +13,7 @@ from functools import partial
 import jax
 from jax import numpy as jnp
 from jax import random, lax
-from jax.tree_util import tree_map
-from chex import Array, assert_rank, assert_shape
+from chex import Array
 from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
@@ -27,29 +26,12 @@ from src.models.common import (
     Bijector,
     INV_SOFTPLUS_1,
     make_approx_invariant,
+    make_η_bounded
 )
 import src.utils.plotting as plot_utils
 
 KwArgs = Mapping[str, Any]
 PRNGKey = Any
-
-
-def make_η_bounded(η, bounds):
-    """Converts η to a bounded representation.
-
-    Args:
-        η: a rank-1 array of length 7.
-        bounds: a rank-1 array of length 7.
-    """
-    assert_rank(η, 1)
-    assert_shape(η, (7,))
-    assert_rank(bounds, 1)
-    assert_shape(bounds, (7,))
-
-    # η = bounds * jnp.sin(η * 0.5 * (jnp.pi + 1e-8) / (bounds + 1e-8))
-    η = η.clip(-bounds, bounds)
-
-    return η
 
 
 class LIVAE(nn.Module):
