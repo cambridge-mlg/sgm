@@ -36,7 +36,7 @@ KwArgs = Mapping[str, Any]
 PRNGKey = Any
 
 
-class LIVAE(nn.Module):
+class LIVAE_NO_CONJ1(nn.Module):
     latent_dim: int = 20
     image_shape: Tuple[int, int, int] = (28, 28, 1)
     Z_given_X: Optional[KwArgs] = None
@@ -200,7 +200,7 @@ def make_livae_no_conj1_batch_loss(model, agg=jnp.mean):
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
-            livae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
+            livae_no_conj1_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
         )(model, params, x_batch, rng, state.β, state.α)
         loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
