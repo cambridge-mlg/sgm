@@ -46,7 +46,7 @@ def get_config(angle) -> config_dict.ConfigDict:
 
     # Training config
     config.total_steps = 7501
-    config.batch_size = 256
+    config.batch_size = 512
 
     ## Optimizer config
     config.optim_name = "adamw"

@@ -19,16 +19,16 @@ RANDOM_SEEDS = [
     1,
     2,
 ]
-FLAGS_TO_ADD = ["--wandb_tags=angle_sweep"]
+FLAGS_TO_ADD = ["--wandb_tags=angle_sweep,general_affine"]
 
 # NOTE: if you add configs you probably want to specify the results_folder more down below
 
 ################################################################################
 
 times = {
-    "livae_mnist": "00:20:00",
-    "ivae_mnist": "00:20:00",
-    "vae_mnist": "00:20:00",
+    "livae_mnist": "00:30:00",
+    "ivae_mnist": "00:30:00",
+    "vae_mnist": "00:30:00",
 }
 
 jobsfolder = Path(f"./{JOBS_FOLDER}")
