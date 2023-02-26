@@ -3,32 +3,32 @@ from hashlib import md5
 
 ################################### Configs #####################################
 
-EXPERIMENT_NAME = "test"
-JOBS_FOLDER = f"{EXPERIMENT_NAME}_jobs"
+EXPERIMENT_NAME = "livae_vs_vae_angle_sweep"
+JOBS_FOLDER = f"jobs"
 DELETE_PREV_FOLDER = True
 SCRIPT = "train.py"
 # RESULTS_FOLDER = f'~/rds/rds-t2-cs133-hh9aMiOkJqI/jua23/blt/icml_results/small_scale/{EXPERIMENT_NAME}'
 CONFIG_NAMES = [
     "livae_mnist",
-    "ivae_mnist",
+    # "ivae_mnist",
     "vae_mnist",
 ]
-ANGLES = [0, 15, 30, 45, 60, 75, 90]
+ANGLES = [0, 15, 30, 45, 60, 75, 90, 180]
 RANDOM_SEEDS = [
     0,
     1,
     2,
 ]
-FLAGS_TO_ADD = [""]
+FLAGS_TO_ADD = ["--wandb_tags=angle_sweep"]
 
 # NOTE: if you add configs you probably want to specify the results_folder more down below
 
 ################################################################################
 
 times = {
-    "livae_mnist": "1:00:00",
-    "ivae_mnist": "1:00:00",
-    "vae_mnist": "1:00:00",
+    "livae_mnist": "00:20:00",
+    "ivae_mnist": "00:20:00",
+    "vae_mnist": "00:20:00",
 }
 
 jobsfolder = Path(f"./{JOBS_FOLDER}")
@@ -36,7 +36,7 @@ if jobsfolder.exists() and DELETE_PREV_FOLDER:
     for jobfile in jobsfolder.glob("*"):
         jobfile.unlink()
     jobsfolder.rmdir()
-jobsfolder.mkdir(exist_ok=True)
+jobsfolder.mkdir(exist_ok=True, parents=True)
 
 for config_name in CONFIG_NAMES:
     jobsfile = jobsfolder / f"{EXPERIMENT_NAME}-{config_name}%{times[config_name]}.txt"
