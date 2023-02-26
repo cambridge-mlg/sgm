@@ -26,7 +26,6 @@ from absl import logging
 
 import src.utils.input as input_utils
 import src.utils.preprocess as preprocess_utils
-import src.utils.plotting as plot_utils
 import src.models as models
 
 
@@ -332,22 +331,16 @@ def train_loop(
             f" epochs and {steps_per_epoch} steps per epoch."
         )
 
-        @partial(jax.pmap, axis_name="device", in_axes=(None, 0, None), out_axes=None)  # type: ignore
-        def update_fn(state, x_batch, rng):
+        make_batch_loss = getattr(models, "make_" + config.model_name.lower() + "_batch_loss")
+
+        @partial(jax.pmap, axis_name="device", in_axes=(None, 0, 0, None), out_axes=None)  # type: ignore
+        def update_fn(state, x_batch, mask, rng):
             rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
-            @jax.jit
-            def batch_loss(params, x_batch, rng, β, α):
-                # Broadcast loss over batch and aggregate.
-                loss, metrics = jax.vmap(
-                    models.livae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
-                )(model, params, x_batch, rng, β, α)
-                loss, metrics = jax.tree_util.tree_map(partial(jnp.mean, axis=0), (loss, metrics))
-                # TODO: replace this tree_map with a pmean call.
-                return loss, metrics
+            batch_loss = make_batch_loss(model, jnp.mean)
 
             grad_fn = jax.value_and_grad(batch_loss, has_aux=True)
-            (loss, metrics), grad = grad_fn(state.params, x_batch, rng_local, state.β, state.α)
+            (loss, (metrics, _)), grad = grad_fn(state.params, x_batch, mask, rng_local, state)
             grad, loss, metrics = jax.lax.pmean((grad, loss, metrics), axis_name="device")
 
             # Update the state.
@@ -359,21 +352,9 @@ def train_loop(
         def eval_fn(state, x_batch, mask, rng):
             rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
-            @jax.jit
-            def batch_loss(params, x_batch, mask, rng, β, α):
-                # Broadcast loss over batch and aggregate.
-                loss, metrics = jax.vmap(
-                    models.livae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
-                )(model, params, x_batch, rng, β, α)
-                loss, metrics, mask = jax.tree_util.tree_map(
-                    partial(jnp.sum, axis=0), (loss, metrics, mask)
-                )
-                # TODO: replace this tree_map with a psum call.
-                return loss, metrics, mask
+            batch_loss = make_batch_loss(model, jnp.sum)
 
-            loss, metrics, mask = batch_loss(
-                state.params, x_batch, mask, rng_local, state.β, state.α
-            )
+            loss, (metrics, mask) = batch_loss(state.params, x_batch, mask, rng_local, state)
             loss, metrics, n_examples = jax.lax.psum((loss, metrics, mask), axis_name="device")
 
             return loss, metrics, n_examples
@@ -387,7 +368,9 @@ def train_loop(
         for step in (steps := trange(total_steps)):  # type: ignore
             train_batch = next(train_iter)
             rng, train_rng, val_rng, test_rng = jax.random.split(rng, 4)
-            state, loss, metrics = update_fn(state, train_batch["image"], train_rng)
+            state, loss, metrics = update_fn(
+                state, train_batch["image"], train_batch["mask"], train_rng
+            )
 
             if step % config.get("log_every", 1) == 0:  # type: ignore
                 steps.set_postfix_str(f"Loss: {loss:.4f}")
@@ -431,80 +414,19 @@ def train_loop(
                 # do some reconstruction visualizations
                 n_visualize = config.get("n_visualize", 24)
 
-                def make_reconstruction_plot(x):
-                    @partial(
-                        jax.jit,
-                        static_argnames=("prototype", "sample_z", "sample_xhat", "sample_η"),
-                    )
-                    def reconstruct(
-                        x, prototype=False, sample_z=False, sample_xhat=False, sample_η=False
-                    ):
-                        rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
-                        return model.apply(
-                            {"params": state.params},
-                            x,
-                            rng,
-                            prototype=prototype,
-                            sample_z=sample_z,
-                            sample_xhat=sample_xhat,
-                            sample_η=sample_η,
-                            α=state.α,
-                            method=model.reconstruct,
-                        )
-
-                    x_proto_modes = jax.vmap(
-                        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)  # type: ignore
-                    )(x, True, False, False, True)
-
-                    x_recon_modes = jax.vmap(
-                        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)  # type: ignore
-                    )(x, False, False, False, True)
-
-                    recon_fig = plot_utils.plot_img_array(
-                        jnp.concatenate((x, x_proto_modes, x_recon_modes), axis=0),
-                        ncol=n_visualize,  # type: ignore
-                        pad_value=1,
-                        padding=1,
-                        title="Original | Prototype | Reconstruction",
-                    )
-
-                    return recon_fig
-
                 val_x = val_batch_0["image"][0, :n_visualize]  # type: ignore
-                val_recon_fig = make_reconstruction_plot(val_x)
+                make_reconstruction_plot = getattr(
+                    models, "make_" + config.model_name.lower() + "_reconstruction_plot"
+                )
+                val_recon_fig = make_reconstruction_plot(
+                    val_x, n_visualize, model, state, visualisation_rng
+                )
 
                 # do some sampling visualizations
-                def make_sampling_plot():
-                    @partial(jax.jit, static_argnames=("prototype", "sample_xhat", "sample_η"))
-                    def sample(rng, prototype=False, sample_xhat=False, sample_η=False):
-                        return model.apply(
-                            {"params": state.params},
-                            rng,
-                            prototype=prototype,
-                            sample_xhat=sample_xhat,
-                            sample_η=sample_η,
-                            method=model.sample,
-                            α=state.α,
-                        )
-
-                    sampled_protos = jax.vmap(sample, in_axes=(0, None, None, None))(  # type: ignore
-                        jax.random.split(visualisation_rng, n_visualize), True, True, True  # type: ignore
-                    )
-
-                    sampled_data = jax.vmap(sample, in_axes=(0, None, None, None))(  # type: ignore
-                        jax.random.split(visualisation_rng, n_visualize), False, True, True  # type: ignore
-                    )
-
-                    sample_fig = plot_utils.plot_img_array(
-                        jnp.concatenate((sampled_protos, sampled_data), axis=0),
-                        ncol=n_visualize,  # type: ignore
-                        pad_value=1,
-                        padding=1,
-                        title="Sampled prototypes | Sampled data",
-                    )
-                    return sample_fig
-
-                sample_fig = make_sampling_plot()
+                make_sampling_plot = getattr(
+                    models, "make_" + config.model_name.lower() + "_sampling_plot"
+                )
+                sample_fig = make_sampling_plot(n_visualize, model, state, visualisation_rng)
 
                 run.log({"val_reconstructions": wandb.Image(val_recon_fig)}, step=step)
                 run.log({"prior_samples": wandb.Image(sample_fig)}, step=step)

@@ -8,6 +8,7 @@ that X=x|Z=z a.k.k `p_x_given_z`.
 """
 
 from typing import Any, Mapping, Optional, Tuple
+from functools import partial
 
 import jax
 from jax import numpy as jnp
@@ -27,6 +28,7 @@ from src.models.common import (
     INV_SOFTPLUS_1,
     make_approx_invariant,
 )
+import src.utils.plotting as plot_utils
 
 KwArgs = Mapping[str, Any]
 PRNGKey = Any
@@ -222,3 +224,85 @@ def livae_loss_fn(
     )
 
     return loss, metrics
+
+
+def make_livae_batch_loss(model, agg=jnp.mean):
+    @jax.jit
+    def batch_loss(params, x_batch, mask, rng, state):
+        # Broadcast loss over batch and aggregate.
+        loss, metrics = jax.vmap(
+            livae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
+        )(model, params, x_batch, rng, state.β, state.α)
+        loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
+        return loss, (metrics, mask)
+
+    return batch_loss
+
+
+def make_livae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng):
+    @partial(
+        jax.jit,
+        static_argnames=("prototype", "sample_z", "sample_xhat", "sample_η"),
+    )
+    def reconstruct(x, prototype=False, sample_z=False, sample_xhat=False, sample_η=False):
+        rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
+        return model.apply(
+            {"params": state.params},
+            x,
+            rng,
+            prototype=prototype,
+            sample_z=sample_z,
+            sample_xhat=sample_xhat,
+            sample_η=sample_η,
+            α=state.α,
+            method=model.reconstruct,
+        )
+
+    x_proto_modes = jax.vmap(
+        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)  # type: ignore
+    )(x, True, False, False, True)
+
+    x_recon_modes = jax.vmap(
+        reconstruct, axis_name="image", in_axes=(0, None, None, None, None)  # type: ignore
+    )(x, False, False, False, True)
+
+    recon_fig = plot_utils.plot_img_array(
+        jnp.concatenate((x, x_proto_modes, x_recon_modes), axis=0),
+        ncol=n_visualize,  # type: ignore
+        pad_value=1,
+        padding=1,
+        title="Original | Prototype | Reconstruction",
+    )
+
+    return recon_fig
+
+
+def make_livae_sampling_plot(n_visualize, model, state, visualisation_rng):
+    @partial(jax.jit, static_argnames=("prototype", "sample_xhat", "sample_η"))
+    def sample(rng, prototype=False, sample_xhat=False, sample_η=False):
+        return model.apply(
+            {"params": state.params},
+            rng,
+            prototype=prototype,
+            sample_xhat=sample_xhat,
+            sample_η=sample_η,
+            method=model.sample,
+            α=state.α,
+        )
+
+    sampled_protos = jax.vmap(sample, in_axes=(0, None, None, None))(  # type: ignore
+        jax.random.split(visualisation_rng, n_visualize), True, True, True  # type: ignore
+    )
+
+    sampled_data = jax.vmap(sample, in_axes=(0, None, None, None))(  # type: ignore
+        jax.random.split(visualisation_rng, n_visualize), False, True, True  # type: ignore
+    )
+
+    sample_fig = plot_utils.plot_img_array(
+        jnp.concatenate((sampled_protos, sampled_data), axis=0),
+        ncol=n_visualize,  # type: ignore
+        pad_value=1,
+        padding=1,
+        title="Sampled prototypes | Sampled data",
+    )
+    return sample_fig

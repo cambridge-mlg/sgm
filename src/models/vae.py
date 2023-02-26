@@ -8,6 +8,7 @@ that X=x|Z=z a.k.k `p_x_given_z`.
 """
 
 from typing import Any, Mapping, Optional, Tuple
+from functools import partial
 
 import jax
 from jax import numpy as jnp
@@ -18,6 +19,7 @@ import flax.linen.initializers as init
 import distrax
 
 from src.models.common import ConvEncoder, ConvDecoder, INV_SOFTPLUS_1
+import src.utils.plotting as plot_utils
 
 KwArgs = Mapping[str, Any]
 PRNGKey = Any
@@ -30,7 +32,6 @@ class VAE(nn.Module):
     X_given_Z: Optional[KwArgs] = None
 
     def setup(self):
-        self.bounds_array = jnp.array(self.bounds)
         # p(Z)
         self.p_Z = distrax.Normal(
             loc=self.param("prior_μ", init.zeros, (self.latent_dim,)),
@@ -46,13 +47,13 @@ class VAE(nn.Module):
         # q(Z|X)
         self.q_Z_given_X = ConvEncoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
         # p(X|Z)
-        self.p_X_given_Z = ConvDecoder(image_shape=self.image_shape, **(self.Xhat_given_Z or {}))
+        self.p_X_given_Z = ConvDecoder(image_shape=self.image_shape, **(self.X_given_Z or {}))
 
     def __call__(self, x: Array, rng: PRNGKey) -> Tuple[distrax.Distribution, ...]:
         q_Z_given_x = self.q_Z_given_X(x)
         z = q_Z_given_x.sample(seed=rng)
 
-        p_X_given_z = self.p_Xhat_given_Z(z)
+        p_X_given_z = self.p_X_given_Z(z)
 
         return q_Z_given_x, p_X_given_z, self.p_Z
 
@@ -96,15 +97,15 @@ def calculate_vae_elbo(
     ll = p_X_given_z.log_prob(x).sum()
     z_kld = q_Z_given_x.kl_divergence(p_Z).sum()
 
-    elbo = ll - β * z_kld - η_kld
+    elbo = ll - β * z_kld
 
     return -elbo, {"elbo": elbo, "ll": ll, "z_kld": z_kld}
 
 
-def livae_loss_fn(
+def vae_loss_fn(
     model: nn.Module, params: nn.FrozenDict, x: Array, rng: PRNGKey, β: float = 1.0, **kwargs
 ) -> Tuple[float, Mapping[str, float]]:
-    """Single example loss function for LIVAE."""
+    """Single example loss function for VAE."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))
     q_Z_given_x, p_X_given_z, p_Z = model.apply(
@@ -113,8 +114,74 @@ def livae_loss_fn(
         rng_local,
     )
 
-    loss, metrics = calculate_vae_elbo(
-        x, q_Z_given_x, p_X_given_z, p_Z, β
-    )
+    loss, metrics = calculate_vae_elbo(x, q_Z_given_x, p_X_given_z, p_Z, β)
 
     return loss, metrics
+
+
+def make_vae_batch_loss(model, agg=jnp.mean):
+    @jax.jit
+    def batch_loss(params, x_batch, mask, rng, state):
+        # Broadcast loss over batch and aggregate.
+        loss, metrics = jax.vmap(
+            vae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"  # type: ignore
+        )(model, params, x_batch, rng, state.β)
+        loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
+        return loss, (metrics, mask)
+
+    return batch_loss
+
+
+def make_vae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng):
+    @partial(
+        jax.jit,
+        static_argnames=("sample_z", "sample_x"),
+    )
+    def reconstruct(x, sample_z=False, sample_x=False):
+        rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
+        return model.apply(
+            {"params": state.params},
+            x,
+            rng,
+            sample_z=sample_z,
+            sample_x=sample_x,
+            method=model.reconstruct,
+        )
+
+    x_recon_modes = jax.vmap(
+        reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
+    )(x, False, True)
+
+    recon_fig = plot_utils.plot_img_array(
+        jnp.concatenate((x, x_recon_modes), axis=0),
+        ncol=n_visualize,  # type: ignore
+        pad_value=1,
+        padding=1,
+        title="Original | Reconstruction",
+    )
+
+    return recon_fig
+
+
+def make_vae_sampling_plot(n_visualize, model, state, visualisation_rng):
+    @partial(jax.jit, static_argnames=("sample_x"))
+    def sample(rng, sample_x=False):
+        return model.apply(
+            {"params": state.params},
+            rng,
+            sample_x=sample_x,
+            method=model.sample,
+        )
+
+    sampled_data = jax.vmap(sample, in_axes=(0, None))(  # type: ignore
+        jax.random.split(visualisation_rng, n_visualize), True  # type: ignore
+    )
+
+    sample_fig = plot_utils.plot_img_array(
+        sampled_data,
+        ncol=n_visualize,  # type: ignore
+        pad_value=1,
+        padding=1,
+        title="Sampled data",
+    )
+    return sample_fig

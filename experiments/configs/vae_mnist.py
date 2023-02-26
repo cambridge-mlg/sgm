@@ -30,8 +30,8 @@ def get_config(angle) -> config_dict.ConfigDict:
     config.model.Z_given_X = config_dict.ConfigDict()
     config.model.Z_given_X.hidden_dims = [64, 128, 256]
     ## p(X̂|Z) config
-    config.model.Xhat_given_Z = config_dict.ConfigDict()
-    config.model.Xhat_given_Z.hidden_dims = [256, 128, 64]
+    config.model.X_given_Z = config_dict.ConfigDict()
+    config.model.X_given_Z.hidden_dims = [256, 128, 64]
 
     # Training config
     config.total_steps = 7501
