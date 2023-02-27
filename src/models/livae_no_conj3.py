@@ -86,7 +86,7 @@ class LIVAE_NO_CONJ3(nn.Module):
         q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng, self.bounds_array, α)
         z = q_Z_given_x.sample(seed=z_rng)
 
-        p_Η = distrax.Transformed(self.p_Η_base(jnp.zeros_like(z)), self.p_Η_bij(jnp.zeros_like(z)))
+        p_Η = distrax.Transformed(self.p_Η_base(jnp.ones_like(z)), self.p_Η_bij(jnp.ones_like(z)))
 
         q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
         η = q_Η_given_x.sample(seed=η_rng)
@@ -115,7 +115,7 @@ class LIVAE_NO_CONJ3(nn.Module):
         if prototype:
             return xhat
 
-        p_Η = distrax.Transformed(self.p_Η_base(jnp.zeros_like(z)), self.p_Η_bij(jnp.zeros_like(z)))
+        p_Η = distrax.Transformed(self.p_Η_base(jnp.ones_like(z)), self.p_Η_bij(jnp.ones_like(z)))
         η = p_Η.sample(seed=η_rng) if sample_η else p_Η.mean()
         η = make_η_bounded(η, self.bounds_array * α)
 
