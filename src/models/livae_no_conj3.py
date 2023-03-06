@@ -86,16 +86,9 @@ class LIVAE_NO_CONJ3(nn.Module):
         q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 10, inv_rng, self.bounds_array, α)
         z = q_Z_given_x.sample(seed=z_rng)
 
-        x_ = jnp.sum(z) * 0 + x
-        # TODO: this ^ is a hack to get jaxprs to match up. It isn't clear why this is necessary.
-        # But without the hack the jaxpr for the p_Η_given_Z_bij is different from the jaxpr for the
-        # q_Η_given_X_bij, where the difference comes from registers being on device0 vs not being
-        # commited to a device. This is a problem because the take the KLD between the p_Η_given_Z
-        # and the q_Η_given_x, the jaxprs must match up.
+        p_Η = distrax.Transformed(self.p_Η_base(jnp.ones_like(z)), self.p_Η_bij(jnp.ones_like(z)))
 
-        p_Η = distrax.Transformed(self.p_Η_base(jnp.zeros_like(z)), self.p_Η_bij(jnp.zeros_like(z)))
-
-        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
+        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
         η = q_Η_given_x.sample(seed=η_rng)
         η = make_η_bounded(η, self.bounds_array * α)
 
@@ -122,7 +115,7 @@ class LIVAE_NO_CONJ3(nn.Module):
         if prototype:
             return xhat
 
-        p_Η = distrax.Transformed(self.p_Η_base(jnp.zeros_like(z)), self.p_Η_bij(jnp.zeros_like(z)))
+        p_Η = distrax.Transformed(self.p_Η_base(jnp.ones_like(z)), self.p_Η_bij(jnp.ones_like(z)))
         η = p_Η.sample(seed=η_rng) if sample_η else p_Η.mean()
         η = make_η_bounded(η, self.bounds_array * α)
 
