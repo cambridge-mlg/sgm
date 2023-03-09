@@ -267,7 +267,7 @@ def train_loop(
 ) -> TrainState:
     """Runs the training loop!"""
     wandb_kwargs = {
-        "project": "learning-invariances",
+        "project": "neurips2023",
         "entity": "invariance-learners",
         "notes": "",
         "config": config.to_dict(),
