@@ -51,10 +51,12 @@ class CIL(nn.Module):
         self.p_Η_given_Xhat_base = DenseEncoder(
             latent_dim=7, **(self.Η_given_Xhat or {}).get("base", {})
         )
-        # self.p_Η_given_Xhat_bij = Bijector(**(self.Η_given_Xhat or {}).get("bijector", {}))
+        self.p_Η_given_Xhat_bij = Bijector(**(self.Η_given_Xhat or {}).get("bijector", {}))
+        # self.p_Η_given_Xhat_bij = lambda _: distrax.Lambda(lambda x: x)
         # q(Η|X)
         self.q_Η_given_X_base = DenseEncoder(latent_dim=7, **(self.Η_given_X or {}).get("base", {}))
-        # self.q_Η_given_X_bij = Bijector(**(self.Η_given_X or {}).get("bijector", {}))
+        self.q_Η_given_X_bij = Bijector(**(self.Η_given_X or {}).get("bijector", {}))
+        # self.q_Η_given_X_bij = lambda _: distrax.Lambda(lambda x: x)
         self.σ = jax.nn.softplus(
             self.param(
                 "σ_",
@@ -72,21 +74,18 @@ class CIL(nn.Module):
 
         x_uniform = transform_image(x, η_uniform)
 
-        # q_Η_given_x_uniform = distrax.Transformed(
-        #     self.q_Η_given_X_base(x_uniform), self.q_Η_given_X_bij(x_uniform)
-        # )
-        q_Η_given_x_uniform = self.q_Η_given_X_base(x_uniform)
-        # TODO: switch back to using a flow.
+        q_Η_given_x_uniform = distrax.Transformed(
+            self.q_Η_given_X_base(x_uniform), self.q_Η_given_X_bij(x_uniform)
+        )
         η_tot = q_Η_given_x_uniform.sample(seed=η_tot_rng)
         η_tot = make_η_bounded(η_tot, self.bounds_array)
 
         xhat = transform_image(x_uniform, -η_tot)
         # TODO: should this ^ be a sample from a distribution?
 
-        # p_Η_given_xhat = distrax.Transformed(
-        #     self.p_Η_given_Xhat_base(xhat), self.p_Η_given_Xhat_bij(xhat)
-        # )
-        p_Η_given_xhat = self.p_Η_given_Xhat_base(xhat)
+        p_Η_given_xhat = distrax.Transformed(
+            self.p_Η_given_Xhat_base(xhat), self.p_Η_given_Xhat_bij(xhat)
+        )
 
         x_ = jnp.sum(xhat) * 0 + x
         # TODO: this ^ is a hack to get jaxprs to match up. It isn't clear why this is necessary.
@@ -95,14 +94,13 @@ class CIL(nn.Module):
         # commited to a device. This is a problem because the take the KLD between the p_Η_given_Z
         # and the q_Η_given_x, the jaxprs must match up.
 
-        # q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
-        q_Η_given_x = self.q_Η_given_X_base(x_)
+        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
         η = q_Η_given_x.sample(seed=η_rng)
         η = make_η_bounded(η, self.bounds_array)
 
         p_X_given_xhat_and_η = distrax.Normal(transform_image(xhat, η), self.σ)
 
-        return p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x
+        return η, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x
 
     def sample(
         self,
@@ -120,8 +118,7 @@ class CIL(nn.Module):
     ) -> Array:
         η1_rng, η2_rng, xrecon_rng = random.split(rng, 3)
 
-        # q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
-        q_Η_given_x = self.q_Η_given_X_base(x)
+        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
         η1 = q_Η_given_x.sample(seed=η1_rng)
         η1 = make_η_bounded(η1, self.bounds_array)
 
@@ -130,10 +127,9 @@ class CIL(nn.Module):
         if prototype:
             return xhat
 
-        # p_Η_given_xhat = distrax.Transformed(
-        #     self.p_Η_given_Xhat_base(xhat), self.p_Η_given_Xhat_bij(xhat)
-        # )
-        p_Η_given_xhat = self.p_Η_given_Xhat_base(xhat)
+        p_Η_given_xhat = distrax.Transformed(
+            self.p_Η_given_Xhat_base(xhat), self.p_Η_given_Xhat_bij(xhat)
+        )
         if sample_η:
             η2 = p_Η_given_xhat.sample(seed=η2_rng)
             η2 = make_η_bounded(η2, self.bounds_array)
@@ -169,11 +165,18 @@ def calculate_cil_elbo(
 
     ll = p_X_given_xhat_and_η.log_prob(x).sum()
     η_kld = q_Η_given_x.kl_divergence(p_Η_given_xhat).sum()
-    xhat_entropy = q_Η_given_x.entropy().sum()
 
-    elbo = ll - β * η_kld + xhat_entropy
+    # entropy_term = q_Η_given_x.entropy().sum()
+    def entropy(dist: distrax.Distribution, n: int) -> float:
+        xs = dist.sample(seed=random.PRNGKey(0), sample_shape=(n,))
+        log_probs = jax.vmap(lambda x: dist.log_prob(x).sum())(xs)
+        return -jnp.mean(log_probs)
 
-    return -elbo, {"elbo": elbo, "ll": ll, "η_kld": η_kld, "xhat_entropy": xhat_entropy}
+    entropy_term = entropy(q_Η_given_x, 1000)
+
+    elbo = ll - β * η_kld + entropy_term
+
+    return -elbo, {"elbo": elbo, "ll": ll, "η_kld": η_kld, "entropy_term": entropy_term}
 
 
 def cil_loss_fn(
@@ -182,7 +185,7 @@ def cil_loss_fn(
     """Single example loss function for Contrastive Invariance Learner."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))
-    p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x = model.apply(
+    _, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x = model.apply(
         {"params": params},
         x,
         rng_local,
