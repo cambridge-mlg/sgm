@@ -429,7 +429,8 @@ def train_loop(
                 sample_fig = make_sampling_plot(n_visualize, model, state, visualisation_rng)
 
                 run.log({"val_reconstructions": wandb.Image(val_recon_fig)}, step=step)
-                run.log({"prior_samples": wandb.Image(sample_fig)}, step=step)
+                if sample_fig:
+                    run.log({"prior_samples": wandb.Image(sample_fig)}, step=step)
 
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
@@ -439,7 +440,8 @@ def train_loop(
                         run.summary[f"best_val_{k}"] = v
                     best_val_step = step
                     run.summary["best_val_step"] = best_val_step
-                    run.summary["best_prior_samples"] = wandb.Image(sample_fig)
+                    if sample_fig:
+                        run.summary["best_prior_samples"] = wandb.Image(sample_fig)
 
                     if test_ds:
                         test_iter = input_utils.start_input_pipeline(
