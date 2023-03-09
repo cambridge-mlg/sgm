@@ -28,7 +28,7 @@ from src.models.vae import (
     make_vae_reconstruction_plot,
     make_vae_sampling_plot,
 )
-from models.cil import (
+from src.models.cil import (
     CIL,
     make_cil_batch_loss,
     make_cil_reconstruction_plot,
