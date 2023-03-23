@@ -26,7 +26,7 @@ from src.models.common import (
     Bijector,
     INV_SOFTPLUS_1,
     make_approx_invariant,
-    make_η_bounded
+    make_η_bounded,
 )
 import src.utils.plotting as plot_utils
 
@@ -140,7 +140,7 @@ class LIVAE(nn.Module):
     ) -> Array:
         z_rng, xhat_rng, η_rng = random.split(rng, 3)
         q_Z_given_x = make_approx_invariant(self.q_Z_given_X, x, 100, z_rng, self.bounds, α)
-        z = q_Z_given_x.sample(seed=rng) if sample_z else q_Z_given_x.mean()
+        z = q_Z_given_x.sample(seed=z_rng) if sample_z else q_Z_given_x.mean()
 
         p_Xhat_given_z = self.p_Xhat_given_Z(z)
         xhat = p_Xhat_given_z.sample(seed=xhat_rng) if sample_xhat else p_Xhat_given_z.mean()

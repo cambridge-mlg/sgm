@@ -28,11 +28,17 @@ from src.models.vae import (
     make_vae_reconstruction_plot,
     make_vae_sampling_plot,
 )
-from src.models.cil import (
-    CIL,
-    make_cil_batch_loss,
-    make_cil_reconstruction_plot,
-    make_cil_sampling_plot,
+from models.ssil import (
+    SSIL,
+    make_ssil_batch_loss,
+    make_ssil_reconstruction_plot,
+    make_ssil_sampling_plot,
+)
+from models.ssilvae import (
+    SSILVAE,
+    make_ssilvae_batch_loss,
+    make_ssilvae_reconstruction_plot,
+    make_ssilvae_sampling_plot,
 )
 
 __all__ = [
@@ -56,8 +62,12 @@ __all__ = [
     "make_vae_batch_loss",
     "make_vae_reconstruction_plot",
     "make_vae_sampling_plot",
-    "CIL",
-    "make_cil_batch_loss",
-    "make_cil_reconstruction_plot",
-    "make_cil_sampling_plot",
+    "SSIL",
+    "make_ssil_batch_loss",
+    "make_ssil_reconstruction_plot",
+    "make_ssil_sampling_plot",
+    "SSILVAE",
+    "make_ssilvae_batch_loss",
+    "make_ssilvae_reconstruction_plot",
+    "make_ssilvae_sampling_plot",
 ]
