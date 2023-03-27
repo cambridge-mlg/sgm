@@ -16,13 +16,13 @@ from src.models.vae import (
     make_vae_reconstruction_plot,
     make_vae_sampling_plot,
 )
-from models.ssil import (
+from src.models.ssil import (
     SSIL,
     make_ssil_batch_loss,
     make_ssil_reconstruction_plot,
     make_ssil_sampling_plot,
 )
-from models.ssilvae import (
+from src.models.ssilvae import (
     SSILVAE,
     make_ssilvae_batch_loss,
     make_ssilvae_reconstruction_plot,
