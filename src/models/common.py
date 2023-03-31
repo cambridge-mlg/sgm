@@ -203,7 +203,7 @@ def make_approx_invariant(
     return distrax.Normal(*params)
 
 
-def make_η_bounded(η, bounds):
+def make_η_bounded(η: Array, bounds: Array):
     """Converts η to a bounded representation.
 
     Args:
@@ -216,6 +216,20 @@ def make_η_bounded(η, bounds):
     assert_shape(bounds, (7,))
 
     # η = bounds * jnp.sin(η * 0.5 * (jnp.pi + 1e-8) / (bounds + 1e-8))
-    η = η.clip(-bounds, bounds)
+    # η = η.clip(-bounds, bounds)
+    η = jax.nn.tanh(η) * bounds
 
     return η
+
+
+def approximate_mode(distribution: distrax.Distribution, num_samples: int, rng: PRNGKey) -> Array:
+    """Approximates the mode of a distribution by taking a number of samples and returning the most likely.
+
+    Args:
+        distribution: A distribution.
+
+    Returns:
+        An approximate mode.
+    """
+    samples, log_probs = distribution.sample_and_log_prob(seed=rng, sample_shape=(num_samples,))
+    return samples[jnp.argmax(log_probs)]
