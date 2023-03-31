@@ -24,6 +24,7 @@ from src.models.common import (
     Bijector,
     INV_SOFTPLUS_1,
     make_η_bounded,
+    approximate_mode,
 )
 import src.utils.plotting as plot_utils
 
@@ -113,14 +114,17 @@ class SSIL(nn.Module):
         x: Array,
         rng: PRNGKey,
         prototype: bool = False,
-        sample_η: bool = False,
+        sample_η_proto: bool = False,
+        sample_η_recon: bool = False,
         sample_xrecon: bool = False,
     ) -> Array:
         η1_rng, η2_rng, xrecon_rng = random.split(rng, 3)
 
         q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
-        η1 = q_Η_given_x.sample(seed=η1_rng)
-        η1 = make_η_bounded(η1, self.bounds_array)
+        if sample_η_proto:
+            η1 = q_Η_given_x.sample(seed=η1_rng)
+        else:
+            η1 = approximate_mode(q_Η_given_x, 100, rng=η1_rng)
 
         xhat = transform_image(x, -η1)
         # TODO: should this ^ be a sample from a distribution?
@@ -134,7 +138,7 @@ class SSIL(nn.Module):
             η2 = p_Η_given_xhat.sample(seed=η2_rng)
             η2 = make_η_bounded(η2, self.bounds_array)
         else:
-            η2 = p_Η_given_xhat.mean()
+            η2 = approximate_mode(p_Η_given_xhat, 100, rng=η2_rng)
 
         p_Xrecon_given_xhat_and_η = distrax.Normal(transform_image(xhat, η2), self.σ)
         if sample_xrecon:
