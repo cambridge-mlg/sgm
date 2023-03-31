@@ -156,6 +156,7 @@ def calculate_ssil_elbo(
     p_X_given_xhat_and_η: distrax.Distribution,
     p_Η_given_xhat: distrax.Distribution,
     q_Η_given_x: distrax.Distribution,
+    rng: PRNGKey,
     β: float = 1.0,
 ) -> Tuple[float, Mapping[str, float]]:
     # dist1 = q_Η_given_x
@@ -174,7 +175,7 @@ def calculate_ssil_elbo(
 
     # entropy_term = q_Η_given_x.entropy().sum()
     def entropy(dist: distrax.Distribution, n: int) -> float:
-        xs = dist.sample(seed=random.PRNGKey(0), sample_shape=(n,))
+        xs = dist.sample(seed=rng, sample_shape=(n,))
         log_probs = jax.vmap(lambda x: dist.log_prob(x).sum())(xs)
         return -jnp.mean(log_probs)
 
@@ -191,13 +192,17 @@ def ssil_loss_fn(
     """Single example loss function for Contrastive Invariance Learner."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))
+    rng_model, rng_loss = random.split(rng_local)
     _, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x = model.apply(
         {"params": params},
         x,
+        rng_model,
         α,
     )
 
-    loss, metrics = calculate_ssil_elbo(x, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x, β)
+    loss, metrics = calculate_ssil_elbo(
+        x, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x, rng_loss, β
+    )
 
     return loss, metrics
 
