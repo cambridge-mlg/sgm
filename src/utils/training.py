@@ -373,7 +373,6 @@ def train_loop(
             )
 
             if step % config.get("log_every", 1) == 0:  # type: ignore
-                steps.set_postfix_str(f"Loss: {loss:.4f}")
                 learning_rate = state.opt_state.hyperparams["learning_rate"]
                 run.log(
                     {"train/loss": loss, "β": state.β, "α": state.α, "learing_rate": learning_rate},
@@ -381,6 +380,9 @@ def train_loop(
                 )
                 for k, v in metrics.items():
                     run.log({f"train/{k}": v}, step=step)
+                steps.set_postfix_str(
+                    f"Train Loss: {loss:.4f}\t Train LL: {metrics['ll']:.4f}"
+                )
 
             if step % config.get("eval_every", 1000) == 0:  # type: ignore
                 val_iter = input_utils.start_input_pipeline(
