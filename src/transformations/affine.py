@@ -113,8 +113,8 @@ def _transform_image(
 def transform_image(
     image: Array,
     η: Array,
-    fill_mode: str = "nearest",
-    fill_value: float = 0.0,
+    fill_mode: str = "constant",
+    fill_value: float = -1.0,
 ) -> Array:
     """Applies an affine transformation to an image.
 
