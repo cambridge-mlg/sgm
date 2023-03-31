@@ -159,23 +159,24 @@ def calculate_ssil_elbo(
     rng: PRNGKey,
     β: float = 1.0,
 ) -> Tuple[float, Mapping[str, float]]:
-    # dist1 = q_Η_given_x
-    # input_hint1 = jnp.zeros(dist1.distribution.event_shape, dtype=dist1.distribution.dtype)
-    # jaxpr_bij1 = jax.make_jaxpr(dist1.bijector.forward)(input_hint1)
-    # print(jaxpr_bij1)
-    # print("XXXX")
-    # dist2 = p_Η_given_xhat
-    # input_hint2 = jnp.zeros(dist2.distribution.event_shape, dtype=dist2.distribution.dtype)
-    # input_hint2 = jax.device_put(input_hint2)
-    # jaxpr_bij2 = jax.make_jaxpr(dist2.bijector.forward)(input_hint2)
-    # print(jaxpr_bij2)
+    rng_η1, rng_η2, rng_entropy = random.split(rng, 3)
 
     ll = p_X_given_xhat_and_η.log_prob(x).sum()
-    η_kld = q_Η_given_x.kl_divergence(p_Η_given_xhat).sum()
+
+    η_kld_ = q_Η_given_x.kl_divergence(p_Η_given_xhat).sum()
+    η_q_sample = q_Η_given_x.sample(seed=rng_η1, sample_shape=())
+    # q_η_ce = 0.1 * p_Η.log_prob(η_q_sample).sum()
+    q_η_ce = jnp.sum(η_q_sample**2)
+
+    η_p_sample = p_Η_given_xhat.sample(seed=rng_η2, sample_shape=())
+    # p_η_ce = 0.1 * p_Η.log_prob(η_p_sample).sum()
+    p_η_ce = jnp.sum(η_p_sample**2)
+
+    η_kld = η_kld_ + q_η_ce + p_η_ce
 
     # entropy_term = q_Η_given_x.entropy().sum()
     def entropy(dist: distrax.Distribution, n: int) -> float:
-        xs = dist.sample(seed=rng, sample_shape=(n,))
+        xs = dist.sample(seed=rng_entropy, sample_shape=(n,))
         log_probs = jax.vmap(lambda x: dist.log_prob(x).sum())(xs)
         return -jnp.mean(log_probs)
 
@@ -183,7 +184,15 @@ def calculate_ssil_elbo(
 
     elbo = ll - β * η_kld + entropy_term
 
-    return -elbo, {"elbo": elbo, "ll": ll, "η_kld": η_kld, "entropy_term": entropy_term}
+    return -elbo, {
+        "elbo": elbo,
+        "ll": ll,
+        "η_kld": η_kld,
+        "η_kld_": η_kld_,
+        "q_η_ce": q_η_ce,
+        "p_η_ce": p_η_ce,
+        "entropy_term": entropy_term,
+    }
 
 
 def ssil_loss_fn(
