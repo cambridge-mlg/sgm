@@ -223,18 +223,20 @@ def make_ssil_batch_loss(model, agg=jnp.mean):
 def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rng):
     @partial(
         jax.jit,
-        static_argnames=("prototype", "sample_η", "sample_xrecon"),
+        static_argnames=("prototype", "sample_η_proto", "sample_η_recon"),
     )
-    def reconstruct(x, prototype=False, sample_η=False, sample_xrecon=False):
+    def reconstruct(x, prototype=False, sample_η_proto=False, sample_η_recon=False):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
         return model.apply(
             {"params": state.params},
             x,
             rng,
             prototype=prototype,
-            sample_η=sample_η,
-            sample_xrecon=sample_xrecon,
+            sample_η_proto=sample_η_proto,
+            sample_η_recon=sample_η_recon,
+            sample_xrecon=False,
             method=model.reconstruct,
+            α=state.α,
         )
 
     x_proto = jax.vmap(
@@ -243,7 +245,11 @@ def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rn
 
     x_recon = jax.vmap(
         reconstruct, axis_name="image", in_axes=(0, None, None, None)  # type: ignore
-    )(x, False, True, False)
+    )(x, False, False, False)
+
+    # x_recon_sample = jax.vmap(
+    #     reconstruct, axis_name="image", in_axes=(0, None, None, None)  # type: ignore
+    # )(x, False, False, True)
 
     recon_fig = plot_utils.plot_img_array(
         jnp.concatenate((x, x_proto, x_recon), axis=0),
