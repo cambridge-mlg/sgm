@@ -67,10 +67,10 @@ class SSIL(nn.Module):
             )
         )
 
-    def __call__(self, x: Array, rng: PRNGKey) -> Tuple[distrax.Distribution, ...]:
+    def __call__(self, x: Array, rng: PRNGKey, α: float = 1.0) -> Tuple[distrax.Distribution, ...]:
         η_rng, η_unif_rng, η_tot_rng = random.split(rng, 3)
 
-        Η_uniform = distrax.Uniform(low=-self.bounds_array, high=self.bounds_array)
+        Η_uniform = distrax.Uniform(low=-α*self.bounds_array, high=α*self.bounds_array)
         η_uniform = Η_uniform.sample(seed=η_unif_rng)
 
         x_uniform = transform_image(x, η_uniform)
@@ -79,10 +79,10 @@ class SSIL(nn.Module):
             self.q_Η_given_X_base(x_uniform), self.q_Η_given_X_bij(x_uniform)
         )
         η_tot = q_Η_given_x_uniform.sample(seed=η_tot_rng)
-        η_tot = make_η_bounded(η_tot, self.bounds_array)
+        η_tot = make_η_bounded(η_tot, α*self.bounds_array)
 
         xhat = transform_image(x_uniform, -η_tot)
-        # TODO: should this ^ be a sample from a distribution?
+        # TODO: should this ^ be a sample from a distribution? In the paper it is a distribution currently.
 
         p_Η_given_xhat = distrax.Transformed(
             self.p_Η_given_Xhat_base(xhat), self.p_Η_given_Xhat_bij(xhat)
@@ -97,7 +97,7 @@ class SSIL(nn.Module):
 
         q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
         η = q_Η_given_x.sample(seed=η_rng)
-        η = make_η_bounded(η, self.bounds_array)
+        η = make_η_bounded(η, α*self.bounds_array)
 
         p_X_given_xhat_and_η = distrax.Normal(transform_image(xhat, η), self.σ)
 
@@ -117,6 +117,7 @@ class SSIL(nn.Module):
         sample_η_proto: bool = False,
         sample_η_recon: bool = False,
         sample_xrecon: bool = False,
+        α: float = 1.0,
     ) -> Array:
         η1_rng, η2_rng, xrecon_rng = random.split(rng, 3)
 
@@ -125,6 +126,7 @@ class SSIL(nn.Module):
             η1 = q_Η_given_x.sample(seed=η1_rng)
         else:
             η1 = approximate_mode(q_Η_given_x, 100, rng=η1_rng)
+        η1 = make_η_bounded(η1, α*self.bounds_array)
 
         xhat = transform_image(x, -η1)
         # TODO: should this ^ be a sample from a distribution?
@@ -136,9 +138,9 @@ class SSIL(nn.Module):
         )
         if sample_η:
             η2 = p_Η_given_xhat.sample(seed=η2_rng)
-            η2 = make_η_bounded(η2, self.bounds_array)
         else:
             η2 = approximate_mode(p_Η_given_xhat, 100, rng=η2_rng)
+        η2 = make_η_bounded(η2, α*self.bounds_array)
 
         p_Xrecon_given_xhat_and_η = distrax.Normal(transform_image(xhat, η2), self.σ)
         if sample_xrecon:
@@ -184,7 +186,7 @@ def calculate_ssil_elbo(
 
 
 def ssil_loss_fn(
-    model: nn.Module, params: nn.FrozenDict, x: Array, rng: PRNGKey, β: float = 1.0
+    model: nn.Module, params: nn.FrozenDict, x: Array, rng: PRNGKey, β: float = 1.0, α: float = 1.0,
 ) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for Contrastive Invariance Learner."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
@@ -192,7 +194,7 @@ def ssil_loss_fn(
     _, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x = model.apply(
         {"params": params},
         x,
-        rng_local,
+        α,
     )
 
     loss, metrics = calculate_ssil_elbo(x, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x, β)
@@ -205,8 +207,8 @@ def make_ssil_batch_loss(model, agg=jnp.mean):
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
-            ssil_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"  # type: ignore
-        )(model, params, x_batch, rng, state.β)
+            ssil_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
+        )(model, params, x_batch, rng, state.β, state.α)
         loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
 
