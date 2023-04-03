@@ -115,7 +115,7 @@ def setup_model(
 
         fwd_rng, init_rng = jax.random.split(rng)
 
-        variables = model.init(init_rng, dummy_input, fwd_rng)
+        variables = model.init(init_rng, dummy_input, fwd_rng, train=False)
         return variables
 
     rng, rng_init = jax.random.split(rng)
@@ -337,7 +337,7 @@ def train_loop(
         def update_fn(state, x_batch, mask, rng):
             rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
-            batch_loss = make_batch_loss(model, jnp.mean)
+            batch_loss = make_batch_loss(model, jnp.mean, True)
 
             grad_fn = jax.value_and_grad(batch_loss, has_aux=True)
             (loss, (metrics, _)), grad = grad_fn(state.params, x_batch, mask, rng_local, state)
@@ -352,7 +352,7 @@ def train_loop(
         def eval_fn(state, x_batch, mask, rng):
             rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
-            batch_loss = make_batch_loss(model, jnp.sum)
+            batch_loss = make_batch_loss(model, jnp.sum, False)
 
             loss, (metrics, mask) = batch_loss(state.params, x_batch, mask, rng_local, state)
             loss, metrics, n_examples = jax.lax.psum((loss, metrics, mask), axis_name="device")
