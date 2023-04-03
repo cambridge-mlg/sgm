@@ -1,5 +1,6 @@
-from typing import Any, Callable, Optional, Sequence, Tuple
+from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
+import numpy as np
 import jax
 from jax import numpy as jnp
 from jax import random
@@ -16,6 +17,7 @@ INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.0)
 # ^ this value is softplus^{-1}(1), i.e. if we get σ as softplus(σ_),
 # and we init σ_ to this value, we effectively init σ to 1.
 PRNGKey = Any
+KwArgs = Mapping[str, Any]
 
 
 class DenseEncoder(nn.Module):
@@ -32,10 +34,18 @@ class DenseEncoder(nn.Module):
 
         h = x.reshape(-1)
         for i, hidden_dim in enumerate(hidden_dims):
-            h = self.act_fn(nn.Dense(hidden_dim, name=f"hidden{i}")(h))
+            h = self.act_fn(nn.Dense(hidden_dim, name=f"hidden_{i}")(h))
 
-        μ = nn.Dense(self.latent_dim, name="μ")(h)
-        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name="σ_")(h))
+        # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
+        μ = nn.Dense(self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ")(h)
+        σ = jax.nn.softplus(
+            nn.Dense(
+                self.latent_dim,
+                kernel_init=init.zeros,
+                bias_init=init.constant(INV_SOFTPLUS_1),
+                name="σ_",
+            )(h)
+        )
 
         return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
 
@@ -66,6 +76,7 @@ class ConvEncoder(nn.Module):
 
         h = h.flatten()
 
+        # TODO: should we init these to 0 and 1?
         μ = nn.Dense(self.latent_dim, name=f"μ")(h)
         σ = jax.nn.softplus(nn.Dense(self.latent_dim, name="σ_")(h))
 
@@ -116,15 +127,25 @@ class Conditioner(nn.Module):
     output_dim: int
     hidden_dims: Optional[Sequence[int]] = None
     act_fn: Callable = nn.relu
+    dropout_rate: float = 0.1
+    train: Optional[bool] = None
 
     @nn.compact
-    def __call__(self, x: Array) -> Array:
+    def __call__(self, x: Array, train: Optional[bool] = None) -> Array:
+        train = nn.merge_param("train", self.train, train)
+        if train is None:
+            train = False
+        # TODO: we probably shouldn't have a default here, but this would break existing code.
+
         hidden_dims = self.hidden_dims if self.hidden_dims else [64, 32]
+
+        x = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(x)
 
         h = x.reshape(-1)
         for i, hidden_dim in enumerate(hidden_dims):
             h = self.act_fn(nn.Dense(hidden_dim, name=f"hidden{i}")(h))
 
+        # We initialize this dense layer to zero so that the flow is initialized to the identity function.
         y = nn.Dense(
             self.output_dim,
             kernel_init=init.zeros,
@@ -136,17 +157,25 @@ class Conditioner(nn.Module):
 
 
 # Adapted from https://github.com/deepmind/distrax/blob/master/examples/flow.py.
-class Bijector(nn.Module):
+class Flow(nn.Module):
+    event_shape: Sequence[int]
     num_layers: int = 2
     num_bins: int = 4
-    hidden_dims: Optional[Sequence[int]] = None
+    cond_hidden_dims: Optional[Sequence[int]] = None
+    bounds_array: Optional[Array] = None
+    dropout_rate: float = 0.1
+    base: Optional[KwArgs] = None
 
     @nn.compact
-    def __call__(self, x: Array) -> distrax.BijectorLike:
-        hidden_dims = self.hidden_dims if self.hidden_dims else [64, 128]
+    def __call__(self, x: Array, train=False) -> distrax.Transformed:
+        cond_hidden_dims = self.cond_hidden_dims if self.cond_hidden_dims else [64, 128]
+
+        mask = jnp.arange(np.prod(self.event_shape)) % 2
+        mask = jnp.reshape(mask, self.event_shape)
+        mask = mask.astype(bool)
 
         def bijector_fn(params: Array):
-            return distrax.RationalQuadraticSpline(params, range_min=0.0, range_max=1.0)
+            return distrax.RationalQuadraticSpline(params, range_min=-2.0, range_max=2.0)
 
         # Number of parameters for the rational-quadratic spline:
         # - `num_bins` bin widths
@@ -155,14 +184,46 @@ class Bijector(nn.Module):
         # for a total of `3 * num_bins + 1` parameters.
         num_bijector_params = 3 * self.num_bins + 1
 
-        layers = []
+        layers = [distrax.Block(distrax.Lambda(lambda x: x), len(self.event_shape))]
         for i in range(self.num_layers):
-            params = Conditioner(num_bijector_params, hidden_dims, name=f"cond{i}")(x)
-            layers.append(bijector_fn(params))
+            layer = distrax.MaskedCoupling(
+                mask=mask,
+                bijector=bijector_fn,
+                conditioner=Conditioner(
+                    num_bijector_params,
+                    cond_hidden_dims,
+                    dropout_rate=self.dropout_rate,
+                    train=train,
+                    name=f"cond_{i}",
+                ),
+            )
+            layers.append(layer)
 
-        # We invert the flow so that the `forward` method is called with `log_prob`.
-        bijector = distrax.Inverse(distrax.Chain(layers))
-        return bijector
+            mask = jnp.logical_not(mask)
+
+        bijector = distrax.Chain(
+            [
+                distrax.Block(
+                    distrax.ScalarAffine(
+                        shift=jnp.zeros_like(self.bounds_array), scale=self.bounds_array
+                    ),
+                    len(self.event_shape),
+                ),
+                distrax.Block(distrax.Tanh(), len(self.event_shape)),
+                # We invert the flow so that the `forward` method is called with `log_prob`.
+                distrax.Inverse(distrax.Chain(layers)),
+            ]
+        )
+
+        base = distrax.Independent(
+            DenseEncoder(
+                latent_dim=len(self.bounds_array),
+                **(self.base or {}),
+            )(x),
+            reinterpreted_batch_ndims=len(self.event_shape),
+        )
+
+        return distrax.Transformed(base, bijector)
 
 
 def make_approx_invariant(

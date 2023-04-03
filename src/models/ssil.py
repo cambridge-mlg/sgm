@@ -20,10 +20,8 @@ import distrax
 
 from src.transformations.affine import transform_image
 from src.models.common import (
-    DenseEncoder,
-    Bijector,
+    Flow,
     INV_SOFTPLUS_1,
-    make_η_bounded,
     approximate_mode,
 )
 import src.utils.plotting as plot_utils
@@ -45,19 +43,22 @@ class SSIL(nn.Module):
         jnp.pi / 6,
         jnp.pi / 6,
     )
+    σ_min: float = 1e-2
 
     def setup(self):
         self.bounds_array = jnp.array(self.bounds)
         # p(Η|Xhat)
-        self.p_Η_given_Xhat_base = DenseEncoder(
-            latent_dim=7, **(self.Η_given_Xhat or {}).get("base", {})
+        self.p_Η_given_Xhat = Flow(
+            **(self.Η_given_Xhat or {}),
+            bounds_array=self.bounds_array,
+            event_shape=self.bounds_array.shape,
         )
-        self.p_Η_given_Xhat_bij = Bijector(**(self.Η_given_Xhat or {}).get("bijector", {}))
-        # self.p_Η_given_Xhat_bij = lambda _: distrax.Lambda(lambda x: x)
         # q(Η|X)
-        self.q_Η_given_X_base = DenseEncoder(latent_dim=7, **(self.Η_given_X or {}).get("base", {}))
-        self.q_Η_given_X_bij = Bijector(**(self.Η_given_X or {}).get("bijector", {}))
-        # self.q_Η_given_X_bij = lambda _: distrax.Lambda(lambda x: x)
+        self.q_Η_given_X = Flow(
+            **(self.Η_given_X or {}),
+            bounds_array=self.bounds_array,
+            event_shape=self.bounds_array.shape,
+        )
         self.σ = jax.nn.softplus(
             self.param(
                 "σ_",
@@ -65,43 +66,41 @@ class SSIL(nn.Module):
                 # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
                 (),
             )
-        )
+        ).clip(min=self.σ_min)
 
-    def __call__(self, x: Array, rng: PRNGKey, α: float = 1.0) -> Tuple[distrax.Distribution, ...]:
+    def __call__(
+        self, x: Array, rng: PRNGKey, α: float = 1.0, train=True
+    ) -> Tuple[distrax.Distribution, ...]:
         η_rng, η_unif_rng, η_tot_rng = random.split(rng, 3)
 
-        Η_uniform = distrax.Uniform(low=-α*self.bounds_array, high=α*self.bounds_array)
+        Η_uniform = distrax.Uniform(low=-α * self.bounds_array, high=α * self.bounds_array)
         η_uniform = Η_uniform.sample(seed=η_unif_rng)
 
         x_uniform = transform_image(x, η_uniform)
 
-        q_Η_given_x_uniform = distrax.Transformed(
-            self.q_Η_given_X_base(x_uniform), self.q_Η_given_X_bij(x_uniform)
-        )
+        q_Η_given_x_uniform = self.q_Η_given_X(x_uniform, train=train)
         η_tot = q_Η_given_x_uniform.sample(seed=η_tot_rng)
-        η_tot = make_η_bounded(η_tot, α*self.bounds_array)
+        # add a small gaussian noise to η_tot
+        # η_tot = η_tot + 0.05 * random.normal(η_tot_rng, η_tot.shape)
 
         xhat = transform_image(x_uniform, -η_tot)
         # TODO: should this ^ be a sample from a distribution? In the paper it is a distribution currently.
 
-        p_Η_given_xhat = distrax.Transformed(
-            self.p_Η_given_Xhat_base(xhat), self.p_Η_given_Xhat_bij(xhat)
+        p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
+        # p_Η = distrax.Normal(jnp.zeros((7,)), 0.5)
+        # p_Η_given_xhat = distrax.MixtureOfTwo(0.9, p_Η_given_xhat_, p_Η)
+        η_ = p_Η_given_xhat.sample(seed=η_rng)
+
+        q_Η_given_x = self.q_Η_given_X(x, train=train)
+        η = q_Η_given_x.sample(seed=η_rng)
+        # add a small gaussian noise to η
+        # η = η + 0.05 * random.normal(η_rng, η.shape)
+
+        p_X_given_xhat_and_η = distrax.Independent(
+            distrax.Normal(transform_image(xhat, η), self.σ), reinterpreted_batch_ndims=len(x.shape)
         )
 
-        x_ = jnp.sum(xhat) * 0 + x
-        # TODO: this ^ is a hack to get jaxprs to match up. It isn't clear why this is necessary.
-        # But without the hack the jaxpr for the p_Η_given_Z_bij is different from the jaxpr for the
-        # q_Η_given_X_bij, where the difference comes from registers being on device0 vs not being
-        # commited to a device. This is a problem because the take the KLD between the p_Η_given_Z
-        # and the q_Η_given_x, the jaxprs must match up.
-
-        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
-        η = q_Η_given_x.sample(seed=η_rng)
-        η = make_η_bounded(η, α*self.bounds_array)
-
-        p_X_given_xhat_and_η = distrax.Normal(transform_image(xhat, η), self.σ)
-
-        return η, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x
+        return η, η_, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x
 
     def sample(
         self,
@@ -121,28 +120,29 @@ class SSIL(nn.Module):
     ) -> Array:
         η1_rng, η2_rng, xrecon_rng = random.split(rng, 3)
 
-        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
+        q_Η_given_x = self.q_Η_given_X(x)
         if sample_η_proto:
             η1 = q_Η_given_x.sample(seed=η1_rng)
         else:
             η1 = approximate_mode(q_Η_given_x, 100, rng=η1_rng)
-        η1 = make_η_bounded(η1, α*self.bounds_array)
 
         xhat = transform_image(x, -η1)
         # TODO: should this ^ be a sample from a distribution?
         if prototype:
             return xhat
 
-        p_Η_given_xhat = distrax.Transformed(
-            self.p_Η_given_Xhat_base(xhat), self.p_Η_given_Xhat_bij(xhat)
-        )
-        if sample_η:
+        p_Η_given_xhat = self.p_Η_given_Xhat(xhat)
+        # p_Η = distrax.Normal(jnp.zeros((7,)), 0.5)
+        # p_Η_given_xhat = distrax.MixtureOfTwo(0.9, p_Η_given_xhat_, p_Η)
+        if sample_η_recon:
             η2 = p_Η_given_xhat.sample(seed=η2_rng)
         else:
             η2 = approximate_mode(p_Η_given_xhat, 100, rng=η2_rng)
-        η2 = make_η_bounded(η2, α*self.bounds_array)
 
-        p_Xrecon_given_xhat_and_η = distrax.Normal(transform_image(xhat, η2), self.σ)
+        p_Xrecon_given_xhat_and_η = distrax.Independent(
+            distrax.Normal(transform_image(xhat, η2), self.σ),
+            reinterpreted_batch_ndims=len(x.shape),
+        )
         if sample_xrecon:
             xrecon = p_Xrecon_given_xhat_and_η.sample(seed=xrecon_rng)
         else:
@@ -157,30 +157,40 @@ def calculate_ssil_elbo(
     p_Η_given_xhat: distrax.Distribution,
     q_Η_given_x: distrax.Distribution,
     rng: PRNGKey,
+    bounds=Array,
     β: float = 1.0,
 ) -> Tuple[float, Mapping[str, float]]:
-    rng_η1, rng_η2, rng_entropy = random.split(rng, 3)
+    ll = p_X_given_xhat_and_η.log_prob(x)
 
-    ll = p_X_given_xhat_and_η.log_prob(x).sum()
+    def kld(dist1: distrax.Distribution, dist2: distrax.Distribution, n: int) -> float:
+        xs, log_probs1 = dist1.sample_and_log_prob(seed=rng, sample_shape=(n,))
+        xs = xs.clip(min=-0.999 * bounds, max=0.999 * bounds)
+        log_probs2 = jax.vmap(dist2.log_prob)(xs)
+        return jnp.mean(log_probs1, axis=0) - jnp.mean(log_probs2, axis=0)
 
-    η_kld_ = q_Η_given_x.kl_divergence(p_Η_given_xhat).sum()
-    η_q_sample = q_Η_given_x.sample(seed=rng_η1, sample_shape=())
+    η_kld_ = kld(q_Η_given_x, p_Η_given_xhat, 100)
+
+    def norm(x: Array) -> float:
+        return jnp.sum((x/(bounds + 1e-3))**2) / len(x)
+
+    # TODO: should this a) average over multiple samples, and b) divide by the bounds?
+
+    η_q_sample = q_Η_given_x.sample(seed=rng, sample_shape=())
     # q_η_ce = 0.1 * p_Η.log_prob(η_q_sample).sum()
-    q_η_ce = jnp.sum(η_q_sample**2)
+    q_η_ce = norm(η_q_sample)
 
-    η_p_sample = p_Η_given_xhat.sample(seed=rng_η2, sample_shape=())
+    η_p_sample = p_Η_given_xhat.sample(seed=rng, sample_shape=())
     # p_η_ce = 0.1 * p_Η.log_prob(η_p_sample).sum()
-    p_η_ce = jnp.sum(η_p_sample**2)
+    p_η_ce = norm(η_p_sample)
 
     η_kld = η_kld_ + q_η_ce + p_η_ce
 
-    # entropy_term = q_Η_given_x.entropy().sum()
     def entropy(dist: distrax.Distribution, n: int) -> float:
-        xs = dist.sample(seed=rng_entropy, sample_shape=(n,))
-        log_probs = jax.vmap(lambda x: dist.log_prob(x).sum())(xs)
-        return -jnp.mean(log_probs)
+        _, log_probs = dist.sample_and_log_prob(seed=rng, sample_shape=(n,))
+        return -jnp.mean(log_probs, axis=0)
 
-    entropy_term = entropy(q_Η_given_x, 1000)
+    entropy_term = entropy(q_Η_given_x, 100)
+    # TODO: implement this term properly
 
     elbo = ll - β * η_kld + entropy_term
 
@@ -196,33 +206,42 @@ def calculate_ssil_elbo(
 
 
 def ssil_loss_fn(
-    model: nn.Module, params: nn.FrozenDict, x: Array, rng: PRNGKey, β: float = 1.0, α: float = 1.0,
+    model: nn.Module,
+    params: nn.FrozenDict,
+    x: Array,
+    rng: PRNGKey,
+    β: float = 1.0,
+    α: float = 1.0,
+    train: bool = True,
 ) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for Contrastive Invariance Learner."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))
-    rng_model, rng_loss = random.split(rng_local)
-    _, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x = model.apply(
-        {"params": params},
-        x,
-        rng_model,
-        α,
+    rng_model, rng_loss, rng_dropout = random.split(rng_local, 3)
+    _, _, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x = model.apply(
+        {"params": params}, x, rng_model, α, train=train, rngs={"dropout": rng_dropout}
     )
 
     loss, metrics = calculate_ssil_elbo(
-        x, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x, rng_loss, β
+        x,
+        p_X_given_xhat_and_η,
+        p_Η_given_xhat,
+        q_Η_given_x,
+        rng_loss,
+        jnp.array(model.bounds),
+        β,
     )
 
     return loss, metrics
 
 
-def make_ssil_batch_loss(model, agg=jnp.mean):
-    @jax.jit
+def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
+    # @jax.jit
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
-            ssil_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
-        )(model, params, x_batch, rng, state.β, state.α)
+            ssil_loss_fn, in_axes=(None, None, 0, None, None, None, None), axis_name="batch"  # type: ignore
+        )(model, params, x_batch, rng, state.β, state.α, train)
         loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
 
@@ -230,10 +249,10 @@ def make_ssil_batch_loss(model, agg=jnp.mean):
 
 
 def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rng):
-    @partial(
-        jax.jit,
-        static_argnames=("prototype", "sample_η_proto", "sample_η_recon"),
-    )
+    # @partial(
+    #     jax.jit,
+    #     static_argnames=("prototype", "sample_η_proto", "sample_η_recon"),
+    # )
     def reconstruct(x, prototype=False, sample_η_proto=False, sample_η_recon=False):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
         return model.apply(
