@@ -193,6 +193,7 @@ class Flow(nn.Module):
             layers.append(layer)
 
             mask = jnp.logical_not(mask)
+            # TODO: add a permutation layer for making more layers better?
 
         bijector = distrax.Chain(
             [

@@ -53,6 +53,7 @@ class SSIL(nn.Module):
             bounds_array=self.bounds_array,
             event_shape=self.bounds_array.shape,
         )
+        # TODO: try a simpler flow which only applies one layer of spline to each of the base distribution dims.
         # q(Η|X)
         self.q_Η_given_X = Flow(
             **(self.Η_given_X or {}),
@@ -84,7 +85,7 @@ class SSIL(nn.Module):
         # η_tot = η_tot + 0.05 * random.normal(η_tot_rng, η_tot.shape)
 
         xhat = transform_image(x_uniform, -η_tot)
-        # TODO: should this ^ be a sample from a distribution? In the paper it is a distribution currently.
+        # TODO: should this ^ be a sample from a reconstructor distribution? In the paper it is a distribution currently.
 
         p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
         # p_Η = distrax.Normal(jnp.zeros((7,)), 0.5)
@@ -99,6 +100,7 @@ class SSIL(nn.Module):
         p_X_given_xhat_and_η = distrax.Independent(
             distrax.Normal(transform_image(xhat, η), self.σ), reinterpreted_batch_ndims=len(x.shape)
         )
+        # TODO: this requires applying transform_image twice to the same input, but we could do it as a single call to two different inputs.
 
         return η, η_, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x
 
@@ -121,6 +123,7 @@ class SSIL(nn.Module):
         η1_rng, η2_rng, xrecon_rng = random.split(rng, 3)
 
         q_Η_given_x = self.q_Η_given_X(x)
+        # TODO: should this be a randomly transformed x?
         if sample_η_proto:
             η1 = q_Η_given_x.sample(seed=η1_rng)
         else:
@@ -132,6 +135,7 @@ class SSIL(nn.Module):
             return xhat
 
         p_Η_given_xhat = self.p_Η_given_Xhat(xhat)
+        # TODO: should we use a randomly transformed x here (and in the ELBO)? I.e., single sample monte carlo estimate of the invariant function.
         # p_Η = distrax.Normal(jnp.zeros((7,)), 0.5)
         # p_Η_given_xhat = distrax.MixtureOfTwo(0.9, p_Η_given_xhat_, p_Η)
         if sample_η_recon:
