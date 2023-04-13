@@ -117,7 +117,8 @@ class Decoder(nn.Module):
 class Conditioner(nn.Module):
     """A neural network that predicts the parameters of a flow given an input."""
 
-    output_dim: int
+    event_shape: Sequence[int]
+    num_bijector_params: int
     hidden_dims: Optional[Sequence[int]] = None
     act_fn: Callable = nn.relu
     dropout_rate: float = 0.1
@@ -130,7 +131,7 @@ class Conditioner(nn.Module):
             train = False
         # TODO: we probably shouldn't have a default here, but this would break existing code.
 
-        hidden_dims = self.hidden_dims if self.hidden_dims else [64, 32]
+        hidden_dims = self.hidden_dims if self.hidden_dims is not None else [512, 256]
 
         x = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(x)
 
@@ -140,11 +141,12 @@ class Conditioner(nn.Module):
 
         # We initialize this dense layer to zero so that the flow is initialized to the identity function.
         y = nn.Dense(
-            self.output_dim,
+            np.prod(self.event_shape) * self.num_bijector_params,
             kernel_init=init.zeros,
             bias_init=init.zeros,
             name="final",
         )(h)
+        y = y.reshape(tuple(self.event_shape) + (self.num_bijector_params,))
 
         return y
 
@@ -154,21 +156,32 @@ class Flow(nn.Module):
     event_shape: Sequence[int]
     num_layers: int = 2
     num_bins: int = 4
-    cond_hidden_dims: Optional[Sequence[int]] = None
     bounds_array: Optional[Array] = None
     dropout_rate: float = 0.1
     base: Optional[KwArgs] = None
+    conditioner: Optional[KwArgs] = None
 
     @nn.compact
     def __call__(self, x: Array, train=False) -> distrax.Transformed:
-        cond_hidden_dims = self.cond_hidden_dims if self.cond_hidden_dims else [64, 128]
-
         mask = jnp.arange(np.prod(self.event_shape)) % 2
         mask = jnp.reshape(mask, self.event_shape)
         mask = mask.astype(bool)
 
+        # create conditioner, which predicts the parameters of the flow
+        def make_conditioner(i):
+            conditioner = Conditioner(
+                event_shape=self.event_shape,
+                num_bijector_params=num_bijector_params,
+                dropout_rate=self.dropout_rate,
+                train=train,
+                **(self.conditioner or {}),
+                name=f"cond_{i}",
+            )
+
+            return conditioner
+
         def bijector_fn(params: Array):
-            return distrax.RationalQuadraticSpline(params, range_min=-2.0, range_max=2.0)
+            return distrax.RationalQuadraticSpline(params, range_min=-3.0, range_max=3.0)
 
         # Number of parameters for the rational-quadratic spline:
         # - `num_bins` bin widths
@@ -177,18 +190,12 @@ class Flow(nn.Module):
         # for a total of `3 * num_bins + 1` parameters.
         num_bijector_params = 3 * self.num_bins + 1
 
-        layers = [distrax.Block(distrax.Lambda(lambda x: x), len(self.event_shape))]
+        layers = [distrax.Block(distrax.Lambda(lambda z: z), len(self.event_shape))]
         for i in range(self.num_layers):
             layer = distrax.MaskedCoupling(
                 mask=mask,
                 bijector=bijector_fn,
-                conditioner=Conditioner(
-                    num_bijector_params,
-                    cond_hidden_dims,
-                    dropout_rate=self.dropout_rate,
-                    train=train,
-                    name=f"cond_{i}",
-                ),
+                conditioner=make_conditioner(i),
             )
             layers.append(layer)
 
