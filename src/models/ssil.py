@@ -164,51 +164,45 @@ def calculate_ssil_elbo(
     p_Η_given_xhat: distrax.Distribution,
     q_Η_given_x: distrax.Distribution,
     rng: PRNGKey,
-    bounds=Array,
+    bounds: Array,
     β: float = 1.0,
+    n: int = 100,
+    # TODO: more? less?
+    ε: float = 1e-6,
 ) -> Tuple[float, Mapping[str, float]]:
     ll = p_X_given_xhat_and_η.log_prob(x)
 
-    def kld(dist1: distrax.Distribution, dist2: distrax.Distribution, n: int) -> float:
-        xs, log_probs1 = dist1.sample_and_log_prob(seed=rng, sample_shape=(n,))
-        xs = xs.clip(min=-0.999 * bounds, max=0.999 * bounds)
-        log_probs2 = jax.vmap(dist2.log_prob)(xs)
-        return jnp.mean(log_probs1, axis=0) - jnp.mean(log_probs2, axis=0)
+    η_qs, q_Η_log_probs = q_Η_given_x.sample_and_log_prob(seed=rng, sample_shape=(n,))
+    q_H_entropy = -jnp.mean(q_Η_log_probs, axis=0)
 
-    η_kld_ = kld(q_Η_given_x, p_Η_given_xhat, 100)
+    p_Η_log_probs = jax.vmap(p_Η_given_xhat.log_prob)(
+        η_qs.clip(min=-(1 - ε) * bounds, max=(1 - ε) * bounds)
+    )
+    p_q_H_cross_entropy = -jnp.mean(p_Η_log_probs, axis=0)
 
-    def norm(x: Array) -> float:
-        return jnp.sum((x/(bounds + 1e-3))**2) / len(x)
+    η_kld_ = p_q_H_cross_entropy - q_H_entropy
 
-    # TODO: should this a) average over multiple samples, and b) divide by the bounds?
+    def norm(η: Array) -> float:
+        return jnp.sum(η**2) / len(η)
 
-    η_q_sample = q_Η_given_x.sample(seed=rng, sample_shape=())
-    # q_η_ce = 0.1 * p_Η.log_prob(η_q_sample).sum()
-    q_η_ce = norm(η_q_sample)
+    q_η_norm = jax.vmap(norm)(η_qs).mean()
 
-    η_p_sample = p_Η_given_xhat.sample(seed=rng, sample_shape=())
-    # p_η_ce = 0.1 * p_Η.log_prob(η_p_sample).sum()
-    p_η_ce = norm(η_p_sample)
+    η_ps = p_Η_given_xhat.sample(seed=rng, sample_shape=(n,))
+    p_η_norm = jax.vmap(norm)(η_ps).mean()
 
-    η_kld = η_kld_ + q_η_ce + p_η_ce
+    η_kld = η_kld_ + q_η_norm + p_η_norm
 
-    def entropy(dist: distrax.Distribution, n: int) -> float:
-        _, log_probs = dist.sample_and_log_prob(seed=rng, sample_shape=(n,))
-        return -jnp.mean(log_probs, axis=0)
-
-    entropy_term = entropy(q_Η_given_x, 100)
-    # TODO: implement this term properly
-
-    elbo = ll - β * η_kld + entropy_term
+    elbo = ll - β * η_kld + q_H_entropy
+    # TODO: this entropy term should be using a distribtuion conditioned on a randomly transformed x.
 
     return -elbo, {
         "elbo": elbo,
         "ll": ll,
         "η_kld": η_kld,
         "η_kld_": η_kld_,
-        "q_η_ce": q_η_ce,
-        "p_η_ce": p_η_ce,
-        "entropy_term": entropy_term,
+        "q_η_ce": q_η_norm,
+        "p_η_ce": p_η_norm,
+        "entropy_term": q_H_entropy,
     }
 
 
