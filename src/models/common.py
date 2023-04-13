@@ -151,6 +151,48 @@ class Conditioner(nn.Module):
         return y
 
 
+class FeatureExtractor(nn.Module):
+    """A neural network that extracts features from an input."""
+
+    conv_dims: Optional[Sequence[int]] = None
+    dense_dims: Optional[Sequence[int]] = None
+    act_fn: Callable = nn.relu
+    norm_cls: nn.Module = nn.LayerNorm
+    dropout_rate: float = 0.1
+    train: Optional[bool] = None
+
+    @nn.compact
+    def __call__(self, x: Array, train: Optional[bool] = None) -> Array:
+        conv_dims = self.conv_dims if self.conv_dims is not None else [32, 64, 128]
+        dense_dims = self.dense_dims if self.dense_dims is not None else [256, 128]
+
+        train = nn.merge_param("train", self.train, train)
+        if train is None:
+            train = False
+
+        h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(x)
+
+        i = -1
+        for i, conv_dim in enumerate(conv_dims):
+            h = nn.Conv(
+                conv_dim,
+                kernel_size=(3, 3),
+                strides=(2, 2) if i == 0 else (1, 1),
+                name=f"conv_{i}",
+            )(h)
+            h = self.norm_cls(name=f"norm_{i}")(h)
+            h = self.act_fn(h)
+
+        h = h.flatten()
+
+        for j, dense_dim in enumerate(dense_dims):
+            h = nn.Dense(dense_dim, name=f"dense_{j+i+1}")(h)
+            h = self.norm_cls(name=f"norm_{j+i+1}")(h)
+            h = self.act_fn(h)
+
+        return h
+
+
 # Adapted from https://github.com/deepmind/distrax/blob/master/examples/flow.py.
 class Flow(nn.Module):
     event_shape: Sequence[int]
@@ -160,6 +202,7 @@ class Flow(nn.Module):
     dropout_rate: float = 0.1
     base: Optional[KwArgs] = None
     conditioner: Optional[KwArgs] = None
+    feature_extractor: Optional[KwArgs] = None
 
     @nn.compact
     def __call__(self, x: Array, train=False) -> distrax.Transformed:
@@ -167,7 +210,12 @@ class Flow(nn.Module):
         mask = jnp.reshape(mask, self.event_shape)
         mask = mask.astype(bool)
 
-        # create conditioner, which predicts the parameters of the flow
+        # extract features
+        features = FeatureExtractor(
+            dropout_rate=self.dropout_rate, train=train, **(self.feature_extractor or {})
+        )(x)
+
+       # create conditioner, which predicts the parameters of the flow given the concatenated features and the input
         def make_conditioner(i):
             conditioner = Conditioner(
                 event_shape=self.event_shape,
@@ -178,7 +226,10 @@ class Flow(nn.Module):
                 name=f"cond_{i}",
             )
 
-            return conditioner
+            def conditioner_fn(z: Array):
+                return conditioner(jnp.concatenate([features, z], axis=-1))
+
+            return conditioner_fn
 
         def bijector_fn(params: Array):
             return distrax.RationalQuadraticSpline(params, range_min=-3.0, range_max=3.0)
@@ -220,7 +271,7 @@ class Flow(nn.Module):
             Encoder(
                 latent_dim=len(self.bounds_array),
                 **(self.base or {}),
-            )(x),
+            )(features),
             reinterpreted_batch_ndims=len(self.event_shape),
         )
 
