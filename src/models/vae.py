@@ -18,7 +18,7 @@ from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
 
-from src.models.common import ConvEncoder, ConvDecoder, INV_SOFTPLUS_1
+from src.models.common import Encoder, Decoder, INV_SOFTPLUS_1
 import src.utils.plotting as plot_utils
 
 KwArgs = Mapping[str, Any]
@@ -45,9 +45,9 @@ class VAE(nn.Module):
             ),  # type: ignore
         )
         # q(Z|X)
-        self.q_Z_given_X = ConvEncoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
+        self.q_Z_given_X = Encoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
         # p(X|Z)
-        self.p_X_given_Z = ConvDecoder(image_shape=self.image_shape, **(self.X_given_Z or {}))
+        self.p_X_given_Z = Decoder(image_shape=self.image_shape, **(self.X_given_Z or {}))
 
     def __call__(self, x: Array, rng: PRNGKey) -> Tuple[distrax.Distribution, ...]:
         q_Z_given_x = self.q_Z_given_X(x)

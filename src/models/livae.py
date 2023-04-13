@@ -20,8 +20,8 @@ import distrax
 
 from src.transformations.affine import transform_image
 from src.models.common import (
-    ConvEncoder,
-    ConvDecoder,
+    Encoder,
+    Decoder,
     DenseEncoder,
     Bijector,
     INV_SOFTPLUS_1,
@@ -66,9 +66,9 @@ class LIVAE(nn.Module):
             ),  # type: ignore
         )
         # q(Z|X)
-        self.q_Z_given_X = ConvEncoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
+        self.q_Z_given_X = Encoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
         # p(X̂|Z)
-        self.p_Xhat_given_Z = ConvDecoder(image_shape=self.image_shape, **(self.Xhat_given_Z or {}))
+        self.p_Xhat_given_Z = Decoder(image_shape=self.image_shape, **(self.Xhat_given_Z or {}))
         # p(Η|Z)
         self.p_Η_given_Z_base = DenseEncoder(
             latent_dim=7, **(self.Eta_given_Z or {}).get("base", {})

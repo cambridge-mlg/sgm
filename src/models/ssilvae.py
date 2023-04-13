@@ -20,8 +20,8 @@ import distrax
 
 from src.transformations.affine import transform_image
 from src.models.common import (
-    ConvEncoder,
-    ConvDecoder,
+    Encoder,
+    Decoder,
     DenseEncoder,
     Bijector,
     INV_SOFTPLUS_1,
@@ -81,9 +81,9 @@ class SSILVAE(nn.Module):
             ),  # type: ignore
         )
         # q(Z|Xhat)
-        self.q_Z_given_Xhat = ConvEncoder(latent_dim=self.latent_dim, **(self.Z_given_Xhat or {}))
+        self.q_Z_given_Xhat = Encoder(latent_dim=self.latent_dim, **(self.Z_given_Xhat or {}))
         # p(Xhat|Z)
-        self.p_Xhat_given_Z = ConvDecoder(image_shape=self.image_shape, **(self.Xhat_given_Z or {}))
+        self.p_Xhat_given_Z = Decoder(image_shape=self.image_shape, **(self.Xhat_given_Z or {}))
 
     def __call__(self, x: Array, rng: PRNGKey) -> Tuple[distrax.Distribution, ...]:
         η_rng, η_unif_rng, η_tot_rng = random.split(rng, 3)

@@ -20,21 +20,39 @@ PRNGKey = Any
 KwArgs = Mapping[str, Any]
 
 
-class DenseEncoder(nn.Module):
-    """p(z|x) = N(μ(x), σ(x)), where μ(x) and σ(x) are dense neural networks."""
+class Encoder(nn.Module):
+    """p(z|x) = N(μ(x), σ(x)), where μ(x) and σ(x) are neural networks."""
 
     latent_dim: int
-    hidden_dims: Optional[Sequence[int]] = None
+    conv_dims: Optional[Sequence[int]] = None
+    dense_dims: Optional[Sequence[int]] = None
     act_fn: Callable = nn.relu
+    norm_cls: nn.Module = nn.LayerNorm
     σ_min: float = 1e-2
 
     @nn.compact
     def __call__(self, x: Array) -> distrax.Normal:
-        hidden_dims = self.hidden_dims if self.hidden_dims else [64, 32]
+        conv_dims = self.conv_dims if self.conv_dims is not None else [64, 128, 256]
+        dense_dims = self.dense_dims if self.dense_dims is not None else [64, 32]
 
-        h = x.reshape(-1)
-        for i, hidden_dim in enumerate(hidden_dims):
-            h = self.act_fn(nn.Dense(hidden_dim, name=f"hidden_{i}")(h))
+        h = x
+        i = -1
+        for i, conv_dim in enumerate(conv_dims):
+            h = nn.Conv(
+                conv_dim,
+                kernel_size=(3, 3),
+                strides=(2, 2) if i == 0 else (1, 1),
+                name=f"conv_{i}",
+            )(h)
+            h = self.norm_cls(name=f"norm_{i}")(h)
+            h = self.act_fn(h)
+
+        h = h.flatten()
+
+        for j, dense_dim in enumerate(dense_dims):
+            h = nn.Dense(dense_dim, name=f"dense_{j+i+1}")(h)
+            h = self.norm_cls(name=f"norm_{j+i+1}")(h)
+            h = self.act_fn(h)
 
         # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
         μ = nn.Dense(self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ")(h)
@@ -50,44 +68,12 @@ class DenseEncoder(nn.Module):
         return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
 
 
-class ConvEncoder(nn.Module):
-    """p(z|x) = N(μ(x), σ(x)), where μ(x) and σ(x) are convolutional neural networks."""
-
-    latent_dim: int
-    hidden_dims: Optional[Sequence[int]] = None
-    act_fn: Callable = nn.relu
-    norm_cls: nn.Module = nn.LayerNorm
-    σ_min: float = 1e-2
-
-    @nn.compact
-    def __call__(self, x: Array) -> distrax.Normal:
-        hidden_dims = self.hidden_dims if self.hidden_dims else [64, 128, 256]
-
-        h = x
-        for i, hidden_dim in enumerate(hidden_dims):
-            h = nn.Conv(
-                hidden_dim,
-                kernel_size=(3, 3),
-                strides=(2, 2) if i == 0 else (1, 1),
-                name=f"hidden{i}",
-            )(h)
-            h = self.norm_cls(name=f"norm{i}")(h)
-            h = self.act_fn(h)
-
-        h = h.flatten()
-
-        # TODO: should we init these to 0 and 1?
-        μ = nn.Dense(self.latent_dim, name=f"μ")(h)
-        σ = jax.nn.softplus(nn.Dense(self.latent_dim, name="σ_")(h))
-
-        return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
-
-
-class ConvDecoder(nn.Module):
-    """p(x|z) = N(μ(z), σ), where μ(z) is a convolutional neural network."""
+class Decoder(nn.Module):
+    """p(x|z) = N(μ(z), σ), where μ(z) is a neural network."""
 
     image_shape: Tuple[int, int, int]
-    hidden_dims: Optional[Sequence[int]] = None
+    conv_dims: Optional[Sequence[int]] = None
+    dense_dims: Optional[Sequence[int]] = None
     σ_init: Callable = init.constant(INV_SOFTPLUS_1)
     σ_min: float = 1e-2
     act_fn: Callable = nn.relu
@@ -95,23 +81,30 @@ class ConvDecoder(nn.Module):
 
     @nn.compact
     def __call__(self, z: Array) -> distrax.Normal:
-        hidden_dims = self.hidden_dims if self.hidden_dims else [256, 128, 64]
+        conv_dims = self.conv_dims if self.conv_dims is not None else [256, 128, 64]
+        dense_dims = self.dense_dims if self.dense_dims is not None else [32, 64]
 
         assert self.image_shape[0] == self.image_shape[1], "Images should be square."
         output_size = self.image_shape[0]
         first_hidden_size = output_size // 2
 
-        h = nn.Dense(first_hidden_size * first_hidden_size * hidden_dims[0], name=f"resize")(z)
-        h = h.reshape(first_hidden_size, first_hidden_size, hidden_dims[0])
+        j = -1
+        for j, dense_dim in enumerate(dense_dims):
+            z = nn.Dense(dense_dim, name=f"dense_{j}")(z)
+            z = self.norm_cls(name=f"norm_{j}")(z)
+            z = self.act_fn(z)
 
-        for i, hidden_dim in enumerate(hidden_dims):
+        h = nn.Dense(first_hidden_size * first_hidden_size * conv_dims[0], name=f"resize")(z)
+        h = h.reshape(first_hidden_size, first_hidden_size, conv_dims[0])
+
+        for i, conv_dim in enumerate(conv_dims):
             h = nn.ConvTranspose(
-                hidden_dim,
+                conv_dim,
                 kernel_size=(3, 3),
                 strides=(2, 2) if i == 0 else (1, 1),
-                name=f"hidden{i}",
+                name=f"conv_{i+j+1}",
             )(h)
-            h = self.norm_cls(name=f"norm{i}")(h)
+            h = self.norm_cls(name=f"norm_{i+j+1}")(h)
             h = self.act_fn(h)
 
         μ = nn.Conv(self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ")(h)
@@ -216,7 +209,7 @@ class Flow(nn.Module):
         )
 
         base = distrax.Independent(
-            DenseEncoder(
+            Encoder(
                 latent_dim=len(self.bounds_array),
                 **(self.base or {}),
             )(x),
@@ -227,7 +220,7 @@ class Flow(nn.Module):
 
 
 def make_approx_invariant(
-    p_Z_given_X: ConvEncoder,
+    p_Z_given_X: Encoder,
     x: Array,
     num_samples: int,
     rng: PRNGKey,
