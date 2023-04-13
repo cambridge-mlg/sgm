@@ -28,6 +28,8 @@ import src.utils.input as input_utils
 import src.utils.preprocess as preprocess_utils
 import src.models as models
 
+from src.models.ssil import make_summary_plot
+
 
 PRNGKey = Any
 ScalarOrSchedule = Union[float, optax.Schedule]
@@ -277,7 +279,7 @@ def train_loop(
     with wandb.init(**wandb_kwargs) as run:  # type: ignore
         seed = config.get("seed", 0)
         rng = jax.random.PRNGKey(seed)  # type: ignore
-        rng, visualisation_rng = jax.random.split(rng)
+        rng, visualisation_rng, summary_rng = jax.random.split(rng, 3)
         tf.random.set_seed(seed)
 
         _write_note("Setting up datasets...")
@@ -477,5 +479,11 @@ def train_loop(
                         run.summary["test_reconstructions"] = wandb.Image(test_recon_fig)
 
         _write_note("Training finished.")
+
+        for i, x in enumerate(val_batch_0["image"][0, :5]):
+            tmp_rng, summary_rng = jax.random.split(summary_rng)
+            summary_fig = make_summary_plot(config, state, x, tmp_rng)
+            run.summary[f"summary_fig_{i}"] = wandb.Image(summary_fig)
+
 
     return state

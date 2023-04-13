@@ -17,6 +17,9 @@ from chex import Array
 from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from scipy.stats import gaussian_kde
 
 from src.transformations.affine import transform_image
 from src.models.common import (
@@ -296,3 +299,153 @@ def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rn
 
 def make_ssil_sampling_plot(n_visualize, model, state, visualisation_rng):
     return None
+
+def make_summary_plot(config, final_state, x, rng):
+    fig, axs = plt.subplots(3, 6, figsize=(10, 5), dpi=200)
+
+    axs[0, 0].imshow(x, cmap="gray")
+    axs[0, 0].set_title("x")
+    axs[0, 0].axis("off")
+
+    axs[1, 0].axis("off")
+
+    η_rng, η_p_rng, η_pp_rng, η_recon_p_rng, η_recon_rng = random.split(rng, 5)
+    # η_rng = η_p_rng = η_pp_rng = η_recon_p_rng = η_recon_rng = rng
+
+    q_Η_given_X = Flow(
+        **(config.model.Η_given_X or {}),
+        event_shape=(7,),
+        bounds_array=jnp.array(config.model.bounds),
+    )
+    p_Η_given_Xhat = Flow(
+        **(config.model.Η_given_Xhat or {}),
+        event_shape=(7,),
+        bounds_array=jnp.array(config.model.bounds),
+    )
+
+    # x hat
+    q_Η_given_x = q_Η_given_X.apply({"params": final_state.params["q_Η_given_X"]}, x)
+    η = approximate_mode(q_Η_given_x, 100, η_rng)
+    axs[1, 1].bar(range(7), η / jnp.array(config.model.bounds), label="η", color="C0", alpha=0.7)
+    axs[1, 1].set_ylim(-1, 1)
+    axs[1, 1].set_title("η | x")
+
+    xhat = transform_image(x, -η)
+    axs[0, 1].imshow(xhat, cmap="gray")
+    axs[0, 1].set_title("xhat")
+    axs[0, 1].axis("off")
+
+    # x recon
+    p_Η_given_xhat = p_Η_given_Xhat.apply({"params": final_state.params["p_Η_given_Xhat"]}, xhat)
+    η_recon = approximate_mode(p_Η_given_xhat, 100, η_recon_rng)
+    axs[1, 2].bar(
+        range(7), η_recon / jnp.array(config.model.bounds), label="η_recon", color="C1", alpha=0.7
+    )
+    axs[1, 2].sharey(axs[1, 1])
+    axs[1, 2].set_title("η_recon | xhat")
+
+    x_recon = transform_image(xhat, η_recon)
+    axs[0, 2].imshow(x_recon, cmap="gray")
+    axs[0, 2].set_title("x_recon")
+    axs[0, 2].axis("off")
+
+    # x'
+    Η_uniform = distrax.Uniform(
+        low=-jnp.array(config.model.bounds), high=jnp.array(config.model.bounds)
+    )
+    η_p = Η_uniform.sample(seed=η_p_rng)
+    axs[1, 3].bar(
+        range(7), η_p / jnp.array(config.model.bounds), label="η_p", color="C2", alpha=0.7
+    )
+    axs[1, 3].sharey(axs[1, 1])
+    axs[1, 3].set_title("η_rng")
+
+    x_p = transform_image(x, η_p)
+    axs[0, 3].imshow(x_p, cmap="gray")
+    axs[0, 3].set_title("x'")
+    axs[0, 3].axis("off")
+
+    # x' hat
+    q_Η_given_x_p = q_Η_given_X.apply({"params": final_state.params["q_Η_given_X"]}, x_p)
+    η_pp = approximate_mode(q_Η_given_x_p, 100, rng=η_pp_rng)
+    axs[1, 4].bar(
+        range(7), η_pp / jnp.array(config.model.bounds), label="η_pp", color="C3", alpha=0.7
+    )
+    axs[1, 4].sharey(axs[1, 1])
+    axs[1, 4].set_title("η' | x'")
+
+    xhat_p = transform_image(x_p, -η_pp)
+    axs[0, 4].imshow(xhat_p, cmap="gray")
+    axs[0, 4].set_title("xhat'")
+    axs[0, 4].axis("off")
+
+    # x' recon
+    p_Η_given_xhat_p = p_Η_given_Xhat.apply(
+        {"params": final_state.params["p_Η_given_Xhat"]}, xhat_p
+    )
+    η_recon_p = approximate_mode(p_Η_given_xhat_p, 100, η_recon_p_rng)
+    axs[1, 5].bar(
+        range(7),
+        η_recon_p / jnp.array(config.model.bounds),
+        label="η_recon'",
+        color="C4",
+        alpha=0.7,
+    )
+    axs[1, 5].sharey(axs[1, 1])
+    axs[1, 5].set_title("η_recon' | xhat'")
+
+    x_recon_p = transform_image(xhat_p, η_recon_p)
+    axs[0, 5].imshow(x_recon_p, cmap="gray")
+    axs[0, 5].set_title("x_recon'")
+    axs[0, 5].axis("off")
+
+    # make distribution histograms
+    def _make_dist_plots(dist, rng, axs, color="C0", ls="-"):
+        samples, _ = dist.sample_and_log_prob(seed=rng, sample_shape=(3000,))
+        samples = samples / jnp.array(config.model.bounds)
+
+        for i, ax in enumerate(axs):
+            ax.hist(samples[:, i], bins=50, density=True, color=color, alpha=0.25)
+            # plot a gaussian KDE over the histogram
+            x = jnp.linspace(-1, 1, 1000)
+            kde = gaussian_kde(samples[:, i])
+            axs[i].plot(x, kde(x), ls, color=color, alpha=0.5, lw=1)
+
+    _make_dist_plots(q_Η_given_x, η_rng, axs[2, :], color="C0", ls="-")
+    _make_dist_plots(p_Η_given_xhat, η_recon_rng, axs[2, :], color="C1", ls="-")
+    _make_dist_plots(q_Η_given_x_p, η_pp_rng, axs[2, :], color="C3", ls="--")
+    _make_dist_plots(p_Η_given_xhat_p, η_recon_p_rng, axs[2, :], color="C4", ls="--")
+
+    axs[2, 0].set_yscale("symlog")
+    axs[2, 0].set_ylabel("log density")
+    for ax in axs[2, 0:]:
+        ax.sharey(axs[2, 0])
+        ax.set_yscale("symlog")
+
+    for i, ax in enumerate(axs[2, :]):
+        _titles = ['trans x', 'trans y', 'rot', 'scale x', 'scale y', 'shear x']
+        ax.set_title(_titles[i])
+
+    # add legend to axs[1, 0], by building Line2D objects
+    axs[1, 0].legend(
+        handles=[
+            Line2D([0], [0], color="C0", lw=4, label="η"),
+            Line2D([0], [0], color="C1", lw=4, label="η_recon"),
+            Line2D([0], [0], color="C2", lw=4, label="η_rng"),
+            Line2D([0], [0], color="C3", lw=4, label="η'"),
+            Line2D([0], [0], color="C4", lw=4, label="η_recon'"),
+        ]
+    )
+
+    for i, axs_ in enumerate(axs):
+        if i == 0:
+            continue
+        for ax in axs_:
+            if i != 2:
+                ax.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False)
+            ax.tick_params(axis="y", which="both", left=False, right=False, labelleft=False)
+
+    fig.tight_layout()
+    fig.show()
+
+    return fig
