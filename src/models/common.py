@@ -29,9 +29,12 @@ class Encoder(nn.Module):
     act_fn: Callable = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
     σ_min: float = 1e-2
+    train: Optional[bool] = None
 
     @nn.compact
-    def __call__(self, x: Array) -> distrax.Normal:
+    def __call__(self, x: Array, train: Optional[bool] = None) -> distrax.Normal:
+        train = nn.merge_param("train", self.train, train)
+
         conv_dims = self.conv_dims if self.conv_dims is not None else [64, 128, 256]
         dense_dims = self.dense_dims if self.dense_dims is not None else [64, 32]
 
@@ -78,9 +81,12 @@ class Decoder(nn.Module):
     σ_min: float = 1e-2
     act_fn: Callable = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
+    train: Optional[bool] = None
 
     @nn.compact
-    def __call__(self, z: Array) -> distrax.Normal:
+    def __call__(self, z: Array, train: Optional[bool] = None) -> distrax.Normal:
+        train = nn.merge_param("train", self.train, train)
+
         conv_dims = self.conv_dims if self.conv_dims is not None else [256, 128, 64]
         dense_dims = self.dense_dims if self.dense_dims is not None else [32, 64]
 
@@ -127,9 +133,6 @@ class Conditioner(nn.Module):
     @nn.compact
     def __call__(self, x: Array, train: Optional[bool] = None) -> Array:
         train = nn.merge_param("train", self.train, train)
-        if train is None:
-            train = False
-        # TODO: we probably shouldn't have a default here, but this would break existing code.
 
         hidden_dims = self.hidden_dims if self.hidden_dims is not None else [512, 256]
 
@@ -151,7 +154,7 @@ class Conditioner(nn.Module):
         return y
 
 
-class FeatureExtractor(nn.Module):
+class Trunk(nn.Module):
     """A neural network that extracts features from an input."""
 
     conv_dims: Optional[Sequence[int]] = None
@@ -202,17 +205,20 @@ class Flow(nn.Module):
     dropout_rate: float = 0.1
     base: Optional[KwArgs] = None
     conditioner: Optional[KwArgs] = None
-    feature_extractor: Optional[KwArgs] = None
+    trunk: Optional[KwArgs] = None
+    train: Optional[bool] = None
 
     @nn.compact
-    def __call__(self, x: Array, train=False) -> distrax.Transformed:
+    def __call__(self, x: Array, train=None) -> distrax.Transformed:
+        train = nn.merge_param("train", self.train, train)
+
         mask = jnp.arange(np.prod(self.event_shape)) % 2
         mask = jnp.reshape(mask, self.event_shape)
         mask = mask.astype(bool)
 
         # extract features
-        features = FeatureExtractor(
-            dropout_rate=self.dropout_rate, train=train, **(self.feature_extractor or {})
+        features = Trunk(
+            dropout_rate=self.dropout_rate, train=train, **(self.trunk or {})
         )(x)
 
        # create conditioner, which predicts the parameters of the flow given the concatenated features and the input
@@ -270,6 +276,7 @@ class Flow(nn.Module):
         base = distrax.Independent(
             Encoder(
                 latent_dim=len(self.bounds_array),
+                train=train,
                 **(self.base or {}),
             )(features),
             reinterpreted_batch_ndims=len(self.event_shape),
@@ -328,8 +335,6 @@ def make_η_bounded(η: Array, bounds: Array):
     assert_rank(bounds, 1)
     assert_shape(bounds, (7,))
 
-    # η = bounds * jnp.sin(η * 0.5 * (jnp.pi + 1e-8) / (bounds + 1e-8))
-    # η = η.clip(-bounds, bounds)
     η = jax.nn.tanh(η) * bounds
 
     return η
