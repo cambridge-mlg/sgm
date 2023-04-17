@@ -36,7 +36,7 @@ def plot_img_array(array, ncol=16, padding=2, pad_value=0.0, title=None):
     plt.axis("off")
     plt.tight_layout()
     if title is not None:
-        plt.title(title)
+        plt.title(title, fontsize=32)
     plt.show()
 
     return fig
