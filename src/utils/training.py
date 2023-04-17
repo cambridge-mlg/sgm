@@ -49,10 +49,12 @@ class TrainState(train_state.TrainState):
     """A Flax TrainState which also tracks model state (e.g. BatchNorm running averages) and schedules β/α."""
 
     model_state: FrozenDict
-    β: float
-    β_val_or_schedule: ScalarOrSchedule = flax.struct.field(pytree_node=False)
     α: float
     α_val_or_schedule: ScalarOrSchedule = flax.struct.field(pytree_node=False)
+    β: float
+    β_val_or_schedule: ScalarOrSchedule = flax.struct.field(pytree_node=False)
+    γ: float
+    γ_val_or_schedule: ScalarOrSchedule = flax.struct.field(pytree_node=False)
 
     def apply_gradients(self, *, grads, **kwargs):
         updates, new_opt_state = self.tx.update(grads, self.opt_state, self.params)
@@ -61,13 +63,24 @@ class TrainState(train_state.TrainState):
             step=self.step + 1,
             params=new_params,
             opt_state=new_opt_state,
-            β=_get_value_for_step(self.step, self.β_val_or_schedule),
             α=_get_value_for_step(self.step, self.α_val_or_schedule),
+            β=_get_value_for_step(self.step, self.β_val_or_schedule),
+            γ=_get_value_for_step(self.step, self.γ_val_or_schedule),
             **kwargs,
         )
 
     @classmethod
-    def create(cls, *, apply_fn, params, tx, β_val_or_schedule, α_val_or_schedule, **kwargs):
+    def create(
+        cls,
+        *,
+        apply_fn,
+        params,
+        tx,
+        α_val_or_schedule,
+        β_val_or_schedule,
+        γ_val_or_schedule,
+        **kwargs,
+    ):
         opt_state = tx.init(params)
         return cls(
             step=0,
@@ -75,10 +88,12 @@ class TrainState(train_state.TrainState):
             params=params,
             tx=tx,
             opt_state=opt_state,
-            β_val_or_schedule=β_val_or_schedule,
-            β=_get_value_for_step(0, β_val_or_schedule),
             α_val_or_schedule=α_val_or_schedule,
             α=_get_value_for_step(0, α_val_or_schedule),
+            β_val_or_schedule=β_val_or_schedule,
+            β=_get_value_for_step(0, β_val_or_schedule),
+            γ_val_or_schedule=γ_val_or_schedule,
+            γ=_get_value_for_step(0, γ_val_or_schedule),
             **kwargs,
         )
 
@@ -141,25 +156,32 @@ def setup_model(
     optim = optax.inject_hyperparams(optim)
     # This ^ allows us to access the lr as opt_state.hyperparams['learning_rate'].
 
-    if config.get("β_schedule_name", None):
-        schedule = getattr(optax, config.β_schedule_name)  # type: ignore
-        β = schedule(init_value=config.β, **config.β_schedule.to_dict())  # type: ignore
-    else:
-        β = config.β
-
     if config.get("α_schedule_name", None):
         schedule = getattr(optax, config.α_schedule_name)  # type: ignore
         α = schedule(init_value=config.α, **config.α_schedule.to_dict())  # type: ignore
     else:
         α = config.α
 
+    if config.get("β_schedule_name", None):
+        schedule = getattr(optax, config.β_schedule_name)  # type: ignore
+        β = schedule(init_value=config.β, **config.β_schedule.to_dict())  # type: ignore
+    else:
+        β = config.β
+
+    if config.get("γ_schedule_name", None):
+        schedule = getattr(optax, config.γ_schedule_name)  # type: ignore
+        γ = schedule(init_value=config.γ, **config.γ_schedule.to_dict())  # type: ignore
+    else:
+        γ = config.γ
+
     state = TrainState.create(
         apply_fn=model.apply,
         params=params,
         tx=optim(learning_rate=lr, **config.optim.to_dict()),  # type: ignore
         model_state=model_state,
-        β_val_or_schedule=β,
         α_val_or_schedule=α,
+        β_val_or_schedule=β,
+        γ_val_or_schedule=γ,
     )
 
     return model, state
@@ -378,8 +400,16 @@ def train_loop(
 
             if step % config.get("log_every", 1) == 0:  # type: ignore
                 learning_rate = state.opt_state.hyperparams["learning_rate"]
+                σ = jax.nn.softplus(state.params["σ_"]).clip(min=model.σ_min)
                 run.log(
-                    {"train/loss": loss, "β": state.β, "α": state.α, "learing_rate": learning_rate},
+                    {
+                        "train/loss": loss,
+                        "α": state.α,
+                        "β": state.β,
+                        "γ": state.γ,
+                        "learing_rate": learning_rate,
+                        "σ": σ,
+                    },
                     step=step,
                 )
                 for k, v in metrics.items():
