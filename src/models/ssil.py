@@ -73,7 +73,7 @@ class SSIL(nn.Module):
         ).clip(min=self.σ_min)
 
     def __call__(
-        self, x: Array, rng: PRNGKey, α: float = 1.0, train=True
+        self, x: Array, rng: PRNGKey, α: float = 1.0, train: bool = True
     ) -> Tuple[distrax.Distribution, ...]:
         η_rng, η_unif_rng, η_tot_rng = random.split(rng, 3)
 
@@ -122,10 +122,11 @@ class SSIL(nn.Module):
         sample_η_recon: bool = False,
         sample_xrecon: bool = False,
         α: float = 1.0,
+        train: bool = True,
     ) -> Array:
         η1_rng, η2_rng, xrecon_rng = random.split(rng, 3)
 
-        q_Η_given_x = self.q_Η_given_X(x)
+        q_Η_given_x = self.q_Η_given_X(x, train=train)
         # TODO: should this be a randomly transformed x?
         if sample_η_proto:
             η1 = q_Η_given_x.sample(seed=η1_rng)
@@ -137,7 +138,7 @@ class SSIL(nn.Module):
         if prototype:
             return xhat
 
-        p_Η_given_xhat = self.p_Η_given_Xhat(xhat)
+        p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
         # TODO: should we use a randomly transformed x here (and in the ELBO)? I.e., single sample monte carlo estimate of the invariant function.
         # p_Η = distrax.Normal(jnp.zeros((7,)), 0.5)
         # p_Η_given_xhat = distrax.MixtureOfTwo(0.9, p_Η_given_xhat_, p_Η)
@@ -166,6 +167,7 @@ def calculate_ssil_elbo(
     rng: PRNGKey,
     bounds: Array,
     β: float = 1.0,
+    γ: float = 1.0,
     n: int = 100,
     # TODO: more? less?
     ε: float = 1e-6,
@@ -190,7 +192,7 @@ def calculate_ssil_elbo(
     η_ps = p_Η_given_xhat.sample(seed=rng, sample_shape=(n,))
     p_η_norm = jax.vmap(norm)(η_ps).mean()
 
-    η_kld = η_kld_ + q_η_norm + p_η_norm
+    η_kld = η_kld_ + γ * (q_η_norm + p_η_norm)
 
     elbo = ll - β * η_kld + q_H_entropy
     # TODO: this entropy term should be using a distribtuion conditioned on a randomly transformed x.
@@ -211,8 +213,9 @@ def ssil_loss_fn(
     params: nn.FrozenDict,
     x: Array,
     rng: PRNGKey,
-    β: float = 1.0,
     α: float = 1.0,
+    β: float = 1.0,
+    γ: float = 1.0,
     train: bool = True,
 ) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for Contrastive Invariance Learner."""
@@ -231,6 +234,7 @@ def ssil_loss_fn(
         rng_loss,
         jnp.array(model.bounds),
         β,
+        γ,
     )
 
     return loss, metrics
@@ -241,15 +245,15 @@ def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
-            ssil_loss_fn, in_axes=(None, None, 0, None, None, None, None), axis_name="batch"  # type: ignore
-        )(model, params, x_batch, rng, state.β, state.α, train)
+            ssil_loss_fn, in_axes=(None, None, 0, None, None, None, None, None), axis_name="batch"  # type: ignore
+        )(model, params, x_batch, rng, state.α, state.β, state.γ, train)
         loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
 
     return batch_loss
 
 
-def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rng):
+def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rng, train=False):
     # @partial(
     #     jax.jit,
     #     static_argnames=("prototype", "sample_η_proto", "sample_η_recon"),
@@ -266,6 +270,7 @@ def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rn
             sample_xrecon=False,
             method=model.reconstruct,
             α=state.α,
+            train=train,
         )
 
     x_proto = jax.vmap(
@@ -294,6 +299,7 @@ def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rn
 def make_ssil_sampling_plot(n_visualize, model, state, visualisation_rng):
     return None
 
+
 def make_summary_plot(config, final_state, x, rng):
     fig, axs = plt.subplots(3, 6, figsize=(10, 5), dpi=200)
 
@@ -310,11 +316,13 @@ def make_summary_plot(config, final_state, x, rng):
         **(config.model.Η_given_X or {}),
         event_shape=(7,),
         bounds_array=jnp.array(config.model.bounds),
+        train=False,
     )
     p_Η_given_Xhat = Flow(
         **(config.model.Η_given_Xhat or {}),
         event_shape=(7,),
         bounds_array=jnp.array(config.model.bounds),
+        train=False,
     )
 
     # x hat
@@ -415,9 +423,10 @@ def make_summary_plot(config, final_state, x, rng):
     for ax in axs[2, 0:]:
         ax.sharey(axs[2, 0])
         ax.set_yscale("symlog")
+        ax.set_xlim(-1, 1)
 
     for i, ax in enumerate(axs[2, :]):
-        _titles = ['trans x', 'trans y', 'rot', 'scale x', 'scale y', 'shear x']
+        _titles = ["trans x", "trans y", "rot", "scale x", "scale y", "shear x"]
         ax.set_title(_titles[i])
 
     # add legend to axs[1, 0], by building Line2D objects
