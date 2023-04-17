@@ -366,6 +366,8 @@ def train_loop(
         _write_note("Starting training loop...")
 
         best_val_loss = jnp.inf
+        val_loss = jnp.nan
+        val_ll = jnp.nan
 
         for step in (steps := trange(total_steps)):  # type: ignore
             train_batch = next(train_iter)
@@ -383,7 +385,10 @@ def train_loop(
                 for k, v in metrics.items():
                     run.log({f"train/{k}": v}, step=step)
                 steps.set_postfix_str(
-                    f"Train Loss: {loss:.4f}\t Train LL: {metrics['ll']:.4f}"
+                    (
+                        f"Trn Loss {loss:3.0f},\t Trn LL {metrics['ll']:3.0f},\t "
+                        f"Val Loss {val_loss:3.0f},\t Val LL {val_ll:3.0f}"
+                    )
                 )
 
             if step % config.get("eval_every", 1000) == 0:  # type: ignore
@@ -414,6 +419,7 @@ def train_loop(
                 run.log({"val/loss": val_loss}, step=step)
                 for k, v in val_metrics.items():
                     run.log({f"val/{k}": v}, step=step)
+                val_ll = val_metrics["ll"]
 
                 # do some reconstruction visualizations
                 val_labels = val_batch_0["label"][0]
