@@ -416,9 +416,35 @@ def train_loop(
                     run.log({f"val/{k}": v}, step=step)
 
                 # do some reconstruction visualizations
-                n_visualize = config.get("n_visualize", 24)
+                val_labels = val_batch_0["label"][0]
+                class_labels = jnp.arange(10)
 
-                val_x = val_batch_0["image"][0, :n_visualize]  # type: ignore
+                # get the first two labels for each class
+                def get_first_two_idxs_per_class(all_labels, class_labels):
+                    def _get_first_two_idxs(label, labels):
+                        idxs = jnp.where(labels == label, size=2, fill_value=-1)[0]
+                        return idxs
+
+                    # get the first two labels for each class (0-9)
+                    idxs = jax.vmap(_get_first_two_idxs, in_axes=(0, None))(
+                        class_labels, all_labels
+                    )
+                    idxs = jnp.concatenate(idxs)
+
+                    # replace -1 indices with the last n indices
+                    replace_idxs = jnp.where(idxs == -1)[0]
+                    n = len(replace_idxs)
+                    last_n_idxs = jnp.arange(len(all_labels) - n, len(all_labels))
+                    idxs = idxs.at[replace_idxs].set(last_n_idxs)
+
+                    return idxs
+
+                idxs = get_first_two_idxs_per_class(val_labels, class_labels)
+
+                # n_visualize = config.get("n_visualize", 24)
+                n_visualize = len(idxs)
+
+                val_x = val_batch_0["image"][0, idxs]
                 make_reconstruction_plot = getattr(
                     models, "make_" + config.model_name.lower() + "_reconstruction_plot"
                 )
@@ -480,10 +506,9 @@ def train_loop(
 
         _write_note("Training finished.")
 
-        for i, x in enumerate(val_batch_0["image"][0, :5]):
+        for i, x in enumerate(val_batch_0["image"][0, list(range(5)) + [9, 10]]):
             tmp_rng, summary_rng = jax.random.split(summary_rng)
             summary_fig = make_summary_plot(config, state, x, tmp_rng)
             run.summary[f"summary_fig_{i}"] = wandb.Image(summary_fig)
-
 
     return state
