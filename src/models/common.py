@@ -212,33 +212,8 @@ class Flow(nn.Module):
     def __call__(self, x: Array, train=None) -> distrax.Transformed:
         train = nn.merge_param("train", self.train, train)
 
-        mask = jnp.arange(np.prod(self.event_shape)) % 2
-        mask = jnp.reshape(mask, self.event_shape)
-        mask = mask.astype(bool)
-
         # extract features
-        features = Trunk(
-            dropout_rate=self.dropout_rate, train=train, **(self.trunk or {})
-        )(x)
-
-       # create conditioner, which predicts the parameters of the flow given the concatenated features and the input
-        def make_conditioner(i):
-            conditioner = Conditioner(
-                event_shape=self.event_shape,
-                num_bijector_params=num_bijector_params,
-                dropout_rate=self.dropout_rate,
-                train=train,
-                **(self.conditioner or {}),
-                name=f"cond_{i}",
-            )
-
-            def conditioner_fn(z: Array):
-                return conditioner(jnp.concatenate([features, z], axis=-1))
-
-            return conditioner_fn
-
-        def bijector_fn(params: Array):
-            return distrax.RationalQuadraticSpline(params, range_min=-3.0, range_max=3.0)
+        features = Trunk(dropout_rate=self.dropout_rate, train=train, **(self.trunk or {}))(x)
 
         # Number of parameters for the rational-quadratic spline:
         # - `num_bins` bin widths
@@ -249,15 +224,19 @@ class Flow(nn.Module):
 
         layers = [distrax.Block(distrax.Lambda(lambda z: z), len(self.event_shape))]
         for i in range(self.num_layers):
-            layer = distrax.MaskedCoupling(
-                mask=mask,
-                bijector=bijector_fn,
-                conditioner=make_conditioner(i),
+            params = Conditioner(
+                event_shape=self.event_shape,
+                num_bijector_params=num_bijector_params,
+                dropout_rate=self.dropout_rate,
+                train=train,
+                **(self.conditioner or {}),
+                name=f"cond_{i}",
+            )(features)
+            layer = distrax.Block(
+                distrax.RationalQuadraticSpline(params, range_min=-3.0, range_max=3.0),
+                len(self.event_shape),
             )
             layers.append(layer)
-
-            mask = jnp.logical_not(mask)
-            # TODO: add a permutation layer for making more layers better?
 
         bijector = distrax.Chain(
             [
