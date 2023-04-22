@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from scipy.stats import gaussian_kde
 
-from src.transformations.affine import transform_image
+from src.transformations import transform_image
 from src.models.common import (
     Flow,
     INV_SOFTPLUS_1,

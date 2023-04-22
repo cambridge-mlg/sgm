@@ -2,7 +2,7 @@
 import jax
 from jax import numpy as jnp
 from jax.scipy.linalg import expm
-from chex import Array, assert_shape, assert_rank, assert_equal_shape
+from chex import Array, assert_shape, assert_rank
 
 
 def create_generator_matrices() -> Array:
@@ -110,7 +110,7 @@ def _transform_image(
     return output
 
 
-def transform_image(
+def affine_transform_image(
     image: Array,
     η: Array,
     fill_mode: str = "constant",
@@ -159,7 +159,5 @@ def rotate_image(
     Returns:
         A rotated image of same shape as the input.
     """
-    assert_rank(image, 3)
-
     η = jnp.array([0, 0, θ, 0, 0, 0, 0])
-    return transform_image(image, η, fill_value=fill_value)
+    return affine_transform_image(image, η, fill_value=fill_value)

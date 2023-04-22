@@ -22,15 +22,15 @@ class ValueRange:
     Input ranges in_min/in_max can be equal-size lists to rescale the invidudal
     channels independently.
     Attributes:
-      vmin: A scalar. Output max value.
-      vmax: A scalar. Output min value.
-      in_min: A scalar or a list of input min values to scale. If a list, the
-        length should match to the number of channels in the image.
-      in_max: A scalar or a list of input max values to scale. If a list, the
-        length should match to the number of channels in the image.
-      clip_values: Whether to clip the output values to the provided ranges.
-      key: Key of the data to be processed.
-      key_result: Key under which to store the result (same as `key` if None).
+        vmin: A scalar. Output max value.
+        vmax: A scalar. Output min value.
+        in_min: A scalar or a list of input min values to scale. If a list, the
+            length should match to the number of channels in the image.
+        in_max: A scalar or a list of input max values to scale. If a list, the
+            length should match to the number of channels in the image.
+        clip_values: Whether to clip the output values to the provided ranges.
+        key: Key of the data to be processed.
+        key_result: Key under which to store the result (same as `key` if None).
     """
 
     vmin: float = -1
@@ -59,13 +59,13 @@ class RandomRotate:
     """Randomly rotates an image uniformly in the range [θ_min, θ_max].
 
     Attributes:
-      θ_min: A scalar. The minimum rotation in degrees.
-      θ_max: A scalar. The maximum rotation in degrees.
-      fill_mode: A string. The fill mode. One of 'constant', 'reflect', 'wrap', 'nearest'.
-      fill_value: A scalar. The value to fill the empty pixels when using 'constant' fill mode.
-      key: Key of the data to be processed.
-      key_result: Key under which to store the result (same as `key` if None).
-      rng_key: Key of the random number used for `tf.random.stateless_uniform`.
+        θ_min: A scalar. The minimum rotation in degrees.
+        θ_max: A scalar. The maximum rotation in degrees.
+        fill_mode: A string. The fill mode. One of 'constant', 'reflect', 'wrap', 'nearest'.
+        fill_value: A scalar. The value to fill the empty pixels when using 'constant' fill mode.
+        key: Key of the data to be processed.
+        key_result: Key under which to store the result (same as `key` if None).
+        rng_key: Key of the random number used for `tf.random.stateless_uniform`.
     """
 
     θ_min: float = -45
@@ -93,15 +93,15 @@ class RandomZoom:
     """Randomly zooms an image.
 
     Attributes:
-      x_min: A scalar. The exponential of the minimum x-axis zoom out factor. I.e., if the desired minimum zoom out is 2x, then x_min = log(2).
-      x_max: A scalar. The exponential of the maximum x-axis zoom out factor.
-      y_min: A scalar. The exponential of the minimum y-axis zoom out factor.
-      y_max: A scalar. The exponential of the maximum y-axis zoom out factor.
-      fill_mode: A string. The fill mode. One of 'constant', 'reflect', 'wrap', 'nearest'.
-      fill_value: A scalar. The value to fill the empty pixels when using 'constant' fill mode.
-      key: Key of the data to be processed.
-      key_result: Key under which to store the result (same as `key` if None).
-      rng_key: Key of the random number used for `tf.random.stateless_uniform`.
+        x_min: A scalar. The exponential of the minimum x-axis zoom out factor. I.e., if the desired minimum zoom out is 2x, then x_min = log(2).
+        x_max: A scalar. The exponential of the maximum x-axis zoom out factor.
+        y_min: A scalar. The exponential of the minimum y-axis zoom out factor.
+        y_max: A scalar. The exponential of the maximum y-axis zoom out factor.
+        fill_mode: A string. The fill mode. One of 'constant', 'reflect', 'wrap', 'nearest'.
+        fill_value: A scalar. The value to fill the empty pixels when using 'constant' fill mode.
+        key: Key of the data to be processed.
+        key_result: Key under which to store the result (same as `key` if None).
+        rng_key: Key of the random number used for `tf.random.stateless_uniform`.
     """
 
     x_min: float = 2 / 3
@@ -137,13 +137,97 @@ class RandomZoom:
 
 
 @dataclasses.dataclass
+class RandomHue:
+    """Randomly changes the hue of an image.
+    Attributes:
+        min_delta: A scalar. The minimum hue change in degrees.
+        max_delta: A scalar. The maximum hue change in degrees.
+        key: Key of the data to be processed.
+        key_result: Key under which to store the result (same as `key` if None).
+        rng_key: Key of the random number used for `tf.random.stateless_uniform`.
+    """
+
+    min_delta: float = 0.0
+    max_delta: float = 0.5
+    key: str = "image"
+    key_result: Optional[str] = None
+    rng_key: str = "rng"
+
+    def __call__(self, features: Features) -> Features:
+        image = features[self.key]
+        rng = features[self.rng_key]
+
+        delta = tf.random.stateless_uniform((), rng, self.min_delta, self.max_delta)
+        image = tf.image.adjust_hue(image, delta)
+
+        features[self.key_result or self.key] = image
+
+        return features
+
+
+@dataclasses.dataclass
+class RandomSaturation:
+    """Randomly changes the saturation of an image.
+    Attributes:
+        min_factor: A scalar. The minimum saturation change.
+        max_factor: A scalar. The maximum saturation change.
+        key: Key of the data to be processed.
+        key_result: Key under which to store the result (same as `key` if None).
+        rng_key: Key of the random number used for `tf.random.stateless_uniform`.
+    """
+
+    min_factor: float = 0.0
+    max_factor: float = 0.5
+    key: str = "image"
+    key_result: Optional[str] = None
+    rng_key: str = "rng"
+
+    def __call__(self, features: Features) -> Features:
+        image = features[self.key]
+        rng = features[self.rng_key]
+
+        factor = tf.random.stateless_uniform((), rng, self.min_factor, self.max_factor)
+        image = tf.image.adjust_saturation(image, factor)
+
+        features[self.key_result or self.key] = image
+
+        return features
+
+
+@dataclasses.dataclass
 class Keep:
     """Keeps only the given keys.
     Attributes:
-      keys: List of string keys to keep.
+        keys: List of string keys to keep.
     """
 
     keys: List[str]
 
     def __call__(self, features: Features) -> Features:
         return {k: v for k, v in features.items() if k in self.keys}
+
+
+@dataclasses.dataclass
+class ToRgb:
+    """Converts black and white images with one channel into RGB with 3 channels.
+    Attributes:
+        color: If True, the image is converted such that the saturation is 1.
+        key: Key of the data to be processed.
+        key_result: Key under which to store the result (same as `key` if None).
+    """
+
+    color: bool = False
+    key: str = "image"
+    key_result: Optional[str] = None
+
+    def __call__(self, features: Features) -> Features:
+        image = features[self.key]
+
+        if self.color:
+            image = tf.concat([image, tf.ones_like(image), tf.ones_like(image)], axis=-1)
+        else:
+            image = tf.concat([image, image, image], axis=-1)
+
+        features[self.key_result or self.key] = image
+
+        return features

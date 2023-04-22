@@ -10,7 +10,7 @@ from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
 
-from src.transformations.affine import transform_image
+from src.transformations import affine_transform_image
 
 
 INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.0)
@@ -61,7 +61,9 @@ class Encoder(nn.Module):
             h = self.act_fn(h)
 
         # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
-        μ = nn.Dense(self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ")(h)
+        μ = nn.Dense(
+            self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ"
+        )(h)
         σ = jax.nn.softplus(
             nn.Dense(
                 self.latent_dim,
@@ -103,7 +105,9 @@ class Decoder(nn.Module):
             z = self.norm_cls(name=f"norm_{j}")(z)
             z = self.act_fn(z)
 
-        h = nn.Dense(first_hidden_size * first_hidden_size * conv_dims[0], name=f"resize")(z)
+        h = nn.Dense(
+            first_hidden_size * first_hidden_size * conv_dims[0], name=f"resize"
+        )(z)
         h = h.reshape(first_hidden_size, first_hidden_size, conv_dims[0])
 
         for i, conv_dim in enumerate(conv_dims):
@@ -116,7 +120,9 @@ class Decoder(nn.Module):
             h = self.norm_cls(name=f"norm_{i+j+1}")(h)
             h = self.act_fn(h)
 
-        μ = nn.Conv(self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ")(h)
+        μ = nn.Conv(
+            self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ"
+        )(h)
         σ = jax.nn.softplus(self.param("σ_", self.σ_init, self.image_shape))
 
         return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
@@ -168,17 +174,19 @@ class BasicBlock(nn.Module):
         """Applies the basic block to the input tensor."""
 
         residual = x
-        x = nn.Conv(self.filters, (3, 3), strides=(1, 1), padding='SAME')(x)
-        x = self.norm_cls(name='norm_1')(x)
+        x = nn.Conv(self.filters, (3, 3), strides=(1, 1), padding="SAME")(x)
+        x = self.norm_cls(name="norm_1")(x)
         x = self.act_fn(x)
 
-        x = nn.Conv(self.filters, (3, 3), strides=(1, 1), padding='SAME')(x)
-        x = self.norm_cls(name='norm_2')(x)
+        x = nn.Conv(self.filters, (3, 3), strides=(1, 1), padding="SAME")(x)
+        x = self.norm_cls(name="norm_2")(x)
 
         # Add shortcut connection if needed.
         if residual.shape != x.shape:
-            residual = nn.Conv(self.filters, (1, 1), strides=(1, 1), padding='SAME')(residual)
-            residual = self.norm_cls(name='norm_3')(residual)
+            residual = nn.Conv(self.filters, (1, 1), strides=(1, 1), padding="SAME")(
+                residual
+            )
+            residual = self.norm_cls(name="norm_3")(residual)
 
         x = x + residual
         x = self.act_fn(x)
@@ -326,7 +334,7 @@ def make_approx_invariant(
     # TODO: this function is not aware of the bounds for η.
     def sample_params(x, rng):
         η = p_Η.sample(seed=rng)
-        x_ = transform_image(x, -η)
+        x_ = affine_transform_image(x, -η)
         p_Z_given_x_ = p_Z_given_X(x_)
         assert type(p_Z_given_x_) == distrax.Normal
         # TODO: generalise to other distributions.
@@ -355,7 +363,9 @@ def make_η_bounded(η: Array, bounds: Array):
     return η
 
 
-def approximate_mode(distribution: distrax.Distribution, num_samples: int, rng: PRNGKey) -> Array:
+def approximate_mode(
+    distribution: distrax.Distribution, num_samples: int, rng: PRNGKey
+) -> Array:
     """Approximates the mode of a distribution by taking a number of samples and returning the most likely.
 
     Args:
@@ -364,5 +374,7 @@ def approximate_mode(distribution: distrax.Distribution, num_samples: int, rng: 
     Returns:
         An approximate mode.
     """
-    samples, log_probs = distribution.sample_and_log_prob(seed=rng, sample_shape=(num_samples,))
+    samples, log_probs = distribution.sample_and_log_prob(
+        seed=rng, sample_shape=(num_samples,)
+    )
     return samples[jnp.argmax(log_probs)]
