@@ -4,7 +4,7 @@ A note on notation. In order to distinguish between random variables and their v
 and lower case variable names. I.e., p(Z) or `p_Z` is the distribution over the r.v. Z, and is a
 function, while p(z) or `p_z` is the probability that Z=z. Similarly, p(X|Z) or `p_X_given_Z` is a
 a function which returns another function p(X|z) or `p_X_given_z`, which would return the proability
-that X=x|Z=z a.k.k `p_x_given_z`.
+that X=x|Z=z a.k.a `p_x_given_z`.
 """
 
 from typing import Any, Mapping, Optional, Tuple
@@ -56,7 +56,6 @@ class SSIL(nn.Module):
             bounds_array=self.bounds_array,
             event_shape=self.bounds_array.shape,
         )
-        # TODO: try a simpler flow which only applies one layer of spline to each of the base distribution dims.
         # q(Η|X)
         self.q_Η_given_X = Flow(
             **(self.Η_given_X or {}),
@@ -84,8 +83,10 @@ class SSIL(nn.Module):
 
         q_Η_given_x_uniform = self.q_Η_given_X(x_uniform, train=train)
         η_tot = q_Η_given_x_uniform.sample(seed=η_tot_rng)
-        # add a small gaussian noise to η_tot
-        # η_tot = η_tot + 0.05 * random.normal(η_tot_rng, η_tot.shape)
+        # add a small noise to η_tot
+        # η_tot = η_tot + 0.03 * α * self.bounds_array * random.uniform(
+        #     η_tot_rng, η_tot.shape, minval=-1, maxval=1
+        # )
 
         xhat = transform_image(x_uniform, -η_tot)
         # TODO: should this ^ be a sample from a reconstructor distribution? In the paper it is a distribution currently.
@@ -97,8 +98,8 @@ class SSIL(nn.Module):
 
         q_Η_given_x = self.q_Η_given_X(x, train=train)
         η = q_Η_given_x.sample(seed=η_rng)
-        # add a small gaussian noise to η
-        # η = η + 0.05 * random.normal(η_rng, η.shape)
+        # add a small noise to η
+        # η = η + 0.03 * α * self.bounds_array * random.uniform(η_rng, η.shape, minval=-1, maxval=1)
 
         p_X_given_xhat_and_η = distrax.Independent(
             distrax.Normal(transform_image(xhat, η), self.σ), reinterpreted_batch_ndims=len(x.shape)
