@@ -29,6 +29,7 @@ class Encoder(nn.Module):
     act_fn: Callable = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
     σ_min: float = 1e-2
+    dropout_rate: float = 0.0
     train: Optional[bool] = None
 
     @nn.compact
@@ -37,6 +38,8 @@ class Encoder(nn.Module):
 
         conv_dims = self.conv_dims if self.conv_dims is not None else [64, 128, 256]
         dense_dims = self.dense_dims if self.dense_dims is not None else [64, 32]
+
+        x = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(x)
 
         h = x
         i = -1
@@ -154,6 +157,35 @@ class Conditioner(nn.Module):
         return y
 
 
+class BasicBlock(nn.Module):
+    filters: int
+    act_fn: Callable = nn.relu
+    norm_cls: nn.Module = nn.LayerNorm
+    """Basic Block module for ResNet."""
+
+    @nn.compact
+    def __call__(self, x: Array):
+        """Applies the basic block to the input tensor."""
+
+        residual = x
+        x = nn.Conv(self.filters, (3, 3), strides=(1, 1), padding='SAME')(x)
+        x = self.norm_cls(name='norm_1')(x)
+        x = self.act_fn(x)
+
+        x = nn.Conv(self.filters, (3, 3), strides=(1, 1), padding='SAME')(x)
+        x = self.norm_cls(name='norm_2')(x)
+
+        # Add shortcut connection if needed.
+        if residual.shape != x.shape:
+            residual = nn.Conv(self.filters, (1, 1), strides=(1, 1), padding='SAME')(residual)
+            residual = self.norm_cls(name='norm_3')(residual)
+
+        x = x + residual
+        x = self.act_fn(x)
+
+        return x
+
+
 class Trunk(nn.Module):
     """A neural network that extracts features from an input."""
 
@@ -185,6 +217,12 @@ class Trunk(nn.Module):
             )(h)
             h = self.norm_cls(name=f"norm_{i}")(h)
             h = self.act_fn(h)
+            # h = BasicBlock(conv_dim, act_fn=self.act_fn, norm_cls=self.norm_cls)(h)
+
+        # if len(conv_dims) > 0:
+        #     h = jnp.mean(h, axis=(0, 1))
+        # else:
+        #     h = h.flatten()
 
         h = h.flatten()
 
@@ -202,7 +240,6 @@ class Flow(nn.Module):
     num_layers: int = 2
     num_bins: int = 4
     bounds_array: Optional[Array] = None
-    dropout_rate: float = 0.1
     base: Optional[KwArgs] = None
     conditioner: Optional[KwArgs] = None
     trunk: Optional[KwArgs] = None
@@ -213,7 +250,7 @@ class Flow(nn.Module):
         train = nn.merge_param("train", self.train, train)
 
         # extract features
-        features = Trunk(dropout_rate=self.dropout_rate, train=train, **(self.trunk or {}))(x)
+        features = Trunk(train=train, **(self.trunk or {}))(x)
 
         # Number of parameters for the rational-quadratic spline:
         # - `num_bins` bin widths
@@ -227,7 +264,6 @@ class Flow(nn.Module):
             params = Conditioner(
                 event_shape=self.event_shape,
                 num_bijector_params=num_bijector_params,
-                dropout_rate=self.dropout_rate,
                 train=train,
                 **(self.conditioner or {}),
                 name=f"cond_{i}",
