@@ -222,6 +222,7 @@ def calculate_ssilvae_elbo(
     ce_term = p_Xhat_given_z.log_prob(xhat).sum()
     # TODO: replace with multiple sample version
     z_kld = q_Z_given_xhat.kl_divergence(p_Z).sum()
+    # TODO: add stop gradient tp z_kld so that learning the VAE doesn't mess with learning invariances?
 
     elbo = ll - η_kld + entropy_term + ce_term - β * z_kld
 
