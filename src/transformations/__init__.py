@@ -5,6 +5,7 @@ from src.transformations.affine import affine_transform_image, rotate_image
 from src.transformations.color import (
     color_transform_image,
     hsv_transform_image,
+    hue_transform_image,
     rgb_transform_image,
 )
 
@@ -13,6 +14,7 @@ __all__ = [
     "rotate_image",
     "color_transform_image",
     "hsv_transform_image",
+    "hue_transform_image",
     "rgb_transform_image",
     "transform_image",
 ]
@@ -36,19 +38,18 @@ def transform_image(
         * η_3 is the scaling factor in x.
         * η_4 is the scaling factor in y.
         * η_5 controls hue.
-        * η_6 controls saturation.
 
     Returns:
         A transformed image of same shape as the input.
     """
     assert_rank(image, 3)
-    assert_shape(η, (7,))
+    assert_shape(η, (6,))
 
     # Apply affine transformations
     η_affine = jnp.concatenate((η[:5], jnp.zeros(2, dtype=η.dtype)))
     image = affine_transform_image(image, η_affine, fill_mode=fill_mode, fill_value=fill_value)
 
     # Apply color transformations
-    image = hsv_transform_image(image, η[5:7])
+    image = hue_transform_image(image, η[5:6])
 
     return image
