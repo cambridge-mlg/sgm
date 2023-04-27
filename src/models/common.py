@@ -240,6 +240,7 @@ class Flow(nn.Module):
     num_layers: int = 2
     num_bins: int = 4
     bounds_array: Optional[Array] = None
+    offset_array: Optional[Array] = None
     base: Optional[KwArgs] = None
     conditioner: Optional[KwArgs] = None
     trunk: Optional[KwArgs] = None
@@ -274,12 +275,15 @@ class Flow(nn.Module):
             )
             layers.append(layer)
 
+        shift = (
+            self.offset_array
+            if self.offset_array is not None
+            else jnp.zeros(self.event_shape, dtype=jnp.float32)
+        )
         bijector = distrax.Chain(
             [
                 distrax.Block(
-                    distrax.ScalarAffine(
-                        shift=jnp.zeros_like(self.bounds_array), scale=self.bounds_array
-                    ),
+                    distrax.ScalarAffine(shift=shift, scale=self.bounds_array),
                     len(self.event_shape),
                 ),
                 distrax.Block(distrax.Tanh(), len(self.event_shape)),
@@ -338,19 +342,25 @@ def make_approx_invariant(
     return distrax.Normal(*params)
 
 
-def make_η_bounded(η: Array, bounds: Array):
+def make_η_bounded(η: Array, bounds: Array, offset: Optional[Array] = None) -> Array:
     """Converts η to a bounded representation.
 
     Args:
         η: a rank-1 array of length 7.
         bounds: a rank-1 array of length 7.
+        offset: an optional rank-1 array of length 7.
     """
     assert_rank(η, 1)
     assert_shape(η, (7,))
     assert_rank(bounds, 1)
     assert_shape(bounds, (7,))
+    if offset is not None:
+        assert_rank(offset, 1)
+        assert_shape(offset, (7,))
+    else:
+        offset = jnp.zeros(7)
 
-    η = jax.nn.tanh(η) * bounds
+    η = jax.nn.tanh(η) * bounds + offset
 
     return η
 

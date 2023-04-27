@@ -38,20 +38,24 @@ class SSIL(nn.Module):
     Η_given_Xhat: Optional[KwArgs] = None
     Η_given_X: Optional[KwArgs] = None
     bounds: Optional[Sequence[float]] = None
+    offset: Optional[Sequence[float]] = None
     σ_min: float = 1e-2
 
     def setup(self):
-        self.bounds_array = jnp.array(self.bounds)
+        self.bounds_array = jnp.array(self.bounds) if self.bounds else None
+        self.offset_array = jnp.array(self.offset) if self.offset else None
         # p(Η|Xhat)
         self.p_Η_given_Xhat = Flow(
             **(self.Η_given_Xhat or {}),
             bounds_array=self.bounds_array,
+            offset_array=self.offset_array,
             event_shape=self.bounds_array.shape,
         )
         # q(Η|X)
         self.q_Η_given_X = Flow(
             **(self.Η_given_X or {}),
             bounds_array=self.bounds_array,
+            offset_array=self.offset_array,
             event_shape=self.bounds_array.shape,
         )
         self.σ = jax.nn.softplus(
@@ -68,7 +72,10 @@ class SSIL(nn.Module):
     ) -> Tuple[distrax.Distribution, ...]:
         η_rng, η_unif_rng, η_tot_rng = random.split(rng, 3)
 
-        Η_uniform = distrax.Uniform(low=-α * self.bounds_array, high=α * self.bounds_array)
+        Η_uniform = distrax.Uniform(
+            low=-α * self.bounds_array + self.offset_array,
+            high=α * self.bounds_array + self.offset_array,
+        )
         η_uniform = Η_uniform.sample(seed=η_unif_rng)
 
         x_uniform = transform_image(x, η_uniform)
@@ -156,6 +163,7 @@ def calculate_ssil_elbo(
     q_Η_given_x: distrax.Distribution,
     rng: PRNGKey,
     bounds: Array,
+    offset: Array,
     β: float = 1.0,
     γ: float = 1.0,
     n: int = 100,
@@ -171,7 +179,7 @@ def calculate_ssil_elbo(
     q_H_entropy = -jnp.mean(q_Η_log_probs, axis=0)
 
     p_Η_log_probs = jax.vmap(p_Η_given_xhat.log_prob)(
-        η_qs.clip(min=-(1 - ε) * bounds, max=(1 - ε) * bounds)
+        η_qs.clip(min=(1 - ε) * (-bounds) + offset, max=(1 - ε) * (bounds) + offset)
     )
     p_q_H_cross_entropy = -jnp.mean(p_Η_log_probs, axis=0)
 
@@ -226,6 +234,7 @@ def ssil_loss_fn(
         q_Η_given_x,
         rng_loss,
         jnp.array(model.bounds),
+        jnp.array(model.offset),
         β,
         γ,
     )
@@ -305,7 +314,7 @@ def make_summary_plot(config, final_state, x, rng):
 
     # Add subplots to the grid
     axs = []
-    for i, ncols in enumerate([6, 6, 7]):
+    for i, ncols in enumerate([6, 6, 6]):
         # Create a GridSpec object for the current row
         gs_row = gs[i].subgridspec(1, ncols, wspace=0.5)
         ax_row = []
@@ -321,22 +330,26 @@ def make_summary_plot(config, final_state, x, rng):
     axs[1][0].axis("off")
 
     η_rng, η_p_rng, η_pp_rng, η_recon_p_rng, η_recon_rng = random.split(rng, 5)
-    # η_rng = η_p_rng = η_pp_rng = η_recon_p_rng = η_recon_rng = rng
+
+    bounds_array = jnp.array(config.model.bounds)
+    offset_array = jnp.array(config.model.offset)
 
     q_Η_given_X = Flow(
         **(config.model.Η_given_X or {}),
         event_shape=(7,),
-        bounds_array=jnp.array(config.model.bounds),
+        bounds_array=bounds_array,
+        offset_array=offset_array,
         train=False,
     )
     p_Η_given_Xhat = Flow(
         **(config.model.Η_given_Xhat or {}),
         event_shape=(7,),
-        bounds_array=jnp.array(config.model.bounds),
+        bounds_array=bounds_array,
+        offset_array=offset_array,
         train=False,
     )
 
-    renormalise = lambda η: η / bounds_array
+    renormalise = lambda η: (η - offset_array) / bounds_array
 
     # x hat
     q_Η_given_x = q_Η_given_X.apply({"params": final_state.params["q_Η_given_X"]}, x)
@@ -438,8 +451,8 @@ def make_summary_plot(config, final_state, x, rng):
         ax.set_yscale("symlog")
         ax.set_xlim(-1, 1)
 
-    for i, ax in enumerate(axs[2, :]):
-        _titles = ["trans x", "trans y", "rot", "scale x", "scale y", "shear x"]
+    for i, ax in enumerate(axs[2]):
+        _titles = ["trans x", "trans y", "rot", "scale x", "scale y", "hue"]
         ax.set_title(_titles[i])
 
     # add legend to axs[1][0], by building Line2D objects
@@ -458,8 +471,12 @@ def make_summary_plot(config, final_state, x, rng):
             continue
         for ax in axs_:
             if i != 2:
-                ax.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False)
-            ax.tick_params(axis="y", which="both", left=False, right=False, labelleft=False)
+                ax.tick_params(
+                    axis="x", which="both", bottom=False, top=False, labelbottom=False
+                )
+            ax.tick_params(
+                axis="y", which="both", left=False, right=False, labelleft=False
+            )
 
     fig.tight_layout()
     fig.show()
