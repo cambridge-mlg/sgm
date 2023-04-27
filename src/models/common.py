@@ -5,7 +5,7 @@ import jax
 from jax import numpy as jnp
 from jax import random
 from jax.tree_util import tree_map
-from chex import Array, assert_rank, assert_shape
+from chex import Array, assert_rank, assert_equal_shape
 from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
@@ -61,7 +61,9 @@ class Encoder(nn.Module):
             h = self.act_fn(h)
 
         # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
-        μ = nn.Dense(self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ")(h)
+        μ = nn.Dense(
+            self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ"
+        )(h)
         σ = jax.nn.softplus(
             nn.Dense(
                 self.latent_dim,
@@ -103,7 +105,9 @@ class Decoder(nn.Module):
             z = self.norm_cls(name=f"norm_{j}")(z)
             z = self.act_fn(z)
 
-        h = nn.Dense(first_hidden_size * first_hidden_size * conv_dims[0], name=f"resize")(z)
+        h = nn.Dense(
+            first_hidden_size * first_hidden_size * conv_dims[0], name=f"resize"
+        )(z)
         h = h.reshape(first_hidden_size, first_hidden_size, conv_dims[0])
 
         for i, conv_dim in enumerate(conv_dims):
@@ -116,7 +120,9 @@ class Decoder(nn.Module):
             h = self.norm_cls(name=f"norm_{i+j+1}")(h)
             h = self.act_fn(h)
 
-        μ = nn.Conv(self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ")(h)
+        μ = nn.Conv(
+            self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ"
+        )(h)
         σ = jax.nn.softplus(self.param("σ_", self.σ_init, self.image_shape))
 
         return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
@@ -177,7 +183,9 @@ class BasicBlock(nn.Module):
 
         # Add shortcut connection if needed.
         if residual.shape != x.shape:
-            residual = nn.Conv(self.filters, (1, 1), strides=(1, 1), padding="SAME")(residual)
+            residual = nn.Conv(self.filters, (1, 1), strides=(1, 1), padding="SAME")(
+                residual
+            )
             residual = self.norm_cls(name="norm_3")(residual)
 
         x = x + residual
@@ -342,8 +350,8 @@ def make_approx_invariant(
     return distrax.Normal(*params)
 
 
-def make_η_bounded(η: Array, bounds: Array, offset: Optional[Array] = None) -> Array:
-    """Converts η to a bounded representation.
+def transform_η(η: Array, bounds: Array, offset: Optional[Array] = None) -> Array:
+    """Converts η in range [-inf, inf] to the correct range.
 
     Args:
         η: a rank-1 array of length 7.
@@ -351,21 +359,22 @@ def make_η_bounded(η: Array, bounds: Array, offset: Optional[Array] = None) ->
         offset: an optional rank-1 array of length 7.
     """
     assert_rank(η, 1)
-    assert_shape(η, (7,))
     assert_rank(bounds, 1)
-    assert_shape(bounds, (7,))
+    assert_equal_shape(η, bounds)
     if offset is not None:
         assert_rank(offset, 1)
-        assert_shape(offset, (7,))
+        assert_equal_shape(η, offset)
     else:
-        offset = jnp.zeros(7)
+        offset = jnp.zeros_like(bounds)
 
     η = jax.nn.tanh(η) * bounds + offset
 
     return η
 
 
-def approximate_mode(distribution: distrax.Distribution, num_samples: int, rng: PRNGKey) -> Array:
+def approximate_mode(
+    distribution: distrax.Distribution, num_samples: int, rng: PRNGKey
+) -> Array:
     """Approximates the mode of a distribution by taking a number of samples and returning the most likely.
 
     Args:
@@ -376,5 +385,7 @@ def approximate_mode(distribution: distrax.Distribution, num_samples: int, rng: 
     Returns:
         An approximate mode.
     """
-    samples, log_probs = distribution.sample_and_log_prob(seed=rng, sample_shape=(num_samples,))
+    samples, log_probs = distribution.sample_and_log_prob(
+        seed=rng, sample_shape=(num_samples,)
+    )
     return samples[jnp.argmax(log_probs)]
