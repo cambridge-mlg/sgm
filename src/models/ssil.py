@@ -7,7 +7,7 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.a `p_x_given_z`.
 """
 
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional, Sequence, Tuple
 from functools import partial
 
 import jax
@@ -37,15 +37,7 @@ class SSIL(nn.Module):
     image_shape: Tuple[int, int, int] = (28, 28, 1)
     Η_given_Xhat: Optional[KwArgs] = None
     Η_given_X: Optional[KwArgs] = None
-    bounds: Tuple[float, float, float, float, float, float, float] = (
-        0.25,
-        0.25,
-        jnp.pi,
-        0.25,
-        0.25,
-        jnp.pi / 6,
-        jnp.pi / 6,
-    )
+    bounds: Optional[Sequence[float]] = None
     σ_min: float = 1e-2
 
     def setup(self):
@@ -101,7 +93,8 @@ class SSIL(nn.Module):
         # η = η + 0.03 * α * self.bounds_array * random.uniform(η_rng, η.shape, minval=-1, maxval=1)
 
         p_X_given_xhat_and_η = distrax.Independent(
-            distrax.Normal(transform_image(xhat, η), self.σ), reinterpreted_batch_ndims=len(x.shape)
+            distrax.Normal(transform_image(xhat, η), self.σ),
+            reinterpreted_batch_ndims=len(x.shape),
         )
         # TODO: this requires applying transform_image twice to the same input, but we could do it as a single call to two different inputs.
 
@@ -247,13 +240,17 @@ def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
         loss, metrics = jax.vmap(
             ssil_loss_fn, in_axes=(None, None, 0, None, None, None, None, None), axis_name="batch"  # type: ignore
         )(model, params, x_batch, rng, state.α, state.β, state.γ, train)
-        loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
+        loss, metrics, mask = jax.tree_util.tree_map(
+            partial(agg, axis=0), (loss, metrics, mask)
+        )
         return loss, (metrics, mask)
 
     return batch_loss
 
 
-def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rng, train=False):
+def make_ssil_reconstruction_plot(
+    x, n_visualize, model, state, visualisation_rng, train=False
+):
     # @partial(
     #     jax.jit,
     #     static_argnames=("prototype", "sample_η_proto", "sample_η_recon"),
@@ -301,13 +298,27 @@ def make_ssil_sampling_plot(n_visualize, model, state, visualisation_rng):
 
 
 def make_summary_plot(config, final_state, x, rng):
-    fig, axs = plt.subplots(3, 6, figsize=(10, 5), dpi=200)
+    """Make a summary plot of the model."""
+    # fig, axs = plt.subplots(3, 6, figsize=(10, 5), dpi=200)
+    fig = plt.figure(figsize=(10, 5), dpi=200)
+    gs = fig.add_gridspec(3, 1, hspace=0.5)
 
-    axs[0, 0].imshow(x, cmap="gray")
-    axs[0, 0].set_title("x")
-    axs[0, 0].axis("off")
+    # Add subplots to the grid
+    axs = []
+    for i, ncols in enumerate([6, 6, 7]):
+        # Create a GridSpec object for the current row
+        gs_row = gs[i].subgridspec(1, ncols, wspace=0.5)
+        ax_row = []
+        for j in range(ncols):
+            ax = fig.add_subplot(gs_row[0, j])
+            ax_row.append(ax)
+        axs.append(ax_row)
 
-    axs[1, 0].axis("off")
+    axs[0][0].imshow(plot_utils.rescale_for_imshow(x), cmap="gray")
+    axs[0][0].set_title("x")
+    axs[0][0].axis("off")
+
+    axs[1][0].axis("off")
 
     η_rng, η_p_rng, η_pp_rng, η_recon_p_rng, η_recon_rng = random.split(rng, 5)
     # η_rng = η_p_rng = η_pp_rng = η_recon_p_rng = η_recon_rng = rng
@@ -325,103 +336,105 @@ def make_summary_plot(config, final_state, x, rng):
         train=False,
     )
 
+    renormalise = lambda η: η / bounds_array
+
     # x hat
     q_Η_given_x = q_Η_given_X.apply({"params": final_state.params["q_Η_given_X"]}, x)
     η = approximate_mode(q_Η_given_x, 100, η_rng)
-    axs[1, 1].bar(range(7), η / jnp.array(config.model.bounds), label="η", color="C0", alpha=0.7)
-    axs[1, 1].set_ylim(-1, 1)
-    axs[1, 1].set_title("η | x")
+    axs[1][1].bar(range(7), renormalise(η), label="η", color="C0", alpha=0.7)
+    axs[1][1].set_ylim(-1, 1)
+    axs[1][1].set_title("η | x")
 
     xhat = transform_image(x, -η)
-    axs[0, 1].imshow(xhat, cmap="gray")
-    axs[0, 1].set_title("xhat")
-    axs[0, 1].axis("off")
+    axs[0][1].imshow(plot_utils.rescale_for_imshow(xhat), cmap="gray")
+    axs[0][1].set_title("xhat")
+    axs[0][1].axis("off")
 
     # x recon
-    p_Η_given_xhat = p_Η_given_Xhat.apply({"params": final_state.params["p_Η_given_Xhat"]}, xhat)
-    η_recon = approximate_mode(p_Η_given_xhat, 100, η_recon_rng)
-    axs[1, 2].bar(
-        range(7), η_recon / jnp.array(config.model.bounds), label="η_recon", color="C1", alpha=0.7
+    p_Η_given_xhat = p_Η_given_Xhat.apply(
+        {"params": final_state.params["p_Η_given_Xhat"]}, xhat
     )
-    axs[1, 2].sharey(axs[1, 1])
-    axs[1, 2].set_title("η_recon | xhat")
+    η_recon = approximate_mode(p_Η_given_xhat, 100, η_recon_rng)
+    axs[1][2].bar(
+        range(7), renormalise(η_recon), label="η_recon", color="C1", alpha=0.7
+    )
+    axs[1][2].sharey(axs[1][1])
+    axs[1][2].set_title("η_recon | xhat")
 
     x_recon = transform_image(xhat, η_recon)
-    axs[0, 2].imshow(x_recon, cmap="gray")
-    axs[0, 2].set_title("x_recon")
-    axs[0, 2].axis("off")
+    axs[0][2].imshow(plot_utils.rescale_for_imshow(x_recon), cmap="gray")
+    axs[0][2].set_title("x_recon")
+    axs[0][2].axis("off")
 
     # x'
     Η_uniform = distrax.Uniform(
-        low=-jnp.array(config.model.bounds), high=jnp.array(config.model.bounds)
+        low=-bounds_array + offset_array, high=bounds_array + offset_array
     )
     η_p = Η_uniform.sample(seed=η_p_rng)
-    axs[1, 3].bar(
-        range(7), η_p / jnp.array(config.model.bounds), label="η_p", color="C2", alpha=0.7
-    )
-    axs[1, 3].sharey(axs[1, 1])
-    axs[1, 3].set_title("η_rng")
+    axs[1][3].bar(range(7), renormalise(η_p), label="η_p", color="C2", alpha=0.7)
+    axs[1][3].sharey(axs[1][1])
+    axs[1][3].set_title("η_rng")
 
     x_p = transform_image(x, η_p)
-    axs[0, 3].imshow(x_p, cmap="gray")
-    axs[0, 3].set_title("x'")
-    axs[0, 3].axis("off")
+    axs[0][3].imshow(plot_utils.rescale_for_imshow(x_p), cmap="gray")
+    axs[0][3].set_title("x'")
+    axs[0][3].axis("off")
 
     # x' hat
-    q_Η_given_x_p = q_Η_given_X.apply({"params": final_state.params["q_Η_given_X"]}, x_p)
-    η_pp = approximate_mode(q_Η_given_x_p, 100, rng=η_pp_rng)
-    axs[1, 4].bar(
-        range(7), η_pp / jnp.array(config.model.bounds), label="η_pp", color="C3", alpha=0.7
+    q_Η_given_x_p = q_Η_given_X.apply(
+        {"params": final_state.params["q_Η_given_X"]}, x_p
     )
-    axs[1, 4].sharey(axs[1, 1])
-    axs[1, 4].set_title("η' | x'")
+    η_pp = approximate_mode(q_Η_given_x_p, 100, rng=η_pp_rng)
+    axs[1][4].bar(range(7), renormalise(η_pp), label="η_pp", color="C3", alpha=0.7)
+    axs[1][4].sharey(axs[1][1])
+    axs[1][4].set_title("η' | x'")
 
     xhat_p = transform_image(x_p, -η_pp)
-    axs[0, 4].imshow(xhat_p, cmap="gray")
-    axs[0, 4].set_title("xhat'")
-    axs[0, 4].axis("off")
+    axs[0][4].imshow(plot_utils.rescale_for_imshow(xhat_p), cmap="gray")
+    axs[0][4].set_title("xhat'")
+    axs[0][4].axis("off")
 
     # x' recon
     p_Η_given_xhat_p = p_Η_given_Xhat.apply(
         {"params": final_state.params["p_Η_given_Xhat"]}, xhat_p
     )
     η_recon_p = approximate_mode(p_Η_given_xhat_p, 100, η_recon_p_rng)
-    axs[1, 5].bar(
+    axs[1][5].bar(
         range(7),
-        η_recon_p / jnp.array(config.model.bounds),
+        renormalise(η_recon_p),
         label="η_recon'",
         color="C4",
         alpha=0.7,
     )
-    axs[1, 5].sharey(axs[1, 1])
-    axs[1, 5].set_title("η_recon' | xhat'")
+    axs[1][5].sharey(axs[1][1])
+    axs[1][5].set_title("η_recon' | xhat'")
 
     x_recon_p = transform_image(xhat_p, η_recon_p)
-    axs[0, 5].imshow(x_recon_p, cmap="gray")
-    axs[0, 5].set_title("x_recon'")
-    axs[0, 5].axis("off")
+    axs[0][5].imshow(plot_utils.rescale_for_imshow(x_recon_p), cmap="gray")
+    axs[0][5].set_title("x_recon'")
+    axs[0][5].axis("off")
 
     # make distribution histograms
     def _make_dist_plots(dist, rng, axs, color="C0", ls="-"):
         samples, _ = dist.sample_and_log_prob(seed=rng, sample_shape=(3000,))
-        samples = samples / jnp.array(config.model.bounds)
+        samples = renormalise(samples)
 
         for i, ax in enumerate(axs):
             ax.hist(samples[:, i], bins=50, density=True, color=color, alpha=0.25)
             # plot a gaussian KDE over the histogram
             x = jnp.linspace(-1, 1, 1000)
             kde = gaussian_kde(samples[:, i])
-            axs[i].plot(x, kde(x), ls, color=color, alpha=0.5, lw=1)
+            ax.plot(x, kde(x), ls, color=color, alpha=0.5, lw=1)
 
-    _make_dist_plots(q_Η_given_x, η_rng, axs[2, :], color="C0", ls="-")
-    _make_dist_plots(p_Η_given_xhat, η_recon_rng, axs[2, :], color="C1", ls="-")
-    _make_dist_plots(q_Η_given_x_p, η_pp_rng, axs[2, :], color="C3", ls="--")
-    _make_dist_plots(p_Η_given_xhat_p, η_recon_p_rng, axs[2, :], color="C4", ls="--")
+    _make_dist_plots(q_Η_given_x, η_rng, axs[2], color="C0", ls="-")
+    _make_dist_plots(p_Η_given_xhat, η_recon_rng, axs[2], color="C1", ls="-")
+    _make_dist_plots(q_Η_given_x_p, η_pp_rng, axs[2], color="C3", ls="--")
+    _make_dist_plots(p_Η_given_xhat_p, η_recon_p_rng, axs[2], color="C4", ls="--")
 
-    axs[2, 0].set_yscale("symlog")
-    axs[2, 0].set_ylabel("log density")
-    for ax in axs[2, 0:]:
-        ax.sharey(axs[2, 0])
+    axs[2][0].set_yscale("symlog")
+    axs[2][0].set_ylabel("log density")
+    for ax in axs[2][0:]:
+        ax.sharey(axs[2][0])
         ax.set_yscale("symlog")
         ax.set_xlim(-1, 1)
 
@@ -429,8 +442,8 @@ def make_summary_plot(config, final_state, x, rng):
         _titles = ["trans x", "trans y", "rot", "scale x", "scale y", "shear x"]
         ax.set_title(_titles[i])
 
-    # add legend to axs[1, 0], by building Line2D objects
-    axs[1, 0].legend(
+    # add legend to axs[1][0], by building Line2D objects
+    axs[1][0].legend(
         handles=[
             Line2D([0], [0], color="C0", lw=4, label="η"),
             Line2D([0], [0], color="C1", lw=4, label="η_recon"),
