@@ -61,9 +61,7 @@ class Encoder(nn.Module):
             h = self.act_fn(h)
 
         # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
-        μ = nn.Dense(
-            self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ"
-        )(h)
+        μ = nn.Dense(self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ")(h)
         σ = jax.nn.softplus(
             nn.Dense(
                 self.latent_dim,
@@ -105,9 +103,7 @@ class Decoder(nn.Module):
             z = self.norm_cls(name=f"norm_{j}")(z)
             z = self.act_fn(z)
 
-        h = nn.Dense(
-            first_hidden_size * first_hidden_size * conv_dims[0], name=f"resize"
-        )(z)
+        h = nn.Dense(first_hidden_size * first_hidden_size * conv_dims[0], name=f"resize")(z)
         h = h.reshape(first_hidden_size, first_hidden_size, conv_dims[0])
 
         for i, conv_dim in enumerate(conv_dims):
@@ -120,9 +116,7 @@ class Decoder(nn.Module):
             h = self.norm_cls(name=f"norm_{i+j+1}")(h)
             h = self.act_fn(h)
 
-        μ = nn.Conv(
-            self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ"
-        )(h)
+        μ = nn.Conv(self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ")(h)
         σ = jax.nn.softplus(self.param("σ_", self.σ_init, self.image_shape))
 
         return distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min))
@@ -183,9 +177,7 @@ class BasicBlock(nn.Module):
 
         # Add shortcut connection if needed.
         if residual.shape != x.shape:
-            residual = nn.Conv(self.filters, (1, 1), strides=(1, 1), padding="SAME")(
-                residual
-            )
+            residual = nn.Conv(self.filters, (1, 1), strides=(1, 1), padding="SAME")(residual)
             residual = self.norm_cls(name="norm_3")(residual)
 
         x = x + residual
@@ -363,18 +355,16 @@ def make_η_bounded(η: Array, bounds: Array):
     return η
 
 
-def approximate_mode(
-    distribution: distrax.Distribution, num_samples: int, rng: PRNGKey
-) -> Array:
+def approximate_mode(distribution: distrax.Distribution, num_samples: int, rng: PRNGKey) -> Array:
     """Approximates the mode of a distribution by taking a number of samples and returning the most likely.
 
     Args:
         distribution: A distribution.
+        num_samples: The number of samples to take.
+        rng: A PRNG key.
 
     Returns:
         An approximate mode.
     """
-    samples, log_probs = distribution.sample_and_log_prob(
-        seed=rng, sample_shape=(num_samples,)
-    )
+    samples, log_probs = distribution.sample_and_log_prob(seed=rng, sample_shape=(num_samples,))
     return samples[jnp.argmax(log_probs)]
