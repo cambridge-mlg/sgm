@@ -4,6 +4,10 @@ from jax import numpy as jnp
 import matplotlib.pyplot as plt
 
 
+def rescale_for_imshow(img):
+    return jnp.clip((img + 1.0) * 127.0 + 0.5, 0, 255).astype(jnp.uint8)
+
+
 def plot_img_array(array, ncol=16, padding=2, pad_value=0.0, title=None):
     array = jnp.asarray(array)
 
@@ -29,7 +33,7 @@ def plot_img_array(array, ncol=16, padding=2, pad_value=0.0, title=None):
             ].set(array[k])
             k = k + 1
 
-    grid = jnp.clip((grid + 1.0) * 127.0 + 0.5, 0, 255).astype(jnp.uint8)
+    grid = rescale_for_imshow(grid)
 
     fig = plt.figure(figsize=(2 * xmaps, 2 * ymaps), dpi=400)
     plt.imshow(grid)
