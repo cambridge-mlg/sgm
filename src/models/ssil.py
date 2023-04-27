@@ -89,7 +89,6 @@ class SSIL(nn.Module):
         # )
 
         xhat = transform_image(x_uniform, -η_tot)
-        # TODO: should this ^ be a sample from a reconstructor distribution? In the paper it is a distribution currently.
 
         p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
         # p_Η = distrax.Normal(jnp.zeros((7,)), 0.5)
@@ -135,14 +134,11 @@ class SSIL(nn.Module):
             η1 = approximate_mode(q_Η_given_x, 100, rng=η1_rng)
 
         xhat = transform_image(x, -η1)
-        # TODO: should this ^ be a sample from a distribution?
         if prototype:
             return xhat
 
         p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
         # TODO: should we use a randomly transformed x here (and in the ELBO)? I.e., single sample monte carlo estimate of the invariant function.
-        # p_Η = distrax.Normal(jnp.zeros((7,)), 0.5)
-        # p_Η_given_xhat = distrax.MixtureOfTwo(0.9, p_Η_given_xhat_, p_Η)
         if sample_η_recon:
             η2 = p_Η_given_xhat.sample(seed=η2_rng)
         else:
@@ -174,6 +170,9 @@ def calculate_ssil_elbo(
     ε: float = 1e-6,
 ) -> Tuple[float, Mapping[str, float]]:
     ll = p_X_given_xhat_and_η.log_prob(x)
+    # normalise ll by the number of channels
+    # TODO: maybe we should normalise by the number of pixels instead?
+    ll = ll / x.shape[-1]
 
     η_qs, q_Η_log_probs = q_Η_given_x.sample_and_log_prob(seed=rng, sample_shape=(n,))
     q_H_entropy = -jnp.mean(q_Η_log_probs, axis=0)
