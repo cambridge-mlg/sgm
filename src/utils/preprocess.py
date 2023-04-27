@@ -211,22 +211,23 @@ class Keep:
 class ToRgb:
     """Converts black and white images with one channel into RGB with 3 channels.
     Attributes:
-        color: If True, the image is converted such that the saturation is 1.
+        color: If None, the image is converted such that it is black and white.
+            Otherwise it is converted such that the selected color channel is used.
         key: Key of the data to be processed.
         key_result: Key under which to store the result (same as `key` if None).
     """
 
-    color: bool = False
+    color: Optional[int] = None
     key: str = "image"
     key_result: Optional[str] = None
 
     def __call__(self, features: Features) -> Features:
         image = features[self.key]
 
-        if self.color:
-            image = tf.concat([image, tf.ones_like(image), tf.ones_like(image)], axis=-1)
-        else:
-            image = tf.concat([image, image, image], axis=-1)
+        image = tf.concat([image, image, image], axis=-1)
+        if self.color is not None:
+            mask = tf.reshape(tf.one_hot(self.color, 3, dtype=image.dtype), (1, 1, 3))
+            image = image * mask
 
         features[self.key_result or self.key] = image
 
