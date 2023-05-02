@@ -312,9 +312,11 @@ def make_summary_plot(config, final_state, x, rng):
     fig = plt.figure(figsize=(10, 5), dpi=200)
     gs = fig.add_gridspec(3, 1, hspace=0.5)
 
+    η_size = len(config.model.bounds)
+
     # Add subplots to the grid
     axs = []
-    for i, ncols in enumerate([6, 6, 6]):
+    for i, ncols in enumerate([6, 6, η_size]):
         # Create a GridSpec object for the current row
         gs_row = gs[i].subgridspec(1, ncols, wspace=0.5)
         ax_row = []
@@ -336,14 +338,14 @@ def make_summary_plot(config, final_state, x, rng):
 
     q_Η_given_X = Flow(
         **(config.model.Η_given_X or {}),
-        event_shape=(7,),
+        event_shape=(η_size,),
         bounds_array=bounds_array,
         offset_array=offset_array,
         train=False,
     )
     p_Η_given_Xhat = Flow(
         **(config.model.Η_given_Xhat or {}),
-        event_shape=(7,),
+        event_shape=(η_size,),
         bounds_array=bounds_array,
         offset_array=offset_array,
         train=False,
@@ -352,9 +354,10 @@ def make_summary_plot(config, final_state, x, rng):
     renormalise = lambda η: (η - offset_array) / bounds_array
 
     # x hat
+    print(x.shape)
     q_Η_given_x = q_Η_given_X.apply({"params": final_state.params["q_Η_given_X"]}, x)
     η = approximate_mode(q_Η_given_x, 100, η_rng)
-    axs[1][1].bar(range(7), renormalise(η), label="η", color="C0", alpha=0.7)
+    axs[1][1].bar(range(η_size), renormalise(η), label="η", color="C0", alpha=0.7)
     axs[1][1].set_ylim(-1, 1)
     axs[1][1].set_title("η | x")
 
@@ -369,7 +372,7 @@ def make_summary_plot(config, final_state, x, rng):
     )
     η_recon = approximate_mode(p_Η_given_xhat, 100, η_recon_rng)
     axs[1][2].bar(
-        range(7), renormalise(η_recon), label="η_recon", color="C1", alpha=0.7
+        range(η_size), renormalise(η_recon), label="η_recon", color="C1", alpha=0.7
     )
     axs[1][2].sharey(axs[1][1])
     axs[1][2].set_title("η_recon | xhat")
@@ -384,7 +387,7 @@ def make_summary_plot(config, final_state, x, rng):
         low=-bounds_array + offset_array, high=bounds_array + offset_array
     )
     η_p = Η_uniform.sample(seed=η_p_rng)
-    axs[1][3].bar(range(7), renormalise(η_p), label="η_p", color="C2", alpha=0.7)
+    axs[1][3].bar(range(η_size), renormalise(η_p), label="η_p", color="C2", alpha=0.7)
     axs[1][3].sharey(axs[1][1])
     axs[1][3].set_title("η_rng")
 
@@ -398,7 +401,7 @@ def make_summary_plot(config, final_state, x, rng):
         {"params": final_state.params["q_Η_given_X"]}, x_p
     )
     η_pp = approximate_mode(q_Η_given_x_p, 100, rng=η_pp_rng)
-    axs[1][4].bar(range(7), renormalise(η_pp), label="η_pp", color="C3", alpha=0.7)
+    axs[1][4].bar(range(η_size), renormalise(η_pp), label="η_pp", color="C3", alpha=0.7)
     axs[1][4].sharey(axs[1][1])
     axs[1][4].set_title("η' | x'")
 
@@ -413,7 +416,7 @@ def make_summary_plot(config, final_state, x, rng):
     )
     η_recon_p = approximate_mode(p_Η_given_xhat_p, 100, η_recon_p_rng)
     axs[1][5].bar(
-        range(7),
+        range(η_size),
         renormalise(η_recon_p),
         label="η_recon'",
         color="C4",
