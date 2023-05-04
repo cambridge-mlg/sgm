@@ -30,43 +30,64 @@ class VAE(nn.Module):
     image_shape: Tuple[int, int, int] = (28, 28, 1)
     Z_given_X: Optional[KwArgs] = None
     X_given_Z: Optional[KwArgs] = None
+    σ_min: float = 1e-2
 
     def setup(self):
         # p(Z)
-        self.p_Z = distrax.Normal(
-            loc=self.param("prior_μ", init.zeros, (self.latent_dim,)),
-            scale=jax.nn.softplus(
-                self.param(
-                    "prior_σ_",
-                    init.constant(INV_SOFTPLUS_1),
-                    # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
-                    (self.latent_dim,),
-                )
-            ),  # type: ignore
+        self.p_Z = distrax.Independent(
+            distrax.Normal(
+                loc=self.param("prior_μ", init.zeros, (self.latent_dim,)),
+                scale=jax.nn.softplus(
+                    self.param(
+                        "prior_σ_",
+                        init.constant(INV_SOFTPLUS_1),
+                        # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
+                        (self.latent_dim,),
+                    )
+                ).clip(
+                    min=self.σ_min
+                ),  # type: ignore
+            ),
+            reinterpreted_batch_ndims=1,
         )
         # q(Z|X)
         self.q_Z_given_X = Encoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
         # p(X|Z)
         self.p_X_given_Z = Decoder(image_shape=self.image_shape, **(self.X_given_Z or {}))
 
-    def __call__(self, x: Array, rng: PRNGKey) -> Tuple[distrax.Distribution, ...]:
-        q_Z_given_x = self.q_Z_given_X(x)
+    def __call__(
+        self, x: Array, rng: PRNGKey, train: bool = True
+    ) -> Tuple[distrax.Distribution, ...]:
+        q_Z_given_x = self.q_Z_given_X(x, train=train)
         z = q_Z_given_x.sample(seed=rng)
 
-        p_X_given_z = self.p_X_given_Z(z)
+        p_X_given_z = self.p_X_given_Z(z, train=train)
 
         return q_Z_given_x, p_X_given_z, self.p_Z
+
+    def logp_x_given_z(self, x: Array, z: Array, train: bool = True) -> Array:
+        return self.p_X_given_Z(z, train=train).log_prob(x)
+
+    def logq_z_given_x(self, x: Array, z: Array, train: bool = True) -> Array:
+        return self.q_Z_given_X(x, train=train).log_prob(z)
+
+    def logp_z(self, z: Array) -> Array:
+        return self.p_Z.log_prob(z)
 
     def sample(
         self,
         rng: PRNGKey,
         sample_x: bool = False,
+        train: bool = True,
     ) -> Array:
         z_rng, x_rng = random.split(rng, 2)
         z = self.p_Z.sample(seed=z_rng)
 
-        p_X_given_z = self.p_X_given_Z(z)
-        x = p_X_given_z.sample(seed=x_rng) if sample_x else p_X_given_z.mean()
+        p_X_given_z = self.p_X_given_Z(z, train=train)
+        if sample_x:
+            x = p_X_given_z.sample(seed=x_rng)
+        else:
+            x = p_X_given_z.mode()
 
         return x
 
@@ -75,14 +96,21 @@ class VAE(nn.Module):
         x: Array,
         rng: PRNGKey,
         sample_z: bool = False,
-        sample_x: bool = False,
+        sample_xrecon: bool = False,
+        train: bool = True,
     ) -> Array:
         z_rng, x_rng = random.split(rng, 2)
-        q_Z_given_x = self.q_Z_given_X(x)
-        z = q_Z_given_x.sample(seed=z_rng) if sample_z else q_Z_given_x.mean()
+        q_Z_given_x = self.q_Z_given_X(x, train=train)
+        if sample_z:
+            z = q_Z_given_x.sample(seed=z_rng)
+        else:
+            z = q_Z_given_x.mode()
 
-        p_X_given_z = self.p_X_given_Z(z)
-        x_recon = p_X_given_z.sample(seed=x_rng) if sample_x else p_X_given_z.mean()
+        p_X_given_z = self.p_X_given_Z(z, train=train)
+        if sample_xrecon:
+            x_recon = p_X_given_z.sample(seed=x_rng)
+        else:
+            x_recon = p_X_given_z.mode()
 
         return x_recon
 
@@ -94,8 +122,8 @@ def calculate_vae_elbo(
     p_Z: distrax.Distribution,
     β: float = 1.0,
 ) -> Tuple[float, Mapping[str, float]]:
-    ll = p_X_given_z.log_prob(x).sum()
-    z_kld = q_Z_given_x.kl_divergence(p_Z).sum()
+    ll = p_X_given_z.log_prob(x) / x.shape[-1]
+    z_kld = q_Z_given_x.kl_divergence(p_Z)
 
     elbo = ll - β * z_kld
 
@@ -103,7 +131,13 @@ def calculate_vae_elbo(
 
 
 def vae_loss_fn(
-    model: nn.Module, params: nn.FrozenDict, x: Array, rng: PRNGKey, β: float = 1.0, **kwargs
+    model: nn.Module,
+    params: nn.FrozenDict,
+    x: Array,
+    rng: PRNGKey,
+    β: float = 1.0,
+    train: bool = True,
+    **kwargs
 ) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for VAE."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
@@ -112,6 +146,7 @@ def vae_loss_fn(
         {"params": params},
         x,
         rng_local,
+        train,
     )
 
     loss, metrics = calculate_vae_elbo(x, q_Z_given_x, p_X_given_z, p_Z, β)
@@ -119,13 +154,12 @@ def vae_loss_fn(
     return loss, metrics
 
 
-def make_vae_batch_loss(model, agg=jnp.mean):
-    @jax.jit
+def make_vae_batch_loss(model, agg=jnp.mean, train=True):
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
-            vae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"  # type: ignore
-        )(model, params, x_batch, rng, state.β)
+            vae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
+        )(model, params, x_batch, rng, state.β, train)
         loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
 
@@ -133,18 +167,14 @@ def make_vae_batch_loss(model, agg=jnp.mean):
 
 
 def make_vae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng):
-    @partial(
-        jax.jit,
-        static_argnames=("sample_z", "sample_x"),
-    )
-    def reconstruct(x, sample_z=False, sample_x=False):
+    def reconstruct(x, sample_z=False, sample_xrecon=False):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
         return model.apply(
             {"params": state.params},
             x,
             rng,
             sample_z=sample_z,
-            sample_x=sample_x,
+            sample_xrecon=sample_xrecon,
             method=model.reconstruct,
         )
 
@@ -164,7 +194,6 @@ def make_vae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng
 
 
 def make_vae_sampling_plot(n_visualize, model, state, visualisation_rng):
-    @partial(jax.jit, static_argnames=("sample_x"))
     def sample(rng, sample_x=False):
         return model.apply(
             {"params": state.params},
@@ -185,3 +214,7 @@ def make_vae_sampling_plot(n_visualize, model, state, visualisation_rng):
         title="Sampled data",
     )
     return sample_fig
+
+
+def make_vae_summary_plot(config, final_state, x, rng):
+    return None
