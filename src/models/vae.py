@@ -18,6 +18,8 @@ from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
 
+import tensorflow_probability.substrates.jax as tfp
+
 from src.models.common import Encoder, Decoder, INV_SOFTPLUS_1
 import src.utils.plotting as plot_utils
 
@@ -152,6 +154,65 @@ def vae_loss_fn(
     loss, metrics = calculate_vae_elbo(x, q_Z_given_x, p_X_given_z, p_Z, β)
 
     return loss, metrics
+
+
+def create_vae_mll_estimator(
+    model: nn.Module,
+    params: nn.FrozenDict,
+    train: bool = False,
+    num_chains: int = 100,
+    num_steps: int = 1000,
+    step_size: float = 1e-1,
+    num_leapfrog_steps: int = 2,
+):
+    """Create an estimator for the marginal log likelihood of X under a VAE model.
+    This uses Hamiltonian Annealed Importance Sampling (HAIS) https://arxiv.org/abs/1205.1925.
+
+    Args:
+        model: The VAE model.
+        params: The parameters of the VAE model.
+        train: Whether to run the model in training mode.
+        num_chains: The number of chains to run.
+        num_steps: The number of steps to run each chain for.
+        step_size: The step size to use for the HMC.
+        num_leapfrog_steps: The number of leapfrog steps to use for the HMC.
+
+    Returns:
+        A function whose arguments are the data and a random number generator, and which returns
+        an estimate of the marginal log likelihood of the data.
+    """
+    def estimate_mll(x, rng):
+        logp_x_given_z = lambda z: model.apply(
+            {"params": params}, x, z, train=train, method=model.logp_x_given_z
+        )
+        logp_z = lambda z: model.apply({"params": params}, z, method=model.logp_z)
+
+        @jax.vmap
+        def target_log_prob_fn(z):
+            return logp_z(z) + logp_x_given_z(z)
+
+        @jax.vmap
+        def proposal_log_prob_fn(z):
+            return logp_z(z)
+
+        _, ais_weights, _ = tfp.mcmc.sample_annealed_importance_chain(
+            num_steps=num_steps,
+            proposal_log_prob_fn=proposal_log_prob_fn,
+            target_log_prob_fn=target_log_prob_fn,
+            current_state=jnp.zeros((num_chains, model.latent_dim)),
+            make_kernel_fn=lambda tlp_fn: tfp.mcmc.HamiltonianMonteCarlo(
+                target_log_prob_fn=tlp_fn,
+                step_size=step_size,
+                num_leapfrog_steps=num_leapfrog_steps,
+            ),
+            seed=rng,
+        )
+
+        log_normalizer_estimate = jax.nn.logsumexp(ais_weights, axis=0) - jnp.log(num_chains)
+
+        return log_normalizer_estimate
+
+    return estimate_mll
 
 
 def make_vae_batch_loss(model, agg=jnp.mean, train=True):
