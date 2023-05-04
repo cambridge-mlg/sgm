@@ -28,8 +28,6 @@ import src.utils.input as input_utils
 import src.utils.preprocess as preprocess_utils
 import src.models as models
 
-from src.models.ssil import make_summary_plot
-
 
 PRNGKey = Any
 ScalarOrSchedule = Union[float, optax.Schedule]
@@ -400,7 +398,10 @@ def train_loop(
 
             if step % config.get("log_every", 1) == 0:  # type: ignore
                 learning_rate = state.opt_state.hyperparams["learning_rate"]
-                σ = jax.nn.softplus(state.params["σ_"]).clip(min=model.σ_min)
+                if config.model_name == "SSIL":
+                    σ = jax.nn.softplus(state.params["σ_"]).clip(min=model.σ_min)
+                else:
+                    σ = jnp.nan
                 run.log(
                     {
                         "train/loss": loss,
@@ -542,9 +543,11 @@ def train_loop(
 
         _write_note("Training finished.")
 
+        make_summary_plot = getattr(models, "make_" + config.model_name.lower() + "_summary_plot")
         for i, x in enumerate(val_batch_0["image"][0, list(range(5)) + [9, 10]]):
             tmp_rng, summary_rng = jax.random.split(summary_rng)
             summary_fig = make_summary_plot(config, state, x, tmp_rng)
-            run.summary[f"summary_fig_{i}"] = wandb.Image(summary_fig)
+            if summary_fig:
+                run.summary[f"summary_fig_{i}"] = wandb.Image(summary_fig)
 
     return state

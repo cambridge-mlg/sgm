@@ -243,7 +243,6 @@ def ssil_loss_fn(
 
 
 def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
-    # @jax.jit
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
@@ -260,10 +259,6 @@ def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
 def make_ssil_reconstruction_plot(
     x, n_visualize, model, state, visualisation_rng, train=False
 ):
-    # @partial(
-    #     jax.jit,
-    #     static_argnames=("prototype", "sample_η_proto", "sample_η_recon"),
-    # )
     def reconstruct(x, prototype=False, sample_η_proto=False, sample_η_recon=False):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
         return model.apply(
@@ -306,7 +301,7 @@ def make_ssil_sampling_plot(n_visualize, model, state, visualisation_rng):
     return None
 
 
-def make_summary_plot(config, final_state, x, rng):
+def make_ssil_summary_plot(config, final_state, x, rng):
     """Make a summary plot of the model."""
     # fig, axs = plt.subplots(3, 6, figsize=(10, 5), dpi=200)
     fig = plt.figure(figsize=(10, 5), dpi=200)
