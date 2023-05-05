@@ -214,6 +214,19 @@ def create_vae_mll_estimator(
 
     return estimate_mll
 
+# Step size | Num chains | Num steps | Num Leap Frogs | MLL        | Time
+# 1e-1      | 100        | 1000      | 2              | 652.18     | 17.1s
+# 1e-2      | 100        | 1000      | 2              | 477.62     |
+# 2e-1      | 100        | 1000      | 2              | 633.18     |
+# 5e-1      | 100        | 1000      | 2              | 572.47     |
+# 1e-1      | 100        | 1000      | 8              | 657.97     | 53.4s
+# 1e-1      | 100        | 1000      | 16             | 656.50     | 1m 42.5s
+# 1e-1      | 300        | 1000      | 2              | 652.18     | 1m 1.3s
+# 1e-1      | 100        | 3000      | 2              | 657.91     | 47.9s
+# 1e-1      | 100        |  200      | 2              | 630.28     | 6.3s
+# 1e-1      | 100        |  300      | 2              | 636.63     | 7.9s
+# 1e-1      | 100        |  500      | 2              | 644.46     | 9.6s
+
 
 def make_vae_batch_loss(model, agg=jnp.mean, train=True):
     def batch_loss(params, x_batch, mask, rng, state):
