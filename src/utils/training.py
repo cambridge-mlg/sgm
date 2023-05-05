@@ -417,8 +417,8 @@ def train_loop(
                     run.log({f"train/{k}": v}, step=step)
                 steps.set_postfix_str(
                     (
-                        f"Trn Loss {loss:3.0f},\t Trn LL {metrics['ll']:3.0f},\t "
-                        f"Val Loss {val_loss:3.0f},\t Val LL {val_ll:3.0f}"
+                        f"Trn Loss {loss:.4g},\t Trn LL {metrics['ll']:.4g},\t "
+                        f"Val Loss {val_loss:.4g},\t Val LL {val_ll:.4g}"
                     )
                 )
 
