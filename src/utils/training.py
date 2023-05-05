@@ -400,9 +400,12 @@ def train_loop(
             if step % config.get("log_every", 1) == 0:  # type: ignore
                 learning_rate = state.opt_state.hyperparams["learning_rate"]
                 if config.model_name == "SSIL":
-                    σ = jax.nn.softplus(state.params["σ_"]).clip(min=model.σ_min)
+                    σ_ = state.params["σ_"]
+                elif config.model_name == "VAE":
+                    σ_ = state.params["p_X_given_Z", "σ_"]
                 else:
-                    σ = jnp.nan
+                    σ_ = jnp.nan
+                σ = jax.nn.softplus(σ_).clip(min=model.σ_min).mean()
                 run.log(
                     {
                         "train/loss": loss,

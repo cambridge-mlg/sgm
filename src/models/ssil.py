@@ -63,7 +63,7 @@ class SSIL(nn.Module):
                 "σ_",
                 init.constant(INV_SOFTPLUS_1),
                 # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
-                (),
+                self.image_shape,
             )
         ).clip(min=self.σ_min)
 
@@ -246,17 +246,13 @@ def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
         loss, metrics = jax.vmap(
             ssil_loss_fn, in_axes=(None, None, 0, None, None, None, None, None), axis_name="batch"  # type: ignore
         )(model, params, x_batch, rng, state.α, state.β, state.γ, train)
-        loss, metrics, mask = jax.tree_util.tree_map(
-            partial(agg, axis=0), (loss, metrics, mask)
-        )
+        loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
 
     return batch_loss
 
 
-def make_ssil_reconstruction_plot(
-    x, n_visualize, model, state, visualisation_rng, train=False
-):
+def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rng, train=False):
     def reconstruct(x, prototype=False, sample_η_proto=False, sample_η_recon=False):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
         return model.apply(
@@ -360,13 +356,9 @@ def make_ssil_summary_plot(config, final_state, x, rng):
     axs[0][1].axis("off")
 
     # x recon
-    p_Η_given_xhat = p_Η_given_Xhat.apply(
-        {"params": final_state.params["p_Η_given_Xhat"]}, xhat
-    )
+    p_Η_given_xhat = p_Η_given_Xhat.apply({"params": final_state.params["p_Η_given_Xhat"]}, xhat)
     η_recon = approximate_mode(p_Η_given_xhat, 100, η_recon_rng)
-    axs[1][2].bar(
-        range(η_size), renormalise(η_recon), label="η_recon", color="C1", alpha=0.7
-    )
+    axs[1][2].bar(range(η_size), renormalise(η_recon), label="η_recon", color="C1", alpha=0.7)
     axs[1][2].sharey(axs[1][1])
     axs[1][2].set_title("η_recon | xhat")
 
@@ -376,9 +368,7 @@ def make_ssil_summary_plot(config, final_state, x, rng):
     axs[0][2].axis("off")
 
     # x'
-    Η_uniform = distrax.Uniform(
-        low=-bounds_array + offset_array, high=bounds_array + offset_array
-    )
+    Η_uniform = distrax.Uniform(low=-bounds_array + offset_array, high=bounds_array + offset_array)
     η_p = Η_uniform.sample(seed=η_p_rng)
     axs[1][3].bar(range(η_size), renormalise(η_p), label="η_p", color="C2", alpha=0.7)
     axs[1][3].sharey(axs[1][1])
@@ -390,9 +380,7 @@ def make_ssil_summary_plot(config, final_state, x, rng):
     axs[0][3].axis("off")
 
     # x' hat
-    q_Η_given_x_p = q_Η_given_X.apply(
-        {"params": final_state.params["q_Η_given_X"]}, x_p
-    )
+    q_Η_given_x_p = q_Η_given_X.apply({"params": final_state.params["q_Η_given_X"]}, x_p)
     η_pp = approximate_mode(q_Η_given_x_p, 100, rng=η_pp_rng)
     axs[1][4].bar(range(η_size), renormalise(η_pp), label="η_pp", color="C3", alpha=0.7)
     axs[1][4].sharey(axs[1][1])
@@ -467,12 +455,8 @@ def make_ssil_summary_plot(config, final_state, x, rng):
             continue
         for ax in axs_:
             if i != 2:
-                ax.tick_params(
-                    axis="x", which="both", bottom=False, top=False, labelbottom=False
-                )
-            ax.tick_params(
-                axis="y", which="both", left=False, right=False, labelleft=False
-            )
+                ax.tick_params(axis="x", which="both", bottom=False, top=False, labelbottom=False)
+            ax.tick_params(axis="y", which="both", left=False, right=False, labelleft=False)
 
     fig.show()
 
