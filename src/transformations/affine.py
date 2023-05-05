@@ -4,6 +4,8 @@ from jax import numpy as jnp
 from jax.scipy.linalg import expm
 from chex import Array, assert_shape, assert_rank
 
+from src.transformations.map_coords import map_coordinates
+
 
 def create_generator_matrices() -> Array:
     """Creates the generator matrices for affine transformations.
@@ -96,8 +98,8 @@ def _transform_image(
     # Transform the image by moving the pixels to their new locations
     output = jnp.stack(
         [
-            jax.scipy.ndimage.map_coordinates(
-                image[:, :, i], transformed_pts[::-1], order=1, mode=fill_mode, cval=fill_value
+            map_coordinates(
+                image[:, :, i], transformed_pts[::-1], order=3, mode=fill_mode, cval=fill_value
             )
             # Note: usually we would use bicubic interpolation (order=3), but this isn't available
             # in jax, so we have to use linear interpolation.
