@@ -386,6 +386,7 @@ def train_loop(
         _write_note("Starting training loop...")
 
         best_val_loss = jnp.inf
+        best_state = None
         val_loss = jnp.nan
         val_ll = jnp.nan
 
@@ -510,6 +511,8 @@ def train_loop(
                     if sample_fig:
                         run.summary["best_prior_samples"] = wandb.Image(sample_fig)
 
+                    best_state = state
+
                     if test_ds:
                         test_iter = input_utils.start_input_pipeline(
                             test_ds, config.get("prefetch_to_device", 1)
@@ -543,11 +546,14 @@ def train_loop(
 
         _write_note("Training finished.")
 
+        if best_state is None:
+            best_state = state
+
         make_summary_plot = getattr(models, "make_" + config.model_name.lower() + "_summary_plot")
         for i, x in enumerate(val_batch_0["image"][0, list(range(5)) + [9, 10]]):
             tmp_rng, summary_rng = jax.random.split(summary_rng)
-            summary_fig = make_summary_plot(config, state, x, tmp_rng)
+            summary_fig = make_summary_plot(config, best_state, x, tmp_rng)
             if summary_fig:
                 run.summary[f"summary_fig_{i}"] = wandb.Image(summary_fig)
 
-    return state
+    return best_state, state
