@@ -170,10 +170,9 @@ def calculate_ssil_elbo(
     # TODO: more? less?
     ε: float = 1e-6,
 ) -> Tuple[float, Mapping[str, float]]:
-    ll = p_X_given_xhat_and_η.log_prob(x)
-    # normalise ll by the number of channels
-    # TODO: maybe we should normalise by the number of pixels instead?
-    ll = ll / x.shape[-1]
+    ll_unorm = p_X_given_xhat_and_η.log_prob(x)
+    # Normalise by the number of channels. Maybe we should normalise by the number of pixels instead?
+    ll = ll_unorm / x.shape[-1]
 
     η_qs, q_Η_log_probs = q_Η_given_x.sample_and_log_prob(seed=rng, sample_shape=(n,))
     q_H_entropy = -jnp.mean(q_Η_log_probs, axis=0)
@@ -183,7 +182,7 @@ def calculate_ssil_elbo(
     )
     p_q_H_cross_entropy = -jnp.mean(p_Η_log_probs, axis=0)
 
-    η_kld_ = p_q_H_cross_entropy - q_H_entropy
+    η_kld = p_q_H_cross_entropy - q_H_entropy
 
     def norm(η: Array) -> float:
         return jnp.sum(η**2) / len(η)
@@ -193,19 +192,18 @@ def calculate_ssil_elbo(
     η_ps = p_Η_given_xhat.sample(seed=rng, sample_shape=(n,))
     p_η_norm = jax.vmap(norm)(η_ps).mean()
 
-    η_kld = η_kld_ + γ * (q_η_norm + p_η_norm)
-
-    elbo = ll - β * η_kld + q_H_entropy
+    elbo = ll - β * η_kld - γ * (q_η_norm + p_η_norm) + β * q_H_entropy
     # TODO: this entropy term should be using a distribtuion conditioned on a randomly transformed x.
 
     return -elbo, {
         "elbo": elbo,
         "ll": ll,
+        "ll_unorm": ll_unorm,
         "η_kld": η_kld,
-        "η_kld_": η_kld_,
         "q_η_ce": q_η_norm,
         "p_η_ce": p_η_norm,
-        "entropy_term": q_H_entropy,
+        "q_H_ent": q_H_entropy,
+        "p_q_H_cent": p_q_H_cross_entropy,
     }
 
 
@@ -304,7 +302,7 @@ def make_ssil_sampling_plot(n_visualize, model, state, visualisation_rng):
 def make_ssil_summary_plot(config, final_state, x, rng):
     """Make a summary plot of the model."""
     # fig, axs = plt.subplots(3, 6, figsize=(10, 5), dpi=200)
-    fig = plt.figure(figsize=(10, 5), dpi=200)
+    fig = plt.figure(figsize=(10, 5), dpi=200, tight_layout=True)
     gs = fig.add_gridspec(3, 1, hspace=0.5)
 
     η_size = len(config.model.bounds)
@@ -476,7 +474,6 @@ def make_ssil_summary_plot(config, final_state, x, rng):
                 axis="y", which="both", left=False, right=False, labelleft=False
             )
 
-    fig.tight_layout()
     fig.show()
 
     return fig
