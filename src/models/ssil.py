@@ -192,7 +192,7 @@ def calculate_ssil_elbo(
     η_ps = p_Η_given_xhat.sample(seed=rng, sample_shape=(n,))
     p_η_norm = jax.vmap(norm)(η_ps).mean()
 
-    elbo = ll - β * η_kld - γ * (q_η_norm + p_η_norm) + β * q_H_entropy
+    elbo = ll - β * η_kld - γ * (q_η_norm + p_η_norm) + q_H_entropy
     # TODO: this entropy term should be using a distribtuion conditioned on a randomly transformed x.
 
     return -elbo, {
