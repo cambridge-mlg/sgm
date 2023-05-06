@@ -426,6 +426,7 @@ def train_loop(
                     )
                 )
 
+            val_batch_0 = None
             if step % config.get("eval_every", 1000) == 0:  # type: ignore
                 val_iter = input_utils.start_input_pipeline(
                     val_ds, config.get("prefetch_to_device", 1)
@@ -516,47 +517,54 @@ def train_loop(
 
                     best_state = state
 
-                    if test_ds:
-                        test_iter = input_utils.start_input_pipeline(
-                            test_ds, config.get("prefetch_to_device", 1)
-                        )
-
-                        batch_losses = []
-                        batch_metrics = []
-                        n_test = 0
-                        for test_batch in test_iter:
-                            loss, metrics, n_examples = eval_fn(
-                                state, test_batch["image"], test_batch["mask"], test_rng
-                            )
-
-                            batch_losses.append(loss)
-                            batch_metrics.append(metrics)
-                            n_test += n_examples
-
-                        batch_metrics = _tree_concatenate(batch_metrics)
-                        test_loss, test_metrics = jax.tree_util.tree_map(
-                            lambda x: jnp.sum(x) / n_test, (jnp.array(batch_losses), batch_metrics)  # type: ignore
-                        )
-
-                        run.summary["test_loss"] = test_loss
-                        for k, v in test_metrics.items():
-                            run.summary[f"test_{k}"] = v
-
-                        test_x = test_batch["image"][:n_visualize]  # type: ignore
-                        test_recon_fig = make_reconstruction_plot(test_x)
-
-                        run.summary["test_reconstructions"] = wandb.Image(test_recon_fig)
-
         _write_note("Training finished.")
 
         if best_state is None:
             best_state = state
 
-        make_summary_plot = getattr(models, "make_" + config.model_name.lower() + "_summary_plot")
-        for i, x in enumerate(val_batch_0["image"][0, list(range(5)) + [9, 10]]):
-            tmp_rng, summary_rng = jax.random.split(summary_rng)
-            summary_fig = make_summary_plot(config, best_state, x, tmp_rng)
-            if summary_fig:
-                run.summary[f"summary_fig_{i}"] = wandb.Image(summary_fig)
+        test_batch_0 = None
+        if test_ds:
+            test_iter = input_utils.start_input_pipeline(
+                test_ds, config.get("prefetch_to_device", 1)
+            )
+
+            batch_losses = []
+            batch_metrics = []
+            n_test = 0
+            for i, test_batch in enumerate(test_iter):
+                loss, metrics, n_examples = eval_fn(
+                    best_state, test_batch["image"], test_batch["mask"], test_rng
+                )
+
+                batch_losses.append(loss)
+                batch_metrics.append(metrics)
+                n_test += n_examples
+
+                if i == 0:
+                    test_batch_0 = test_batch
+
+            batch_metrics = _tree_concatenate(batch_metrics)
+            test_loss, test_metrics = jax.tree_util.tree_map(
+                lambda x: jnp.sum(x) / n_test, (jnp.array(batch_losses), batch_metrics)  # type: ignore
+            )
+
+            run.summary["test_loss"] = test_loss
+            for k, v in test_metrics.items():
+                run.summary[f"test_{k}"] = v
+
+            test_x = test_batch["image"][:n_visualize]  # type: ignore
+            test_recon_fig = make_reconstruction_plot(test_x)
+
+            run.summary["test_reconstructions"] = wandb.Image(test_recon_fig)
+
+        summary_batch = test_batch_0 or val_batch_0
+
+        if summary_batch:
+            make_summary_plot = getattr(models, "make_" + config.model_name.lower() + "_summary_plot")
+            for i, x in enumerate(summary_batch["image"][0, list(range(5)) + [9, 10]]):
+                tmp_rng, summary_rng = jax.random.split(summary_rng)
+                summary_fig = make_summary_plot(config, best_state, x, tmp_rng)
+                if summary_fig:
+                    run.summary[f"summary_fig_{i}"] = wandb.Image(summary_fig)
 
     return best_state, state
