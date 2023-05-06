@@ -402,7 +402,7 @@ def train_loop(
                 if config.model_name == "SSIL":
                     σ_ = state.params["σ_"]
                 elif config.model_name == "VAE":
-                    σ_ = state.params["p_X_given_Z", "σ_"]
+                    σ_ = state.params["p_X_given_Z"]["σ_"]
                 else:
                     σ_ = jnp.nan
                 σ = jax.nn.softplus(σ_).clip(min=model.σ_min).mean()
