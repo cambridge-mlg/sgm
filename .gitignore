@@ -138,7 +138,7 @@ raw_data/
 wandb/
 
 # results
-results*/
+NeurReps/results*/
 
 # logging
 logs/
