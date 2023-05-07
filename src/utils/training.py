@@ -458,7 +458,6 @@ def train_loop(
                 batch_losses = []
                 batch_metrics = []
                 n_val = 0
-                val_batch_0 = None
                 for i, val_batch in enumerate(val_iter):
                     loss, metrics, n_examples = eval_fn(
                         state, val_batch["image"], val_batch["mask"], val_rng
