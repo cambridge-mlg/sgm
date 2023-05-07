@@ -7,7 +7,7 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.a `p_x_given_z`.
 """
 
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
+from typing import Any, Mapping, Optional, Sequence, Tuple
 from functools import partial
 
 import jax
@@ -216,7 +216,6 @@ def ssil_loss_fn(
     β: float = 1.0,
     γ: float = 1.0,
     train: bool = True,
-    mll_fn: Optional[Callable[[Array, PRNGKey], float]] = None,
 ) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for Contrastive Invariance Learner."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
@@ -238,41 +237,15 @@ def ssil_loss_fn(
         γ,
     )
 
-    if mll_fn is not None:
-        mll = mll_fn(x, rng_local, params)
-        metrics["mll"] = mll
-
     return loss, metrics
 
 
-def make_vae_mll_estimator(
-    model: SSIL,
-    train: bool = False,
-    num_chains: int = 100,
-    num_steps: int = 1000,
-    step_size: float = 1e-1,
-    num_leapfrog_steps: int = 2,
-):
-    return None
-
-
-def make_ssil_batch_loss(
-    model: nn.Module,
-    agg: Callable = jnp.mean,
-    train: bool = True,
-    mll: bool = False,
-    mll_kwargs: Optional[KwArgs] = None,
-):
-    if mll:
-        mll_fn = make_vae_mll_estimator(model, train=train, **(mll_kwargs or {}))
-    else:
-        mll_fn = None
-
+def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
-            ssil_loss_fn, in_axes=(None, None, 0, None, None, None, None, None, None), axis_name="batch"  # type: ignore
-        )(model, params, x_batch, rng, state.α, state.β, state.γ, train, mll_fn)
+            ssil_loss_fn, in_axes=(None, None, 0, None, None, None, None, None), axis_name="batch"  # type: ignore
+        )(model, params, x_batch, rng, state.α, state.β, state.γ, train)
         loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
 

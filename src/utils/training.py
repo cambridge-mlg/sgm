@@ -374,36 +374,12 @@ def train_loop(
         def eval_fn(state, x_batch, mask, rng):
             rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
-            batch_loss = make_batch_loss(model, agg=jnp.sum, train=False, mll=False)
+            batch_loss = make_batch_loss(model, jnp.sum, False)
 
             loss, (metrics, mask) = batch_loss(state.params, x_batch, mask, rng_local, state)
             loss, metrics, n_examples = jax.lax.psum((loss, metrics, mask), axis_name="device")
 
             return loss, metrics, n_examples
-
-        def mll_fn(state, x_batch, rng):
-            make_mll_estimator = getattr(
-                models, "make_" + config.model_name.lower() + "_mll_estimator"
-            )
-            mll_estimator = make_mll_estimator(model, False, **config.get("mll", {}))
-
-            if mll_estimator is None:
-                return None
-
-            @partial(jax.vmap, in_axes=(0, None), out_axes=0, axis_name="device")
-            def devicewise_mll_fn(x_batch, mask, rng):
-                rng_device = jax.random.fold_in(rng, jax.lax.axis_index("device"))
-
-                @partial(jax.vmap, in_axes=(0, None), out_axes=0, axis_name="batch")
-                def batchwise_mll_fn(x_batch, rng):
-                    rng_batch = jax.random.fold_in(rng, jax.lax.axis_index("batch"))
-                    return mll_estimator(x_batch, rng_batch, state.params)
-
-                mlls = batchwise_mll_fn(x_batch, rng_device)
-                return jnp.sum(mlls, axis=0), jnp.sum(mask, axis=0)
-
-            mlls, n_examples = devicewise_mll_fn(x_batch, mask, rng)
-            return jnp.sum(mlls, axis=0), jnp.sum(n_examples, axis=0)
 
         train_iter = input_utils.start_input_pipeline(train_ds, config.get("prefetch_to_device", 1))
 
@@ -589,11 +565,5 @@ def train_loop(
                 summary_fig = make_summary_plot(config, best_state, x, tmp_rng)
                 if summary_fig:
                     run.summary[f"summary_fig_{i}"] = wandb.Image(summary_fig)
-
-        if config.get("estimate_mll", False):
-            mll = mll_fn(state, summary_batch["image"], summary_rng)
-            if mll is not None:
-                print("mll_est", mll)
-                run.summary["mll_est"] = mll
 
     return best_state, state

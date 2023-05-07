@@ -7,7 +7,7 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.k `p_x_given_z`.
 """
 
-from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 from functools import partial
 
 import jax
@@ -139,7 +139,7 @@ def vae_loss_fn(
     rng: PRNGKey,
     β: float = 1.0,
     train: bool = True,
-    mll_fn: Optional[Callable[[Array, PRNGKey], float]] = None,
+    **kwargs
 ) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for VAE."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
@@ -153,26 +153,24 @@ def vae_loss_fn(
 
     loss, metrics = calculate_vae_elbo(x, q_Z_given_x, p_X_given_z, p_Z, β)
 
-    if mll_fn is not None:
-        mll = mll_fn(x, rng_local, params)
-        metrics["mll"] = mll
-
     return loss, metrics
 
 
-def make_vae_mll_estimator(
-    model: VAE,
+def create_vae_mll_estimator(
+    model: nn.Module,
+    params: nn.FrozenDict,
     train: bool = False,
     num_chains: int = 100,
     num_steps: int = 1000,
     step_size: float = 1e-1,
     num_leapfrog_steps: int = 2,
 ):
-    """Create an estimator for the marginal log likelihood of x under a VAE model.
+    """Create an estimator for the marginal log likelihood of X under a VAE model.
     This uses Hamiltonian Annealed Importance Sampling (HAIS) https://arxiv.org/abs/1205.1925.
 
     Args:
         model: The VAE model.
+        params: The parameters of the VAE model.
         train: Whether to run the model in training mode.
         num_chains: The number of chains to run.
         num_steps: The number of steps to run each chain for.
@@ -233,24 +231,12 @@ def make_vae_mll_estimator(
 # 1e-1      | 100        |  500      | 2              | 644.46     | 9.6s
 
 
-def make_vae_batch_loss(
-    model: nn.Module,
-    agg: Callable = jnp.mean,
-    train: bool = True,
-    mll: bool = False,
-    mll_kwargs: Optional[KwArgs] = None,
-):
-    if mll:
-        mll_fn = make_vae_mll_estimator(model, train=train, **(mll_kwargs or {}))
-    else:
-        mll_fn = None
-
+def make_vae_batch_loss(model, agg=jnp.mean, train=True):
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
-            vae_loss_fn, in_axes=(None, None, 0, None, None, None, None), axis_name="batch"  # type: ignore
-        )(model, params, x_batch, rng, state.β, train, mll_fn)
-
+            vae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
+        )(model, params, x_batch, rng, state.β, train)
         loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
 
