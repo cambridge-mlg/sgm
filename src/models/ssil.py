@@ -117,7 +117,7 @@ class SSIL(nn.Module):
         self,
         x: Array,
         rng: PRNGKey,
-        prototype: bool = False,
+        return_xhat: bool = False,
         sample_η_proto: bool = False,
         sample_η_recon: bool = False,
         sample_xrecon: bool = False,
@@ -134,7 +134,7 @@ class SSIL(nn.Module):
             η1 = approximate_mode(q_Η_given_x, 100, rng=η1_rng)
 
         xhat = transform_image(x, -η1)
-        if prototype:
+        if return_xhat:
             return xhat
 
         p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
@@ -151,7 +151,7 @@ class SSIL(nn.Module):
         if sample_xrecon:
             xrecon = p_Xrecon_given_xhat_and_η.sample(seed=xrecon_rng)
         else:
-            xrecon = p_Xrecon_given_xhat_and_η.mean()
+            xrecon = p_Xrecon_given_xhat_and_η.mode()
 
         return xrecon
 
@@ -193,7 +193,6 @@ def calculate_ssil_elbo(
     p_η_norm = jax.vmap(norm)(η_ps).mean()
 
     elbo = ll - β * η_kld - γ * (q_η_norm + p_η_norm) + q_H_entropy
-    # TODO: this entropy term should be using a distribtuion conditioned on a randomly transformed x.
 
     return -elbo, {
         "elbo": elbo,
@@ -253,13 +252,13 @@ def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
 
 
 def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rng, train=False):
-    def reconstruct(x, prototype=False, sample_η_proto=False, sample_η_recon=False):
+    def reconstruct(x, return_xhat=False, sample_η_proto=False, sample_η_recon=False):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
         return model.apply(
             {"params": state.params},
             x,
             rng,
-            prototype=prototype,
+            return_xhat=return_xhat,
             sample_η_proto=sample_η_proto,
             sample_η_recon=sample_η_recon,
             sample_xrecon=False,
