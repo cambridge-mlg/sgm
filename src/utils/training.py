@@ -533,19 +533,17 @@ def train_loop(
                     learning_rate = lr1 + lr2
                     extra_lr_logs = {"lr1": lr1, "lr2": lr2}
 
-                extra_σ_logs = {}
+                make_σ = lambda σ_: jax.nn.softplus(σ_).clip(min=model.σ_min).mean()
                 if config.model_name == "SSIL":
-                    σ_ = state.params["σ_"]
+                    σ_logs = {"σ": make_σ(state.params["σ_"])}
                 elif config.model_name == "VAE":
-                    σ_ = state.params["p_X_given_Z"]["σ_"]
+                    σ_logs = {"σ_vae": make_σ(state.params["p_X_given_Z"]["σ_"])}
                 elif config.model_name == "SSILVAE":
                     σ_ = state.params["σ_"]
-                    σ_vae = state.params["p_Xhat_given_Z"]["σ_"]
-                    σ_vae = jax.nn.softplus(σ_vae).clip(min=model.σ_min).mean()
-                    extra_σ_logs = {"σ_vae": σ_vae}
+                    σ_vae_ = state.params["p_Xhat_given_Z"]["σ_"]
+                    σ_logs = {"σ": make_σ(σ_), "σ_vae": make_σ(σ_vae_)}
                 else:
-                    σ_ = jnp.nan
-                σ = jax.nn.softplus(σ_).clip(min=model.σ_min).mean()
+                    σ_logs = {}
                 run.log(
                     {
                         "train/loss": loss,
@@ -554,8 +552,7 @@ def train_loop(
                         "γ": state.γ,
                         "learing_rate": learning_rate,
                         **extra_lr_logs,
-                        "σ": σ,
-                        **extra_σ_logs,
+                        **σ_logs,
                     },
                     step=step,
                 )
