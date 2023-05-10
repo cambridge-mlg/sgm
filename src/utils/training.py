@@ -1,4 +1,4 @@
-from typing import Any, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Mapping, Optional, Tuple, Union
 from functools import partial
 
 import wandb
@@ -11,7 +11,8 @@ from jax import random
 from jax import numpy as jnp
 
 import flax
-from flax.core.frozen_dict import FrozenDict
+from flax.core.frozen_dict import FrozenDict, freeze
+from flax import traverse_util
 from flax.training import train_state
 import flax.linen as nn
 
@@ -44,7 +45,7 @@ def _tree_concatenate(list_of_trees):
 
 
 class TrainState(train_state.TrainState):
-    """A Flax TrainState which also tracks model state (e.g. BatchNorm running averages) and schedules β/α."""
+    """A Flax TrainState which also tracks model state (e.g. BatchNorm running averages) and schedules α, β, γ."""
 
     model_state: FrozenDict
     α: float
@@ -106,6 +107,70 @@ def _get_value_for_step(step, val_or_schedule):
         return val_or_schedule
 
 
+def _make_split_schedule(split_step: Optional[int]):
+    def _split_schedule(schedule, schedule_half, const_value=0.0):
+        if schedule_half == "first":
+            return optax.join_schedules(
+                schedules=[
+                    schedule,
+                    optax.constant_schedule(const_value),
+                ],
+                boundaries=[split_step],
+            )
+        elif schedule_half == "second":
+            return optax.join_schedules(
+                schedules=[
+                    optax.constant_schedule(const_value),
+                    schedule,
+                ],
+                boundaries=[split_step],
+            )
+        return schedule
+
+    if split_step is not None:
+        return _split_schedule
+    else:
+        return lambda schedule, *args, **kwargs: schedule
+
+
+# the empty node is a struct.dataclass to be compatible with JAX.
+@traverse_util.struct.dataclass
+class _EmptyNode:
+    pass
+
+empty_node = _EmptyNode()
+
+
+def _path_aware_map(
+    f: Callable[[Tuple[str, ...], Any], Any], nested_dict: Mapping[str, Mapping[str, Any]]
+) -> Mapping[str, Mapping[str, Any]]:
+    """A map function that operates over nested dictionary structures while taking
+    the path to each leaf into account.
+
+    Example::
+
+      >>> import jax.numpy as jnp
+      >>> from flax import traverse_util
+      ...
+      >>> params = {'a': {'x': 10, 'y': 3}, 'b': {'x': 20}}
+      >>> f = lambda path, x: x + 5 if 'x' in path else -x
+      >>> traverse_util.path_aware_map(f, params)
+      {'a': {'x': 15, 'y': -3}, 'b': {'x': 25}}
+
+    Args:
+      f: A callable that takes in ``(path, value)`` arguments and maps them
+        to a new value. Here ``path`` is a tuple of strings.
+      nested_dict: A nested dictionary structure.
+
+    Returns:
+      A new nested dictionary structure with the mapped values.
+    """
+    flat = traverse_util.flatten_dict(nested_dict, keep_empty_nodes=True)
+    return traverse_util.unflatten_dict(
+        {k: f(k, v) if v is not empty_node else v for k, v in flat.items()}
+    )
+
+
 def setup_model(
     config: config_dict.ConfigDict,
     rng: PRNGKey,
@@ -144,38 +209,95 @@ def setup_model(
     model_state, params = variables_cpu.pop("params")
     del variables_cpu
 
-    if config.get("lr_schedule_name", None):
-        schedule = getattr(optax, config.lr_schedule_name)  # type: ignore
-        lr = schedule(init_value=config.learning_rate, **config.lr_schedule.to_dict())  # type: ignore
-    else:
-        lr = config.learning_rate
+    reset_step = config.get("reset_step", None)
+    maybe_split_schedule = _make_split_schedule(reset_step)
+    # check if config.optim_name is a single string, and if so create a single optimizer
+    if isinstance(config.optim_name, str):
+        optim = getattr(optax, config.optim_name)  # type: ignore
+        optim = optax.inject_hyperparams(optim)
+        # This ^ allows us to access the lr as opt_state.hyperparams['learning_rate'].
 
-    optim = getattr(optax, config.optim_name)  # type: ignore
-    optim = optax.inject_hyperparams(optim)
-    # This ^ allows us to access the lr as opt_state.hyperparams['learning_rate'].
+        if config.get("lr_schedule_name", None):
+            schedule = getattr(optax, config.lr_schedule_name)  # type: ignore
+            lr = schedule(init_value=config.learning_rate, **config.lr_schedule.to_dict())  # type: ignore
+        else:
+            lr = config.learning_rate
+
+        tx = optim(learning_rate=lr, **config.optim.to_dict())
+    # otherwise we assume it is a tuple of strings and create a multi optimizer
+    else:
+        assert len(config.partition_names) == 2
+        assert len(config.optim_name) == 2
+        assert len(config.optim) == 2
+        assert len(config.learning_rate) == 2
+        schedule_names = config.get("lr_schedule_name", ("constant_schedule", "constant_schedule"))
+        assert len(schedule_names) == 2
+        lr_schedules = config.get(
+            "lr_schedule", (config_dict.ConfigDict(), config_dict.ConfigDict())
+        )
+        assert len(lr_schedules) == 2
+        schedule_halfs = config.get("lr_schedule_halfs", ("first", "second"))
+        assert len(schedule_halfs) == 2
+
+        partition_optimizers = {}
+        for (
+            parition_name,
+            learning_rate,
+            schedule_name,
+            lr_schedule,
+            schedule_half,
+            optim_name,
+            optim_cfg,
+        ) in zip(
+            config.partition_names,
+            config.learning_rate,
+            schedule_names,
+            lr_schedules,
+            schedule_halfs,
+            config.optim_name,
+            config.optim,
+        ):
+            optim = getattr(optax, optim_name)  # type: ignore
+            optim = optax.inject_hyperparams(optim)
+
+            schedule = getattr(optax, schedule_name)
+            lr = schedule(init_value=learning_rate, **lr_schedule.to_dict())
+            lr = maybe_split_schedule(lr, schedule_half, 0.0)
+            partition_optimizers[parition_name] = optim(learning_rate=lr, **optim_cfg.to_dict())
+
+        parition_fn = config.partition_fn
+        param_partitions = freeze(_path_aware_map(parition_fn, params))
+
+        tx = optax.multi_transform(
+            partition_optimizers,
+            param_partitions,
+        )
 
     if config.get("α_schedule_name", None):
         schedule = getattr(optax, config.α_schedule_name)  # type: ignore
         α = schedule(init_value=config.α, **config.α_schedule.to_dict())  # type: ignore
+        α = maybe_split_schedule(α, config.get("α_schedule_half", None), 1.0)
     else:
         α = config.α
 
     if config.get("β_schedule_name", None):
         schedule = getattr(optax, config.β_schedule_name)  # type: ignore
         β = schedule(init_value=config.β, **config.β_schedule.to_dict())  # type: ignore
+        β = maybe_split_schedule(β, config.get("β_schedule_half", None), 1.0)
     else:
         β = config.β
 
     if config.get("γ_schedule_name", None):
         schedule = getattr(optax, config.γ_schedule_name)  # type: ignore
         γ = schedule(init_value=config.γ, **config.γ_schedule.to_dict())  # type: ignore
+        γ = maybe_split_schedule(γ, config.get("γ_schedule_half", None), 1.0)
     else:
         γ = config.γ
 
     state = TrainState.create(
         apply_fn=model.apply,
         params=params,
-        tx=optim(learning_rate=lr, **config.optim.to_dict()),  # type: ignore
+        tx=tx,  # type: ignore
         model_state=model_state,
         α_val_or_schedule=α,
         β_val_or_schedule=β,
@@ -398,11 +520,29 @@ def train_loop(
             )
 
             if step % config.get("log_every", 1) == 0:  # type: ignore
-                learning_rate = state.opt_state.hyperparams["learning_rate"]
+                if not isinstance(state.opt_state, optax.MultiTransformState):
+                    learning_rate = state.opt_state.hyperparams["learning_rate"]
+                    extra_lr_logs = {}
+                else:
+                    lr1 = state.opt_state.inner_states[
+                        config.partition_names[0]
+                    ].inner_state.hyperparams["learning_rate"]
+                    lr2 = state.opt_state.inner_states[
+                        config.partition_names[1]
+                    ].inner_state.hyperparams["learning_rate"]
+                    learning_rate = lr1 + lr2
+                    extra_lr_logs = {"lr1": lr1, "lr2": lr2}
+
+                extra_σ_logs = {}
                 if config.model_name == "SSIL":
                     σ_ = state.params["σ_"]
                 elif config.model_name == "VAE":
                     σ_ = state.params["p_X_given_Z"]["σ_"]
+                elif config.model_name == "SSILVAE":
+                    σ_ = state.params["σ_"]
+                    σ_vae = state.params["p_Xhat_given_Z"]["σ_"]
+                    σ_vae = jax.nn.softplus(σ_vae).clip(min=model.σ_min).mean()
+                    extra_σ_logs = {"σ_vae": σ_vae}
                 else:
                     σ_ = jnp.nan
                 σ = jax.nn.softplus(σ_).clip(min=model.σ_min).mean()
@@ -413,7 +553,9 @@ def train_loop(
                         "β": state.β,
                         "γ": state.γ,
                         "learing_rate": learning_rate,
+                        **extra_lr_logs,
                         "σ": σ,
+                        **extra_σ_logs,
                     },
                     step=step,
                 )
@@ -559,7 +701,9 @@ def train_loop(
         summary_batch = test_batch_0 or val_batch_0
 
         if summary_batch:
-            make_summary_plot = getattr(models, "make_" + config.model_name.lower() + "_summary_plot")
+            make_summary_plot = getattr(
+                models, "make_" + config.model_name.lower() + "_summary_plot"
+            )
             for i, x in enumerate(summary_batch["image"][0, list(range(5)) + [9, 10]]):
                 tmp_rng, summary_rng = jax.random.split(summary_rng)
                 summary_fig = make_summary_plot(config, best_state, x, tmp_rng)

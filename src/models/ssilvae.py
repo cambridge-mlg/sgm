@@ -7,7 +7,7 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.k `p_x_given_z`.
 """
 
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional, Sequence, Tuple
 from functools import partial
 
 import jax
@@ -17,15 +17,17 @@ from chex import Array
 from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from scipy.stats import gaussian_kde
 
-from src.transformations.affine import transform_image
+from src.transformations import transform_image
 from src.models.common import (
     Encoder,
     Decoder,
-    DenseEncoder,
-    Bijector,
+    Flow,
     INV_SOFTPLUS_1,
-    make_η_bounded,
+    approximate_mode,
 )
 import src.utils.plotting as plot_utils
 
@@ -40,324 +42,408 @@ class SSILVAE(nn.Module):
     Η_given_X: Optional[KwArgs] = None
     Z_given_Xhat: Optional[KwArgs] = None
     Xhat_given_Z: Optional[KwArgs] = None
-    bounds: Tuple[float, float, float, float, float, float, float] = (
-        0.25,
-        0.25,
-        jnp.pi,
-        0.25,
-        0.25,
-        jnp.pi / 6,
-        jnp.pi / 6,
-    )
+    bounds: Optional[Sequence[float]] = None
+    offset: Optional[Sequence[float]] = None
+    σ_min: float = 1e-2
 
     def setup(self):
-        self.bounds_array = jnp.array(self.bounds)
+        self.bounds_array = jnp.array(self.bounds) if self.bounds else None
+        self.offset_array = jnp.array(self.offset) if self.offset else None
         # p(Η|Xhat)
-        self.p_Η_given_Xhat_base = DenseEncoder(
-            latent_dim=7, **(self.Η_given_Xhat or {}).get("base", {})
+        self.p_Η_given_Xhat = Flow(
+            **(self.Η_given_Xhat or {}),
+            bounds_array=self.bounds_array,
+            offset_array=self.offset_array,
+            event_shape=self.bounds_array.shape,
         )
-        self.p_Η_given_Xhat_bij = Bijector(**(self.Η_given_Xhat or {}).get("bijector", {}))
         # q(Η|X)
-        self.q_Η_given_X_base = DenseEncoder(latent_dim=7, **(self.Η_given_X or {}).get("base", {}))
-        self.q_Η_given_X_bij = Bijector(**(self.Η_given_X or {}).get("bijector", {}))
+        self.q_Η_given_X = Flow(
+            **(self.Η_given_X or {}),
+            bounds_array=self.bounds_array,
+            offset_array=self.offset_array,
+            event_shape=self.bounds_array.shape,
+        )
         self.σ = jax.nn.softplus(
             self.param(
                 "σ_",
                 init.constant(INV_SOFTPLUS_1),
                 # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
-                (),
+                self.image_shape,
             )
-        )
+        ).clip(min=self.σ_min)
         # p(Z)
-        self.p_Z = distrax.Normal(
-            loc=self.param("prior_μ", init.zeros, (self.latent_dim,)),
-            scale=jax.nn.softplus(
-                self.param(
-                    "prior_σ_",
-                    init.constant(INV_SOFTPLUS_1),
-                    # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
-                    (self.latent_dim,),
-                )
-            ),  # type: ignore
+        self.p_Z = distrax.Independent(
+            distrax.Normal(
+                loc=self.param("prior_μ", init.zeros, (self.latent_dim,)),
+                scale=jax.nn.softplus(
+                    self.param(
+                        "prior_σ_",
+                        init.constant(INV_SOFTPLUS_1),
+                        # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
+                        (self.latent_dim,),
+                    )
+                ).clip(
+                    min=self.σ_min
+                ),  # type: ignore
+            ),
+            reinterpreted_batch_ndims=1,
         )
         # q(Z|Xhat)
-        self.q_Z_given_Xhat = Encoder(latent_dim=self.latent_dim, **(self.Z_given_Xhat or {}))
+        self.q_Z_given_Xhat = Encoder(
+            latent_dim=self.latent_dim, **(self.Z_given_Xhat or {})
+        )
         # p(Xhat|Z)
-        self.p_Xhat_given_Z = Decoder(image_shape=self.image_shape, **(self.Xhat_given_Z or {}))
+        self.p_Xhat_given_Z = Decoder(
+            image_shape=self.image_shape, **(self.Xhat_given_Z or {})
+        )
 
-    def __call__(self, x: Array, rng: PRNGKey) -> Tuple[distrax.Distribution, ...]:
-        η_rng, η_unif_rng, η_tot_rng = random.split(rng, 3)
+    def __call__(
+        self, x: Array, rng: PRNGKey, α: float = 1.0, train: bool = True
+    ) -> Tuple[distrax.Distribution, ...]:
+        η_rng, η_unif_rng, η_tot_rng, z_rng = random.split(rng, 4)
 
-        Η_uniform = distrax.Uniform(low=-self.bounds_array, high=self.bounds_array)
+        Η_uniform = distrax.Uniform(
+            low=-α * self.bounds_array + self.offset_array,
+            high=α * self.bounds_array + self.offset_array,
+        )
         η_uniform = Η_uniform.sample(seed=η_unif_rng)
 
         x_uniform = transform_image(x, η_uniform)
 
-        q_Η_given_x_uniform = distrax.Transformed(
-            self.q_Η_given_X_base(x_uniform), self.q_Η_given_X_bij(x_uniform)
-        )
+        q_Η_given_x_uniform = self.q_Η_given_X(x_uniform, train=train)
         η_tot = q_Η_given_x_uniform.sample(seed=η_tot_rng)
-        η_tot = make_η_bounded(η_tot, self.bounds_array)
 
         xhat = transform_image(x_uniform, -η_tot)
-        # TODO: should this ^ be a sample from a distribution?
 
-        p_Η_given_xhat = distrax.Transformed(
-            self.p_Η_given_Xhat_base(xhat), self.p_Η_given_Xhat_bij(xhat)
-        )
+        p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
+        η_ = p_Η_given_xhat.sample(seed=η_rng)
 
-        x_ = jnp.sum(xhat) * 0 + x
-        # TODO: this ^ is a hack to get jaxprs to match up. It isn't clear why this is necessary.
-        # But without the hack the jaxpr for the p_Η_given_Z_bij is different from the jaxpr for the
-        # q_Η_given_X_bij, where the difference comes from registers being on device0 vs not being
-        # commited to a device. This is a problem because the take the KLD between the p_Η_given_Z
-        # and the q_Η_given_x, the jaxprs must match up.
-
-        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x_), self.q_Η_given_X_bij(x_))
+        q_Η_given_x = self.q_Η_given_X(x, train=train)
         η = q_Η_given_x.sample(seed=η_rng)
-        η = make_η_bounded(η, self.bounds_array)
 
-        p_X_given_xhat_and_η = distrax.Normal(transform_image(xhat, η), self.σ)
+        p_X_given_xhat_and_η = distrax.Independent(
+            distrax.Normal(transform_image(xhat, η), self.σ),
+            reinterpreted_batch_ndims=len(x.shape),
+        )
+        # TODO: this requires applying transform_image twice to the same input, but we could do it as a single call to two different inputs.
 
-        q_Z_given_xhat = self.q_Z_given_Xhat(xhat)
-        z = q_Z_given_xhat.sample(seed=rng)
+        q_Z_given_xhat = self.q_Z_given_Xhat(lax.stop_gradient(xhat), train=train)
+        z = q_Z_given_xhat.sample(seed=z_rng)
 
-        p_Xhat_given_z = self.p_Xhat_given_Z(z)
+        p_Xhat_given_z = self.p_Xhat_given_Z(z, train=train)
 
         return (
-            xhat,
+            η,
+            η_,
+            z,
             p_X_given_xhat_and_η,
             p_Η_given_xhat,
-            q_Η_given_x,
-            q_Z_given_xhat,
             p_Xhat_given_z,
             self.p_Z,
+            q_Η_given_x,
+            q_Z_given_xhat,
         )
 
     def sample(
         self,
         rng: PRNGKey,
-        prototype: bool = False,
-        sample_xhat: bool = False,
-        sample_η: bool = False,
+        return_xhat: bool = False,
+        sample_xhat: bool = True,
+        sample_η: bool = True,
         sample_x: bool = False,
+        train: bool = True,
     ) -> Array:
-        z_rng, xhat_rng, η_rng, x_rng = random.split(rng, 4)
+        z_rng, xhat_rng, η_rng = random.split(rng, 3)
         z = self.p_Z.sample(seed=z_rng)
 
-        p_Xhat_given_z = self.p_Xhat_given_Z(z)
-        xhat = p_Xhat_given_z.sample(seed=xhat_rng) if sample_xhat else p_Xhat_given_z.mean()
-        if prototype:
+        p_Xhat_given_z = self.p_Xhat_given_Z(z, train=train)
+        if sample_xhat:
+            xhat = p_Xhat_given_z.sample(seed=xhat_rng)
+        else:
+            xhat = p_Xhat_given_z.mode()
+
+        if return_xhat:
             return xhat
 
-        p_Η_given_xhat = distrax.Transformed(
-            self.p_Η_given_Xhat_base(xhat), self.p_Η_given_Xhat_bij(xhat)
-        )
-        η = p_Η_given_xhat.sample(seed=η_rng) if sample_η else p_Η_given_xhat.mean()
-        η = make_η_bounded(η, self.bounds_array)
+        p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
+        if sample_η:
+            η = p_Η_given_xhat.sample(seed=η_rng)
+        else:
+            η = approximate_mode(p_Η_given_xhat, 100, rng=η_rng)
 
-        p_X_given_xhat_and_η = distrax.Normal(transform_image(xhat, η), self.σ)
-        x = p_X_given_xhat_and_η.sample(seed=x_rng) if sample_x else p_X_given_xhat_and_η.mean()
+        p_X_given_xhat_and_η = distrax.Independent(
+            distrax.Normal(transform_image(xhat, η), self.σ),
+            reinterpreted_batch_ndims=len(xhat.shape),
+        )
+        if sample_x:
+            x = p_X_given_xhat_and_η.sample(seed=rng)
+        else:
+            x = p_X_given_xhat_and_η.mode()
+
         return x
 
     def reconstruct(
         self,
         x: Array,
         rng: PRNGKey,
-        prototype: bool = False,
-        sample_η: bool = False,
+        return_xhat: bool = False,
+        reconstruct_xhat: bool = True,
+        sample_η_proto: bool = False,
+        sample_η_recon: bool = False,
         sample_z: bool = False,
-        sample_xhat: bool = False,
         sample_xrecon: bool = False,
+        sample_xhat: bool = True,
+        α: float = 1.0,
+        train: bool = True,
     ) -> Array:
-        η1_rng, z_rng, xhat_rng, η2_rng, xrecon_rng = random.split(rng, 5)
+        η1_rng, η2_rng, xrecon_rng, xhat_rng, z_rng = random.split(rng, 5)
 
-        q_Η_given_x = distrax.Transformed(self.q_Η_given_X_base(x), self.q_Η_given_X_bij(x))
-        η1 = q_Η_given_x.sample(seed=η1_rng) if sample_η else q_Η_given_x.mean()
-        η1 = make_η_bounded(η1, self.bounds_array)
+        q_Η_given_x = self.q_Η_given_X(x, train=train)
+        # TODO: should this be a randomly transformed x?
+        if sample_η_proto:
+            η1 = q_Η_given_x.sample(seed=η1_rng)
+        else:
+            η1 = approximate_mode(q_Η_given_x, 100, rng=η1_rng)
 
-        xhat = transform_image(x, -η1)
+        xhat_ = transform_image(x, -η1)
+        if reconstruct_xhat:
+            q_Z_given_xhat = self.q_Z_given_Xhat(xhat_, train=train)
+            if sample_z:
+                z = q_Z_given_xhat.sample(seed=z_rng)
+            else:
+                z = q_Z_given_xhat.mode()
 
-        q_Z_given_xhat = self.q_Z_given_Xhat(xhat)
-        z = q_Z_given_xhat.sample(seed=z_rng) if sample_z else q_Z_given_xhat.mean()
+            p_Xhat_given_z = self.p_Xhat_given_Z(z, train=train)
+            if sample_xhat:
+                xhat = p_Xhat_given_z.sample(seed=xhat_rng)
+            else:
+                xhat = p_Xhat_given_z.mode()
+        else:
+            xhat = xhat_
 
-        p_Xhat_given_z = self.p_Xhat_given_Z(z)
-        xhat_recon = p_Xhat_given_z.sample(seed=xhat_rng) if sample_xhat else p_Xhat_given_z.mean()
-        if prototype:
-            return xhat_recon
+        if return_xhat:
+            return xhat
 
-        η2 = q_Η_given_x.sample(seed=η2_rng) if sample_η else η1
-        η2 = make_η_bounded(η2, self.bounds_array)
+        p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
+        # TODO: should we use a randomly transformed x here (and in the ELBO)? I.e., single sample monte carlo estimate of the invariant function.
+        if sample_η_recon:
+            η2 = p_Η_given_xhat.sample(seed=η2_rng)
+        else:
+            η2 = approximate_mode(p_Η_given_xhat, 100, rng=η2_rng)
 
-        p_Xrecon_given_xhat_and_η = distrax.Normal(transform_image(xhat_recon, η2), self.σ)
-        x_recon = (
-            p_Xrecon_given_xhat_and_η.sample(seed=xrecon_rng)
-            if sample_xrecon
-            else p_Xrecon_given_xhat_and_η.mean()
+        p_Xrecon_given_xhat_and_η = distrax.Independent(
+            distrax.Normal(transform_image(xhat, η2), self.σ),
+            reinterpreted_batch_ndims=len(x.shape),
         )
-        return x_recon
+        if sample_xrecon:
+            xrecon = p_Xrecon_given_xhat_and_η.sample(seed=xrecon_rng)
+        else:
+            xrecon = p_Xrecon_given_xhat_and_η.mean()
+
+        return xrecon
 
 
 def calculate_ssilvae_elbo(
     x: Array,
-    xhat: Array,
+    η: Array,
     p_X_given_xhat_and_η: distrax.Distribution,
     p_Η_given_xhat: distrax.Distribution,
-    q_Η_given_x: distrax.Distribution,
-    q_Z_given_xhat: distrax.Distribution,
     p_Xhat_given_z: distrax.Distribution,
     p_Z: distrax.Distribution,
+    q_Η_given_x: distrax.Distribution,
+    q_Z_given_xhat: distrax.Distribution,
+    rng: PRNGKey,
+    bounds: Array,
+    offset: Array,
     β: float = 1.0,
+    γ: float = 1.0,
+    n: int = 100,
+    # TODO: more? less?
+    ε: float = 1e-6,
 ) -> Tuple[float, Mapping[str, float]]:
-    ll = p_X_given_xhat_and_η.log_prob(x).sum()
-    η_kld = q_Η_given_x.kl_divergence(p_Η_given_xhat).sum()
+    ll_unorm = p_X_given_xhat_and_η.log_prob(x)
+    # Normalise by the number of channels. Maybe we should normalise by the number of pixels instead?
+    ll = ll_unorm / x.shape[-1]
 
-    def entropy(dist: distrax.Distribution, n: int) -> float:
-        xs = dist.sample(seed=random.PRNGKey(0), sample_shape=(n,))
-        log_probs = jax.vmap(lambda x: dist.log_prob(x).sum())(xs)
-        return -jnp.mean(log_probs)
+    η_qs, q_Η_log_probs = q_Η_given_x.sample_and_log_prob(seed=rng, sample_shape=(n,))
+    q_H_entropy = -jnp.mean(q_Η_log_probs, axis=0)
 
-    entropy_term = entropy(q_Η_given_x, 1000)
+    p_Η_log_probs = jax.vmap(p_Η_given_xhat.log_prob)(
+        η_qs.clip(min=(1 - ε) * (-bounds) + offset, max=(1 - ε) * (bounds) + offset)
+    )
+    p_q_H_cross_entropy = -jnp.mean(p_Η_log_probs, axis=0)
 
-    ce_term = p_Xhat_given_z.log_prob(xhat).sum()
-    # TODO: replace with multiple sample version
-    z_kld = q_Z_given_xhat.kl_divergence(p_Z).sum()
-    # TODO: add stop gradient tp z_kld so that learning the VAE doesn't mess with learning invariances?
+    η_kld = p_q_H_cross_entropy - q_H_entropy
 
-    elbo = ll - η_kld + entropy_term + ce_term - β * z_kld
+    def norm(η: Array) -> float:
+        return jnp.sum(η**2) / len(η)
+
+    q_η_norm = jax.vmap(norm)(η_qs).mean()
+
+    η_ps = p_Η_given_xhat.sample(seed=rng, sample_shape=(n,))
+    p_η_norm = jax.vmap(norm)(η_ps).mean()
+
+    z_kld = q_Z_given_xhat.kl_divergence(p_Z)
+    xhat_ll_unorm = p_Xhat_given_z.log_prob(lax.stop_gradient(transform_image(x, -η)))
+    xhat_ll = xhat_ll_unorm / x.shape[-1]
+
+    elbo = ll - η_kld - γ * (q_η_norm + p_η_norm) + q_H_entropy + xhat_ll - β * z_kld
 
     return -elbo, {
         "elbo": elbo,
         "ll": ll,
+        "ll_unorm": ll_unorm,
         "η_kld": η_kld,
-        "entropy_term": entropy_term,
-        "ce_term": ce_term,
+        "q_η_ce": q_η_norm,
+        "p_η_ce": p_η_norm,
+        "q_H_ent": q_H_entropy,
+        "p_q_H_cent": p_q_H_cross_entropy,
+        "xhat_ll": xhat_ll,
+        "xhat_ll_unorm": xhat_ll_unorm,
         "z_kld": z_kld,
     }
 
 
-def ssilvae_loss_fn(
-    model: nn.Module, params: nn.FrozenDict, x: Array, rng: PRNGKey, β: float = 1.0
+def ssil_loss_fn(
+    model: nn.Module,
+    params: nn.FrozenDict,
+    x: Array,
+    rng: PRNGKey,
+    α: float = 1.0,
+    β: float = 1.0,
+    γ: float = 1.0,
+    train: bool = True,
 ) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for Contrastive Invariance Learner."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))
+    rng_model, rng_loss, rng_dropout = random.split(rng_local, 3)
     (
-        xhat,
+        η,
+        _,
+        _,
         p_X_given_xhat_and_η,
         p_Η_given_xhat,
-        q_Η_given_x,
-        q_Z_given_xhat,
         p_Xhat_given_z,
         p_Z,
+        q_Η_given_x,
+        q_Z_given_xhat,
     ) = model.apply(
-        {"params": params},
-        x,
-        rng_local,
+        {"params": params}, x, rng_model, α, train=train, rngs={"dropout": rng_dropout}
     )
 
     loss, metrics = calculate_ssilvae_elbo(
         x,
-        xhat,
+        η,
         p_X_given_xhat_and_η,
         p_Η_given_xhat,
-        q_Η_given_x,
-        q_Z_given_xhat,
         p_Xhat_given_z,
         p_Z,
+        q_Η_given_x,
+        q_Z_given_xhat,
+        rng_loss,
+        jnp.array(model.bounds),
+        jnp.array(model.offset),
         β,
+        γ,
     )
 
     return loss, metrics
 
 
-def make_ssilvae_batch_loss(model, agg=jnp.mean):
-    @jax.jit
+def make_ssilvae_batch_loss(model, agg=jnp.mean, train=True):
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
-            ssilvae_loss_fn, in_axes=(None, None, 0, None, None), axis_name="batch"  # type: ignore
-        )(model, params, x_batch, rng, state.β)
-        loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
+            ssil_loss_fn, in_axes=(None, None, 0, None, None, None, None, None), axis_name="batch"  # type: ignore
+        )(model, params, x_batch, rng, state.α, state.β, state.γ, train)
+        loss, metrics, mask = jax.tree_util.tree_map(
+            partial(agg, axis=0), (loss, metrics, mask)
+        )
         return loss, (metrics, mask)
 
     return batch_loss
 
 
-def make_ssilvae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng):
-    @partial(
-        jax.jit,
-        static_argnames=(
-            "prototype",
-            "sample_η",
-            "sample_z",
-            "sample_xhat",
-            "sample_xrecon",
-        ),
-    )
-    def reconstruct(x, prototype=False):
+def make_ssilvae_reconstruction_plot(
+    x, n_visualize, model, state, visualisation_rng, train=False
+):
+    def reconstruct(x, return_xhat, reconstruct_xhat):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
         return model.apply(
             {"params": state.params},
             x,
             rng,
-            prototype=prototype,
-            sample_η=True,
+            return_xhat=return_xhat,
+            reconstruct_xhat=reconstruct_xhat,
+            sample_η_proto=False,
+            sample_η_recon=False,
             sample_z=False,
-            sample_xhat=False,
             sample_xrecon=False,
+            sample_xhat=False,
+            α=state.α,
+            train=train,
             method=model.reconstruct,
         )
 
-    x_proto = jax.vmap(reconstruct, axis_name="image", in_axes=(0, None))(x, True)  # type: ignore
+    x_proto = jax.vmap(
+        reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
+    )(x, True, False)
 
-    x_recon = jax.vmap(reconstruct, axis_name="image", in_axes=(0, None))(x, False)  # type: ignore
+    x_recon = jax.vmap(
+        reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
+    )(x, False, False)
+
+    x_proto_vae = jax.vmap(
+        reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
+    )(x, True, True)
 
     recon_fig = plot_utils.plot_img_array(
-        jnp.concatenate((x, x_proto, x_recon), axis=0),
+        jnp.concatenate((x, x_proto, x_recon, x_proto_vae), axis=0),
         ncol=n_visualize,  # type: ignore
         pad_value=1,
         padding=1,
-        title="Original | Prototype | Reconstruction",
+        title="Orig | Proto | Recon | Proto (recon)",
     )
 
     return recon_fig
 
 
 def make_ssilvae_sampling_plot(n_visualize, model, state, visualisation_rng):
-    @partial(
-        jax.jit,
-        static_argnames=(
-            "prototype",
-            "sample_xhat",
-            "sample_η",
-            "sample_x",
-        ),
-    )
-    def sample(rng, prototype=False):
+    def sample(rng, return_xhat, sample_xhat):
         return model.apply(
             {"params": state.params},
             rng,
-            prototype=prototype,
-            sample_xhat=True,
+            return_xhat=return_xhat,
+            sample_xhat=sample_xhat,
             sample_η=True,
-            sample_x=True,
+            sample_x=False,
+            train=True,
             method=model.sample,
         )
 
-    sampled_protos = jax.vmap(sample, in_axes=(0, None))(  # type: ignore
-        jax.random.split(visualisation_rng, n_visualize), True  # type: ignore
+    sampled_xhats = jax.vmap(sample, in_axes=(0, None, None))(  # type: ignore
+        jax.random.split(visualisation_rng, n_visualize), True, True  # type: ignore
     )
 
-    sampled_data = jax.vmap(sample, in_axes=(0, None))(  # type: ignore
-        jax.random.split(visualisation_rng, n_visualize), False  # type: ignore
+    sampled_xs = jax.vmap(sample, in_axes=(0, None, None))(  # type: ignore
+        jax.random.split(visualisation_rng, n_visualize), False, True  # type: ignore
+    )
+
+    sampled_xs_mode = jax.vmap(sample, in_axes=(0, None, None))(  # type: ignore
+        jax.random.split(visualisation_rng, n_visualize), False, False  # type: ignore
     )
 
     sample_fig = plot_utils.plot_img_array(
-        jnp.concatenate((sampled_protos, sampled_data), axis=0),
+        jnp.concatenate((sampled_xhats, sampled_xs, sampled_xs_mode), axis=0),
         ncol=n_visualize,  # type: ignore
         pad_value=1,
         padding=1,
-        title="Sampled prototypes | Sampled data",
+        title="Proto | X | X (proto mode)",
     )
     return sample_fig
+
+
+def make_ssilvae_summary_plot(config, final_state, x, rng):
+    """Make a summary plot of the model."""
+    return None

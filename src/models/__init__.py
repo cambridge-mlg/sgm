@@ -18,12 +18,13 @@ from src.models.ssil import (
     make_ssil_sampling_plot,
     make_ssil_summary_plot,
 )
-# from src.models.ssilvae import (
-#     SSILVAE,
-#     make_ssilvae_batch_loss,
-#     make_ssilvae_reconstruction_plot,
-#     make_ssilvae_sampling_plot,
-# )
+from src.models.ssilvae import (
+    SSILVAE,
+    make_ssilvae_batch_loss,
+    make_ssilvae_reconstruction_plot,
+    make_ssilvae_sampling_plot,
+    make_ssilvae_summary_plot,
+)
 
 __all__ = [
     # "LIVAE",
@@ -40,8 +41,9 @@ __all__ = [
     "make_ssil_reconstruction_plot",
     "make_ssil_sampling_plot",
     "make_ssil_summary_plot",
-    # "SSILVAE",
-    # "make_ssilvae_batch_loss",
-    # "make_ssilvae_reconstruction_plot",
-    # "make_ssilvae_sampling_plot",
+    "SSILVAE",
+    "make_ssilvae_batch_loss",
+    "make_ssilvae_reconstruction_plot",
+    "make_ssilvae_sampling_plot",
+    "make_ssilvae_summary_plot",
 ]
