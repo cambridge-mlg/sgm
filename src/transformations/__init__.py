@@ -43,13 +43,13 @@ def transform_image(
         A transformed image of same shape as the input.
     """
     assert_rank(image, 3)
-    assert_shape(η, (6,))
+    assert_shape(η, (5,))
 
     # Apply affine transformations
     η_affine = jnp.concatenate((η[:5], jnp.zeros(2, dtype=η.dtype)))
     image = affine_transform_image(image, η_affine, fill_mode=fill_mode, fill_value=fill_value)
 
-    # Apply color transformations
-    image = hue_transform_image(image, η[5:6])
+    # # Apply color transformations
+    # image = hue_transform_image(image, η[5:6])
 
     return image
