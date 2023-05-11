@@ -4,7 +4,7 @@ from itertools import product
 
 ################################### Configs #####################################
 
-EXPERIMENT_NAME = "vae_angle_num_trn_sweep"
+EXPERIMENT_NAME = "vae_angle_num_trn_sweep_expanded"
 JOBS_FOLDER = f"jobs"
 DELETE_PREV_FOLDER = True
 SCRIPT = "train.py"
@@ -12,13 +12,10 @@ SCRIPT = "train.py"
 CONFIG_NAMES = [
     "vae_mnist",
 ]
-ANGLES = [0, 15, 30, 45, 60, 75, 90, 180]
-NUM_TRNS = [10000, 20000, 30000, 40000, 50000]
-RANDOM_SEEDS = [
-    0,
-    1,
-    2,
-]
+ANGLES = [0, 15, 30, 45, 60, 75, 90, 135, 180]
+NUM_TRNS = [1000, 3000, 10000, 30000, 50000]
+TOTAL_STEPS = [3501, 5001, 7501, 15001]
+RANDOM_SEEDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 FLAGS_TO_ADD = ["--wandb_tags=angle_sweep,num_trn_sweep"]
 
 # NOTE: if you add configs you probably want to specify the results_folder more down below
@@ -26,7 +23,7 @@ FLAGS_TO_ADD = ["--wandb_tags=angle_sweep,num_trn_sweep"]
 ################################################################################
 
 times = {
-    "vae_mnist": "00:30:00",
+    "vae_mnist": "00:35:00",
 }
 
 jobsfolder = Path(f"./{JOBS_FOLDER}")
@@ -43,7 +40,7 @@ for config_name in CONFIG_NAMES:
     jobsfile.touch()
 
     with open(jobsfile, "w") as f:
-        for angle, num_trn, random_seed in product(ANGLES, NUM_TRNS, RANDOM_SEEDS):
+        for angle, num_trn, total_steps, random_seed in product(ANGLES, NUM_TRNS, TOTAL_STEPS, RANDOM_SEEDS):
             for flags_to_add in FLAGS_TO_ADD:
                 unique_hash = md5("".join(sorted(flags_to_add)).strip().encode()).hexdigest()
                 # if Path(f'{RESULTS_FOLDER}/{model_name}/{weight_decay}/{random_seed}/{num_epochs}/{loss_hessian_model}/{unique_hash}/0_done.txt').expanduser().exists():
@@ -52,6 +49,7 @@ for config_name in CONFIG_NAMES:
                 line = (
                     f"{SCRIPT} "
                     f"--config configs/{config_name}.py:{angle},{num_trn} "
+                    f"--config.total_steps {total_steps} "
                     f"--config.seed {random_seed} "
                     # f'--results_folder {RESULTS_FOLDER}/{model_name}/{weight_decay}/{random_seed}/{num_epochs}/{loss_hessian_model}/{unique_hash} '
                     f" {flags_to_add}"

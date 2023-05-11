@@ -17,9 +17,9 @@ def get_config(params) -> config_dict.ConfigDict:
     config.shuffle_buffer_size = 50_000
     config.repeat_after_batch = True  # NOTE: ordering of PP and repeat is important!
     config.train_split = f'train[{num_val}:{num_val+num_trn}]'
-    config.pp_train = f'value_range(-1, 1)|random_rotate({-angle}, {angle}, fill_value=-1)|keep(["image"])'
+    config.pp_train = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image"])'
     config.val_split = f'train[:{num_val}]'
-    config.pp_eval = f'value_range(-1, 1)|random_rotate({-angle}, {angle}, fill_value=-1)|keep(["image", "label"])'
+    config.pp_eval = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image", "label"])'
 
     # Model config
     config.model_name = 'VAE'
