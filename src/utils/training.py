@@ -107,36 +107,11 @@ def _get_value_for_step(step, val_or_schedule):
         return val_or_schedule
 
 
-def _make_split_schedule(split_step: Optional[int]):
-    def _split_schedule(schedule, schedule_half, const_value=0.0):
-        if schedule_half == "first":
-            return optax.join_schedules(
-                schedules=[
-                    schedule,
-                    optax.constant_schedule(const_value),
-                ],
-                boundaries=[split_step],
-            )
-        elif schedule_half == "second":
-            return optax.join_schedules(
-                schedules=[
-                    optax.constant_schedule(const_value),
-                    schedule,
-                ],
-                boundaries=[split_step],
-            )
-        return schedule
-
-    if split_step is not None:
-        return _split_schedule
-    else:
-        return lambda schedule, *args, **kwargs: schedule
-
-
 # the empty node is a struct.dataclass to be compatible with JAX.
 @traverse_util.struct.dataclass
 class _EmptyNode:
     pass
+
 
 empty_node = _EmptyNode()
 
@@ -175,6 +150,8 @@ def setup_model(
     config: config_dict.ConfigDict,
     rng: PRNGKey,
     train_ds: tf.data.Dataset,
+    half: str = "first",
+    current_state: Optional[TrainState] = None,
 ) -> Tuple[nn.Module, TrainState]:
     """Helper which returns the model object and the corresponding initialised train state for a given config."""
     _write_note("Initializing model...")
@@ -198,19 +175,20 @@ def setup_model(
         variables = model.init(init_rng, dummy_input, fwd_rng, train=False)
         return variables
 
-    rng, rng_init = jax.random.split(rng)
-    variables_cpu = init(rng_init)
+    if current_state is None:
+        rng, rng_init = jax.random.split(rng)
+        variables_cpu = init(rng_init)
 
-    if jax.process_index() == 0:
-        # num_params = sum(p.size for p in jax.tree_flatten(params_cpu)[0])
-        parameter_overview.log_parameter_overview(variables_cpu)
-        # writer.write_scalars(step=0, scalars={'num_params': num_params})
+        if jax.process_index() == 0:
+            # num_params = sum(p.size for p in jax.tree_flatten(params_cpu)[0])
+            parameter_overview.log_parameter_overview(variables_cpu)
+            # writer.write_scalars(step=0, scalars={'num_params': num_params})
 
-    model_state, params = variables_cpu.pop("params")
-    del variables_cpu
+        model_state, params = variables_cpu.pop("params")
+        del variables_cpu
+    else:
+        model_state, params = current_state.model_state, current_state.params
 
-    reset_step = config.get("reset_step", None)
-    maybe_split_schedule = _make_split_schedule(reset_step)
     # check if config.optim_name is a single string, and if so create a single optimizer
     if isinstance(config.optim_name, str):
         optim = getattr(optax, config.optim_name)  # type: ignore
@@ -236,8 +214,8 @@ def setup_model(
             "lr_schedule", (config_dict.ConfigDict(), config_dict.ConfigDict())
         )
         assert len(lr_schedules) == 2
-        schedule_halfs = config.get("lr_schedule_halfs", ("first", "second"))
-        assert len(schedule_halfs) == 2
+        optim_halfs = config.get("lr_optim_halfs", ("first", "second"))
+        assert len(optim_halfs) == 2
 
         partition_optimizers = {}
         for (
@@ -245,7 +223,7 @@ def setup_model(
             learning_rate,
             schedule_name,
             lr_schedule,
-            schedule_half,
+            optim_half,
             optim_name,
             optim_cfg,
         ) in zip(
@@ -253,17 +231,18 @@ def setup_model(
             config.learning_rate,
             schedule_names,
             lr_schedules,
-            schedule_halfs,
+            optim_halfs,
             config.optim_name,
             config.optim,
         ):
-            optim = getattr(optax, optim_name)  # type: ignore
-            optim = optax.inject_hyperparams(optim)
-
-            schedule = getattr(optax, schedule_name)
-            lr = schedule(init_value=learning_rate, **lr_schedule.to_dict())
-            lr = maybe_split_schedule(lr, schedule_half, 0.0)
-            partition_optimizers[parition_name] = optim(learning_rate=lr, **optim_cfg.to_dict())
+            if optim_half == half:
+                optim = getattr(optax, optim_name)  # type: ignore
+                optim = optax.inject_hyperparams(optim)
+                schedule = getattr(optax, schedule_name)
+                lr = schedule(init_value=learning_rate, **lr_schedule.to_dict())
+                partition_optimizers[parition_name] = optim(learning_rate=lr, **optim_cfg.to_dict())
+            else:
+                partition_optimizers[parition_name] = optax.set_to_zero()
 
         parition_fn = config.partition_fn
         param_partitions = freeze(_path_aware_map(parition_fn, params))
@@ -274,23 +253,29 @@ def setup_model(
         )
 
     if config.get("α_schedule_name", None):
-        schedule = getattr(optax, config.α_schedule_name)  # type: ignore
-        α = schedule(init_value=config.α, **config.α_schedule.to_dict())  # type: ignore
-        α = maybe_split_schedule(α, config.get("α_schedule_half", None), 1.0)
+        if config.get("α_schedule_half", None) == half:
+            schedule = getattr(optax, config.α_schedule_name)  # type: ignore
+            α = schedule(init_value=config.α, **config.α_schedule.to_dict())  # type: ignore
+        else:
+            α = 1.0
     else:
         α = config.α
 
     if config.get("β_schedule_name", None):
-        schedule = getattr(optax, config.β_schedule_name)  # type: ignore
-        β = schedule(init_value=config.β, **config.β_schedule.to_dict())  # type: ignore
-        β = maybe_split_schedule(β, config.get("β_schedule_half", None), 1.0)
+        if config.get("β_schedule_half", None) == half:
+            schedule = getattr(optax, config.β_schedule_name)  # type: ignore
+            β = schedule(init_value=config.β, **config.β_schedule.to_dict())  # type: ignore
+        else:
+            β = 1.0
     else:
         β = config.β
 
     if config.get("γ_schedule_name", None):
-        schedule = getattr(optax, config.γ_schedule_name)  # type: ignore
-        γ = schedule(init_value=config.γ, **config.γ_schedule.to_dict())  # type: ignore
-        γ = maybe_split_schedule(γ, config.get("γ_schedule_half", None), 1.0)
+        if config.get("γ_schedule_half", None) == half:
+            schedule = getattr(optax, config.γ_schedule_name)  # type: ignore
+            γ = schedule(init_value=config.γ, **config.γ_schedule.to_dict())  # type: ignore
+        else:
+            γ = 1.0
     else:
         γ = config.γ
 
@@ -522,16 +507,15 @@ def train_loop(
             if step % config.get("log_every", 1) == 0:  # type: ignore
                 if not isinstance(state.opt_state, optax.MultiTransformState):
                     learning_rate = state.opt_state.hyperparams["learning_rate"]
-                    extra_lr_logs = {}
                 else:
-                    lr1 = state.opt_state.inner_states[
-                        config.partition_names[0]
-                    ].inner_state.hyperparams["learning_rate"]
-                    lr2 = state.opt_state.inner_states[
-                        config.partition_names[1]
-                    ].inner_state.hyperparams["learning_rate"]
-                    learning_rate = lr1 + lr2
-                    extra_lr_logs = {"lr1": lr1, "lr2": lr2}
+                    if step <= config.get("reset_step", None):
+                        learning_rate = state.opt_state.inner_states[
+                            config.partition_names[0]
+                        ].inner_state.hyperparams["learning_rate"]
+                    else:
+                        learning_rate = state.opt_state.inner_states[
+                            config.partition_names[1]
+                        ].inner_state.hyperparams["learning_rate"]
 
                 make_σ = lambda σ_: jax.nn.softplus(σ_).clip(min=model.σ_min).mean()
                 if config.model_name == "SSIL":
@@ -551,7 +535,6 @@ def train_loop(
                         "β": state.β,
                         "γ": state.γ,
                         "learing_rate": learning_rate,
-                        **extra_lr_logs,
                         **σ_logs,
                     },
                     step=step,
@@ -654,6 +637,9 @@ def train_loop(
                         run.summary["best_prior_samples"] = wandb.Image(sample_fig)
 
                     best_state = state
+
+            if step == config.get("reset_step", None):
+                _, state = setup_model(config, rng, train_ds, half="second", current_state=state)
 
         _write_note("Training finished.")
 
