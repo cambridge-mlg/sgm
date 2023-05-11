@@ -181,7 +181,7 @@ def create_vae_mll_estimator(
         A function whose arguments are the data, a random number generator, and the params, and which returns
         an estimate of the marginal log likelihood of the data.
     """
-    
+
 
     def estimate_mll(x: Array, rng: PRNGKey, params: nn.FrozenDict):
         logp_x_given_z = lambda z: model.apply(
@@ -257,7 +257,7 @@ def make_vae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng
 
     x_recon_modes = jax.vmap(
         reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
-    )(x, False, True)
+    )(x, False, False)
 
     recon_fig = plot_utils.plot_img_array(
         jnp.concatenate((x, x_recon_modes), axis=0),
