@@ -89,13 +89,9 @@ class SSILVAE(nn.Module):
             reinterpreted_batch_ndims=1,
         )
         # q(Z|Xhat)
-        self.q_Z_given_Xhat = Encoder(
-            latent_dim=self.latent_dim, **(self.Z_given_Xhat or {})
-        )
+        self.q_Z_given_Xhat = Encoder(latent_dim=self.latent_dim, **(self.Z_given_Xhat or {}))
         # p(Xhat|Z)
-        self.p_Xhat_given_Z = Decoder(
-            image_shape=self.image_shape, **(self.Xhat_given_Z or {})
-        )
+        self.p_Xhat_given_Z = Decoder(image_shape=self.image_shape, **(self.Xhat_given_Z or {}))
 
     def __call__(
         self, x: Array, rng: PRNGKey, α: float = 1.0, train: bool = True
@@ -317,7 +313,7 @@ def ssil_loss_fn(
     """Single example loss function for Contrastive Invariance Learner."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))
-    rng_model, rng_loss, rng_dropout = random.split(rng_local, 3)
+    rng_apply, rng_loss, rng_dropout = random.split(rng_local, 3)
     (
         η,
         _,
@@ -328,9 +324,7 @@ def ssil_loss_fn(
         p_Z,
         q_Η_given_x,
         q_Z_given_xhat,
-    ) = model.apply(
-        {"params": params}, x, rng_model, α, train=train, rngs={"dropout": rng_dropout}
-    )
+    ) = model.apply({"params": params}, x, rng_apply, α, train=train, rngs={"dropout": rng_dropout})
 
     loss, metrics = calculate_ssilvae_elbo(
         x,
@@ -357,23 +351,20 @@ def make_ssilvae_batch_loss(model, agg=jnp.mean, train=True):
         loss, metrics = jax.vmap(
             ssil_loss_fn, in_axes=(None, None, 0, None, None, None, None, None), axis_name="batch"  # type: ignore
         )(model, params, x_batch, rng, state.α, state.β, state.γ, train)
-        loss, metrics, mask = jax.tree_util.tree_map(
-            partial(agg, axis=0), (loss, metrics, mask)
-        )
+        loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
 
     return batch_loss
 
 
-def make_ssilvae_reconstruction_plot(
-    x, n_visualize, model, state, visualisation_rng, train=False
-):
+def make_ssilvae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng, train=False):
     def reconstruct(x, return_xhat, reconstruct_xhat):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
+        rng_apply, rng_dropout = random.split(rng)
         return model.apply(
             {"params": state.params},
             x,
-            rng,
+            rng_apply,
             return_xhat=return_xhat,
             reconstruct_xhat=reconstruct_xhat,
             sample_η_proto=False,
@@ -384,19 +375,20 @@ def make_ssilvae_reconstruction_plot(
             α=state.α,
             train=train,
             method=model.reconstruct,
+            rngs={"dropout": rng_dropout},
         )
 
-    x_proto = jax.vmap(
-        reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
-    )(x, True, False)
+    x_proto = jax.vmap(reconstruct, axis_name="image", in_axes=(0, None, None))(  # type: ignore
+        x, True, False
+    )
 
-    x_recon = jax.vmap(
-        reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
-    )(x, False, False)
+    x_recon = jax.vmap(reconstruct, axis_name="image", in_axes=(0, None, None))(  # type: ignore
+        x, False, False
+    )
 
-    x_proto_vae = jax.vmap(
-        reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
-    )(x, True, True)
+    x_proto_vae = jax.vmap(reconstruct, axis_name="image", in_axes=(0, None, None))(  # type: ignore
+        x, True, True
+    )
 
     recon_fig = plot_utils.plot_img_array(
         jnp.concatenate((x, x_proto, x_recon, x_proto_vae), axis=0),
@@ -409,17 +401,19 @@ def make_ssilvae_reconstruction_plot(
     return recon_fig
 
 
-def make_ssilvae_sampling_plot(n_visualize, model, state, visualisation_rng):
+def make_ssilvae_sampling_plot(n_visualize, model, state, visualisation_rng, train=False):
     def sample(rng, return_xhat, sample_xhat):
+        rng_apply, rng_dropout = random.split(rng)
         return model.apply(
             {"params": state.params},
-            rng,
+            rng_apply,
             return_xhat=return_xhat,
             sample_xhat=sample_xhat,
             sample_η=True,
             sample_x=False,
-            train=True,
+            train=train,
             method=model.sample,
+            rngs={"dropout": rng_dropout},
         )
 
     sampled_xhats = jax.vmap(sample, in_axes=(0, None, None))(  # type: ignore

@@ -144,11 +144,13 @@ def vae_loss_fn(
     """Single example loss function for VAE."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))
+    rng_apply, rng_dropout = random.split(rng_local)
     q_Z_given_x, p_X_given_z, p_Z = model.apply(
         {"params": params},
         x,
-        rng_local,
+        rng_apply,
         train,
+        rngs={'dropout': rng_dropout},
     )
 
     loss, metrics = calculate_vae_elbo(x, q_Z_given_x, p_X_given_z, p_Z, β)
@@ -243,16 +245,19 @@ def make_vae_batch_loss(model, agg=jnp.mean, train=True):
     return batch_loss
 
 
-def make_vae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng):
+def make_vae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng, train=False):
     def reconstruct(x, sample_z=False, sample_xrecon=False):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
+        rng_dropout, rng_apply = random.split(rng)
         return model.apply(
             {"params": state.params},
             x,
-            rng,
+            rng_apply,
             sample_z=sample_z,
             sample_xrecon=sample_xrecon,
+            train=train,
             method=model.reconstruct,
+            rngs={'dropout': rng_dropout},
         )
 
     x_recon_modes = jax.vmap(
@@ -270,13 +275,16 @@ def make_vae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng
     return recon_fig
 
 
-def make_vae_sampling_plot(n_visualize, model, state, visualisation_rng):
+def make_vae_sampling_plot(n_visualize, model, state, visualisation_rng, train=False):
     def sample(rng, sample_x=False):
+        rng_dropout, rng_apply = random.split(rng)
         return model.apply(
             {"params": state.params},
-            rng,
+            rng_apply,
             sample_x=sample_x,
+            train=train,
             method=model.sample,
+            rngs={'dropout': rng_dropout},
         )
 
     sampled_data = jax.vmap(sample, in_axes=(0, None))(  # type: ignore

@@ -219,9 +219,9 @@ def ssil_loss_fn(
     """Single example loss function for Contrastive Invariance Learner."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
     rng_local = random.fold_in(rng, lax.axis_index("batch"))
-    rng_model, rng_loss, rng_dropout = random.split(rng_local, 3)
+    rng_apply, rng_loss, rng_dropout = random.split(rng_local, 3)
     _, _, p_X_given_xhat_and_η, p_Η_given_xhat, q_Η_given_x = model.apply(
-        {"params": params}, x, rng_model, α, train=train, rngs={"dropout": rng_dropout}
+        {"params": params}, x, rng_apply, α, train=train, rngs={"dropout": rng_dropout}
     )
 
     loss, metrics = calculate_ssil_elbo(
@@ -254,17 +254,19 @@ def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
 def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rng, train=False):
     def reconstruct(x, return_xhat=False, sample_η_proto=False, sample_η_recon=False):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
+        rng_apply, rng_dropout = random.split(rng, 2)
         return model.apply(
             {"params": state.params},
             x,
-            rng,
+            rng_apply,
             return_xhat=return_xhat,
             sample_η_proto=sample_η_proto,
             sample_η_recon=sample_η_recon,
             sample_xrecon=False,
-            method=model.reconstruct,
             α=state.α,
             train=train,
+            method=model.reconstruct,
+            rngs={'dropout': rng_dropout},
         )
 
     x_proto = jax.vmap(
@@ -290,7 +292,7 @@ def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rn
     return recon_fig
 
 
-def make_ssil_sampling_plot(n_visualize, model, state, visualisation_rng):
+def make_ssil_sampling_plot(n_visualize, model, state, visualisation_rng, train=False):
     return None
 
 
