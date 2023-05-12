@@ -253,31 +253,31 @@ def setup_model(
         )
 
     if config.get("α_schedule_name", None):
-        if config.get("α_schedule_half", None) == half:
+        if config.get("α_schedule_half", "first") == half:
             schedule = getattr(optax, config.α_schedule_name)  # type: ignore
             α = schedule(init_value=config.α, **config.α_schedule.to_dict())  # type: ignore
         else:
             α = 1.0
     else:
-        α = config.α
+        α = config.get("α", 1.0)
 
     if config.get("β_schedule_name", None):
-        if config.get("β_schedule_half", None) == half:
+        if config.get("β_schedule_half", "first") == half:
             schedule = getattr(optax, config.β_schedule_name)  # type: ignore
             β = schedule(init_value=config.β, **config.β_schedule.to_dict())  # type: ignore
         else:
             β = 1.0
     else:
-        β = config.β
+        β = config.get("β", 1.0)
 
     if config.get("γ_schedule_name", None):
-        if config.get("γ_schedule_half", None) == half:
+        if config.get("γ_schedule_half", "first") == half:
             schedule = getattr(optax, config.γ_schedule_name)  # type: ignore
             γ = schedule(init_value=config.γ, **config.γ_schedule.to_dict())  # type: ignore
         else:
             γ = 1.0
     else:
-        γ = config.γ
+        γ = config.get("γ", 1.0)
 
     state = TrainState.create(
         apply_fn=model.apply,
