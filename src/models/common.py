@@ -30,6 +30,7 @@ class Encoder(nn.Module):
     norm_cls: nn.Module = nn.LayerNorm
     σ_min: float = 1e-2
     dropout_rate: float = 0.0
+    input_dropout_rate: float = 0.0
     train: Optional[bool] = None
 
     @nn.compact
@@ -39,7 +40,7 @@ class Encoder(nn.Module):
         conv_dims = self.conv_dims if self.conv_dims is not None else [64, 128, 256]
         dense_dims = self.dense_dims if self.dense_dims is not None else [64, 32]
 
-        x = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(x)
+        x = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(x)
 
         h = x
         i = -1
@@ -59,6 +60,7 @@ class Encoder(nn.Module):
             h = nn.Dense(dense_dim, name=f"dense_{j+i+1}")(h)
             h = self.norm_cls(name=f"norm_{j+i+1}")(h)
             h = self.act_fn(h)
+            h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(h)
 
         # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
         μ = nn.Dense(self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ")(h)
@@ -81,9 +83,11 @@ class Decoder(nn.Module):
     conv_dims: Optional[Sequence[int]] = None
     dense_dims: Optional[Sequence[int]] = None
     σ_init: Callable = init.constant(INV_SOFTPLUS_1)
-    σ_min: float = 1e-2
     act_fn: Callable = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
+    σ_min: float = 1e-2
+    dropout_rate: float = 0.0
+    input_dropout_rate: float = 0.0
     train: Optional[bool] = None
 
     @nn.compact
@@ -96,11 +100,14 @@ class Decoder(nn.Module):
         assert self.image_shape[0] == self.image_shape[1], "Images should be square."
         output_size = self.image_shape[0]
 
+        z = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(z)
+
         j = -1
         for j, dense_dim in enumerate(dense_dims):
             z = nn.Dense(dense_dim, name=f"dense_{j}")(z)
             z = self.norm_cls(name=f"norm_{j}")(z)
             z = self.act_fn(z)
+            z = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(z)
 
         h = nn.Dense(output_size * output_size, name=f"resize")(z)
         h = h.reshape(output_size, output_size, 1)
