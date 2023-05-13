@@ -520,8 +520,8 @@ def train_loop(
                 make_σ = lambda σ_: jax.nn.softplus(σ_).clip(min=model.σ_min).mean()
                 if config.model_name == "SSIL":
                     σ_logs = {"σ": make_σ(state.params["σ_"])}
-                elif config.model_name == "VAE":
-                    σ_logs = {"σ_vae": make_σ(state.params["p_X_given_Z"]["σ_"])}
+                # elif config.model_name == "VAE":
+                #     σ_logs = {"σ_vae": make_σ(state.params["p_X_given_Z"]["σ_"])}
                 elif config.model_name == "SSILVAE":
                     σ_ = state.params["σ_"]
                     σ_vae_ = state.params["p_Xhat_given_Z"]["σ_"]

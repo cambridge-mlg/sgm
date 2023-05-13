@@ -88,6 +88,7 @@ class Decoder(nn.Module):
     σ_min: float = 1e-2
     dropout_rate: float = 0.0
     input_dropout_rate: float = 0.0
+    likelihood: str = "normal"
     train: Optional[bool] = None
 
     @nn.compact
@@ -122,12 +123,21 @@ class Decoder(nn.Module):
             h = self.norm_cls(name=f"norm_{i+j+1}")(h)
             h = self.act_fn(h)
 
-        μ = nn.Conv(self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ")(h)
-        σ = jax.nn.softplus(self.param("σ_", self.σ_init, self.image_shape))
+        if self.likelihood == "normal":
+            μ = nn.Conv(self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ")(h)
+            σ = jax.nn.softplus(self.param("σ_", self.σ_init, self.image_shape))
 
-        return distrax.Independent(
-            distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min)), len(self.image_shape)
-        )
+            return distrax.Independent(
+                distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min)), len(self.image_shape)
+            )
+        elif self.likelihood == "categorical":
+            logits = nn.Conv(
+                self.image_shape[-1] * 256, kernel_size=(3, 3), strides=(1, 1), name=f"logits"
+            )(h)
+            return distrax.Independent(
+                distrax.Categorical(logits=logits.reshape(self.image_shape + (256,))),
+                len(self.image_shape),
+            )
 
 
 # Adapted from https://github.com/deepmind/distrax/blob/master/examples/flow.py.

@@ -27,6 +27,14 @@ KwArgs = Mapping[str, Any]
 PRNGKey = Any
 
 
+def _convert_to_int(x: Array) -> Array:
+    return jnp.round((x + 1.) / 2. * 255)
+
+
+def _convert_to_float(x: Array) -> Array:
+    return (x.astype(jnp.float32) * 2. / 255. - 1.)
+
+
 class VAE(nn.Module):
     latent_dim: int = 20
     image_shape: Tuple[int, int, int] = (28, 28, 1)
@@ -60,7 +68,7 @@ class VAE(nn.Module):
     def __call__(
         self, x: Array, rng: PRNGKey, train: bool = True
     ) -> Tuple[distrax.Distribution, ...]:
-        q_Z_given_x = self.q_Z_given_X(x, train=train)
+        q_Z_given_x = self.q_Z_given_X(_convert_to_int(x), train=train)
         z = q_Z_given_x.sample(seed=rng)
 
         p_X_given_z = self.p_X_given_Z(z, train=train)
@@ -68,10 +76,10 @@ class VAE(nn.Module):
         return q_Z_given_x, p_X_given_z, self.p_Z
 
     def logp_x_given_z(self, x: Array, z: Array, train: bool = True) -> Array:
-        return self.p_X_given_Z(z, train=train).log_prob(x)
+        return self.p_X_given_Z(z, train=train).log_prob(_convert_to_int(x))
 
     def logq_z_given_x(self, x: Array, z: Array, train: bool = True) -> Array:
-        return self.q_Z_given_X(x, train=train).log_prob(z)
+        return self.q_Z_given_X(_convert_to_int(x), train=train).log_prob(z)
 
     def logp_z(self, z: Array) -> Array:
         return self.p_Z.log_prob(z)
@@ -91,7 +99,7 @@ class VAE(nn.Module):
         else:
             x = p_X_given_z.mode()
 
-        return x
+        return _convert_to_float(x)
 
     def reconstruct(
         self,
@@ -102,7 +110,7 @@ class VAE(nn.Module):
         train: bool = True,
     ) -> Array:
         z_rng, x_rng = random.split(rng, 2)
-        q_Z_given_x = self.q_Z_given_X(x, train=train)
+        q_Z_given_x = self.q_Z_given_X(_convert_to_int(x), train=train)
         if sample_z:
             z = q_Z_given_x.sample(seed=z_rng)
         else:
@@ -114,7 +122,7 @@ class VAE(nn.Module):
         else:
             x_recon = p_X_given_z.mode()
 
-        return x_recon
+        return _convert_to_float(x_recon)
 
 
 def calculate_vae_elbo(
@@ -124,7 +132,7 @@ def calculate_vae_elbo(
     p_Z: distrax.Distribution,
     β: float = 1.0,
 ) -> Tuple[float, Mapping[str, float]]:
-    ll = p_X_given_z.log_prob(x) / x.shape[-1]
+    ll = p_X_given_z.log_prob(_convert_to_int(x)) / x.shape[-1]
     z_kld = q_Z_given_x.kl_divergence(p_Z)
 
     elbo = ll - β * z_kld
