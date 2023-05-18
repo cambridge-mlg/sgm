@@ -20,6 +20,15 @@ PRNGKey = Any
 KwArgs = Mapping[str, Any]
 
 
+def _get_num_even_divisions(x):
+    """Returns the number of times x can be divided by 2."""
+    i = 0
+    while x % 2 == 0:
+        x = x // 2
+        i += 1
+    return i
+
+
 class Encoder(nn.Module):
     """p(z|x) = N(μ(x), σ(x)), where μ(x) and σ(x) are neural networks."""
 
@@ -42,13 +51,16 @@ class Encoder(nn.Module):
 
         x = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(x)
 
+        assert x.shape[0] == x.shape[1], "Images should be square."
+        num_2_strides = np.minimum(_get_num_even_divisions(x.shape[1]), len(conv_dims))
+
         h = x
         i = -1
         for i, conv_dim in enumerate(conv_dims):
             h = nn.Conv(
                 conv_dim,
                 kernel_size=(3, 3),
-                strides=(2, 2) if i == 0 else (1, 1),
+                strides=(2, 2) if i < num_2_strides else (1, 1),
                 name=f"conv_{i}",
             )(h)
             h = self.norm_cls(name=f"norm_{i}")(h)
@@ -99,6 +111,7 @@ class Decoder(nn.Module):
 
         assert self.image_shape[0] == self.image_shape[1], "Images should be square."
         output_size = self.image_shape[0]
+        num_2_strides = np.minimum(_get_num_even_divisions(output_size), len(conv_dims))
 
         z = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(z)
 
@@ -109,14 +122,16 @@ class Decoder(nn.Module):
             z = self.act_fn(z)
             z = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(z)
 
-        h = nn.Dense(output_size * output_size, name=f"resize")(z)
-        h = h.reshape(output_size, output_size, 1)
+        dense_size = output_size // (2 ** num_2_strides)
+        h = nn.Dense(dense_size * dense_size, name=f"resize")(z)
+        h = h.reshape(dense_size, dense_size, 1)
 
         for i, conv_dim in enumerate(conv_dims):
             h = nn.ConvTranspose(
                 conv_dim,
                 kernel_size=(3, 3),
-                strides=(1, 1),
+                # use stride of 2 for the last few layers
+                strides=(2, 2) if i >= len(conv_dims) - num_2_strides else (1, 1),
                 name=f"conv_{i+j+1}",
             )(h)
             h = self.norm_cls(name=f"norm_{i+j+1}")(h)
