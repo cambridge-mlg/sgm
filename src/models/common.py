@@ -66,6 +66,8 @@ class Encoder(nn.Module):
             h = self.norm_cls(name=f"norm_{i}")(h)
             h = self.act_fn(h)
 
+        h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"resize")(h)
+
         h = h.flatten()
 
         for j, dense_dim in enumerate(dense_dims):
@@ -123,8 +125,8 @@ class Decoder(nn.Module):
             z = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(z)
 
         dense_size = output_size // (2 ** num_2_strides)
-        h = nn.Dense(dense_size * dense_size, name=f"resize")(z)
-        h = h.reshape(dense_size, dense_size, 1)
+        h = nn.Dense(dense_size * dense_size * 3, name=f"resize")(z)
+        h = h.reshape(dense_size, dense_size, 3)
 
         for i, conv_dim in enumerate(conv_dims):
             h = nn.ConvTranspose(
