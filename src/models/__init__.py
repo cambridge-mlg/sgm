@@ -10,6 +10,7 @@ from src.models.vae import (
     make_vae_reconstruction_plot,
     make_vae_sampling_plot,
     make_vae_summary_plot,
+    create_vae_hais_mll_estimator,
 )
 from src.models.ssil import (
     SSIL,
@@ -36,6 +37,7 @@ __all__ = [
     "make_vae_reconstruction_plot",
     "make_vae_sampling_plot",
     "make_vae_summary_plot",
+    "create_vae_hais_mll_estimator",
     "SSIL",
     "make_ssil_batch_loss",
     "make_ssil_reconstruction_plot",

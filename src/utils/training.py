@@ -2,7 +2,7 @@ from typing import Any, Callable, Mapping, Optional, Tuple, Union
 from functools import partial
 
 import wandb
-from tqdm.auto import trange
+from tqdm.auto import trange, tqdm
 import numpy as np
 import tensorflow as tf
 
@@ -481,7 +481,14 @@ def train_loop(
         def eval_fn(state, x_batch, mask, rng):
             rng_local = jax.random.fold_in(rng, jax.lax.axis_index("device"))  # type: ignore
 
-            batch_loss = make_batch_loss(model, jnp.sum, False)
+            iwlb_config = config.get("iwlb", None)
+            batch_loss = make_batch_loss(
+                model,
+                jnp.sum,
+                False,
+                config.get("run_iwlb", False),
+                iwlb_config.to_dict() if iwlb_config is not None else {},
+            )
 
             loss, (metrics, mask) = batch_loss(state.params, x_batch, mask, rng_local, state)
             loss, metrics, n_examples = jax.lax.psum((loss, metrics, mask), axis_name="device")
@@ -489,7 +496,6 @@ def train_loop(
             return loss, metrics, n_examples
 
         train_iter = input_utils.start_input_pipeline(train_ds, config.get("prefetch_to_device", 1))
-
         _write_note("Starting training loop...")
 
         best_val_loss = jnp.inf
@@ -611,6 +617,9 @@ def train_loop(
                 make_reconstruction_plot = getattr(
                     models, "make_" + config.model_name.lower() + "_reconstruction_plot"
                 )
+                # make_reconstruction_plot(
+                #     train_batch["image"][0, idxs], n_visualize, model, state, visualisation_rng, train=True
+                # )
                 val_recon_fig = make_reconstruction_plot(
                     val_x, n_visualize, model, state, visualisation_rng
                 )
@@ -682,15 +691,39 @@ def train_loop(
             run.summary["test_reconstructions"] = wandb.Image(test_recon_fig)
 
         summary_batch = test_batch_0 or val_batch_0
+        summary_ds = test_ds or val_ds
 
         if summary_batch:
             make_summary_plot = getattr(
                 models, "make_" + config.model_name.lower() + "_summary_plot"
             )
             for i, x in enumerate(summary_batch["image"][0, list(range(5)) + [9, 10]]):
-                tmp_rng, summary_rng = jax.random.split(summary_rng)
-                summary_fig = make_summary_plot(config, best_state, x, tmp_rng)
+                plot_rng = jax.random.fold_in(summary_rng, i)
+                summary_fig = make_summary_plot(config, best_state, x, plot_rng)
                 if summary_fig:
                     run.summary[f"summary_fig_{i}"] = wandb.Image(summary_fig)
+
+        if summary_ds:
+            if config.get("run_hais", False):
+                hais_config = config.get("hais", None)
+                hais_kwargs = hais_config.to_dict() if hais_config is not None else {}
+                create_hais_mll_estimator = getattr(
+                    models, "create_" + config.model_name.lower() + "_hais_mll_estimator"
+                )
+                hais_mll_estimator = jax.vmap(
+                    create_hais_mll_estimator(model, best_state.params, train=False, **hais_kwargs),
+                    in_axes=(0, None),
+                )
+
+                hais_mlls = []
+                num_examples = 0
+                for i, batch in tqdm(enumerate(input_utils.start_input_pipeline(summary_ds, 1))):
+                    for j, imgs_batch in enumerate(batch['image']):
+                        hais_rng = jax.random.fold_in(summary_rng, i + j)
+                        hais_mlls.append(hais_mll_estimator(imgs_batch, hais_rng))
+                    num_examples += batch['mask'].sum()
+
+                hais_mll = jnp.concatenate(hais_mlls, axis=0).sum(axis=0) / num_examples
+                run.summary["hais_mll"] = hais_mll
 
     return best_state, state

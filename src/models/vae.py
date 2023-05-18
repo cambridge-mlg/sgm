@@ -7,7 +7,7 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.k `p_x_given_z`.
 """
 
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Callable, Mapping, Optional, Tuple
 from functools import partial
 
 import jax
@@ -81,9 +81,12 @@ class VAE(nn.Module):
         rng: PRNGKey,
         sample_x: bool = False,
         train: bool = True,
+        return_z: bool = False,
     ) -> Array:
         z_rng, x_rng = random.split(rng, 2)
         z = self.p_Z.sample(seed=z_rng)
+        if return_z:
+            return z
 
         p_X_given_z = self.p_X_given_Z(z, train=train)
         if sample_x:
@@ -115,6 +118,30 @@ class VAE(nn.Module):
             x_recon = p_X_given_z.mode()
 
         return x_recon
+
+    def importance_weighted_lower_bound(
+        self,
+        x: Array,
+        rng: PRNGKey,
+        num_samples: int = 50,
+        train: bool = False,
+    ):
+        def single_sample_w(i):
+            rng_i = random.fold_in(rng, i)
+            q_Z_given_x = self.q_Z_given_X(x, train=train)
+            z = q_Z_given_x.sample(seed=rng_i, sample_shape=())
+            logq_z_given_x = q_Z_given_x.log_prob(z)
+
+            p_X_given_z = self.p_X_given_Z(z, train=train)
+            logp_x_given_z = p_X_given_z.log_prob(x)
+
+            logp_z = self.p_Z.log_prob(z)
+
+            return logp_x_given_z + logp_z - logq_z_given_x
+
+        log_ws = jax.vmap(single_sample_w)(jnp.arange(num_samples))
+
+        return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
 
 
 def calculate_vae_elbo(
@@ -150,7 +177,7 @@ def vae_loss_fn(
         x,
         rng_apply,
         train,
-        rngs={'dropout': rng_dropout},
+        rngs={"dropout": rng_dropout},
     )
 
     loss, metrics = calculate_vae_elbo(x, q_Z_given_x, p_X_given_z, p_Z, β)
@@ -158,7 +185,7 @@ def vae_loss_fn(
     return loss, metrics
 
 
-def create_vae_mll_estimator(
+def create_vae_hais_mll_estimator(
     model: nn.Module,
     params: nn.FrozenDict,
     train: bool = False,
@@ -184,12 +211,22 @@ def create_vae_mll_estimator(
         an estimate of the marginal log likelihood of the data.
     """
 
-
-    def estimate_mll(x: Array, rng: PRNGKey, params: nn.FrozenDict):
+    def estimate_mll(x: Array, rng: PRNGKey):
         logp_x_given_z = lambda z: model.apply(
             {"params": params}, x, z, train=train, method=model.logp_x_given_z
         )
         logp_z = lambda z: model.apply({"params": params}, z, method=model.logp_z)
+        logq_z_given_x = lambda z: model.apply(
+            {"params": params}, x, z, train=train, method=model.logq_z_given_x
+        )
+
+        @jax.vmap
+        def sample_z(rng):
+            return model.apply(
+                {"params": params}, rng, train=train, return_z=True, method=model.sample
+            )
+
+        zs = sample_z(random.split(rng, num_chains))
 
         @jax.vmap
         def target_log_prob_fn(z):
@@ -197,13 +234,14 @@ def create_vae_mll_estimator(
 
         @jax.vmap
         def proposal_log_prob_fn(z):
-            return logp_z(z)
+            # return logp_z(z)
+            return logq_z_given_x(z)
 
         _, ais_weights, _ = tfp.mcmc.sample_annealed_importance_chain(
             num_steps=num_steps,
             proposal_log_prob_fn=proposal_log_prob_fn,
             target_log_prob_fn=target_log_prob_fn,
-            current_state=jnp.zeros((num_chains, model.latent_dim)),
+            current_state=zs,
             make_kernel_fn=lambda tlp_fn: tfp.mcmc.HamiltonianMonteCarlo(
                 target_log_prob_fn=tlp_fn,
                 step_size=step_size,
@@ -219,26 +257,35 @@ def create_vae_mll_estimator(
     return estimate_mll
 
 
-# Step size | Num chains | Num steps | Num Leap Frogs | MLL        | Time
-# 1e-1      | 100        | 1000      | 2              | 652.18     | 17.1s
-# 1e-2      | 100        | 1000      | 2              | 477.62     |
-# 2e-1      | 100        | 1000      | 2              | 633.18     |
-# 5e-1      | 100        | 1000      | 2              | 572.47     |
-# 1e-1      | 100        | 1000      | 8              | 657.97     | 53.4s
-# 1e-1      | 100        | 1000      | 16             | 656.50     | 1m 42.5s
-# 1e-1      | 300        | 1000      | 2              | 652.18     | 1m 1.3s
-# 1e-1      | 100        | 3000      | 2              | 657.91     | 47.9s
-# 1e-1      | 100        |  200      | 2              | 630.28     | 6.3s
-# 1e-1      | 100        |  300      | 2              | 636.63     | 7.9s
-# 1e-1      | 100        |  500      | 2              | 644.46     | 9.6s
-
-
-def make_vae_batch_loss(model, agg=jnp.mean, train=True):
+def make_vae_batch_loss(
+    model,
+    agg: Callable = jnp.mean,
+    train: bool = True,
+    run_iwlb: bool = False,
+    iwlb_kwargs: Optional[Mapping[str, Any]] = None,
+):
     def batch_loss(params, x_batch, mask, rng, state):
-        # Broadcast loss over batch and aggregate.
+        # Broadcast loss over batch...
         loss, metrics = jax.vmap(
             vae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
         )(model, params, x_batch, rng, state.β, train)
+
+        if run_iwlb:
+            iwlb_kwargs_ = {} if iwlb_kwargs is None else iwlb_kwargs
+
+            @jax.vmap
+            def _iwlb(x):
+                return model.apply(
+                    {"params": params},
+                    x,
+                    rng,
+                    **iwlb_kwargs_,
+                    method=model.importance_weighted_lower_bound,
+                )
+
+            metrics["iwlb"] = _iwlb(x_batch)
+
+        # ... and aggregate.
         loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
         return loss, (metrics, mask)
 
@@ -257,7 +304,7 @@ def make_vae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng
             sample_xrecon=sample_xrecon,
             train=train,
             method=model.reconstruct,
-            rngs={'dropout': rng_dropout},
+            rngs={"dropout": rng_dropout},
         )
 
     x_recon_modes = jax.vmap(
@@ -284,7 +331,7 @@ def make_vae_sampling_plot(n_visualize, model, state, visualisation_rng, train=F
             sample_x=sample_x,
             train=train,
             method=model.sample,
-            rngs={'dropout': rng_dropout},
+            rngs={"dropout": rng_dropout},
         )
 
     sampled_data = jax.vmap(sample, in_axes=(0, None))(  # type: ignore
