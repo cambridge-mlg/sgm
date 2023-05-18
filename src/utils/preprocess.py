@@ -20,7 +20,7 @@ def all_ops():
 @dataclasses.dataclass
 class ValueRange:
     """Transforms a [in_min, in_max] image to [vmin, vmax] range.
-    Input ranges in_min/in_max can be equal-size lists to rescale the invidudal
+    Input ranges in_min/in_max can be equal-size lists to rescale the individual
     channels independently.
     Attributes:
         vmin: A scalar. Output max value.
