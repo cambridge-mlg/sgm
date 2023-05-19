@@ -40,6 +40,7 @@ class Encoder(nn.Module):
     σ_min: float = 1e-2
     dropout_rate: float = 0.0
     input_dropout_rate: float = 0.0
+    max_2strides: Optional[int] = None
     train: Optional[bool] = None
 
     @nn.compact
@@ -52,7 +53,9 @@ class Encoder(nn.Module):
         x = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(x)
 
         assert x.shape[0] == x.shape[1], "Images should be square."
-        num_2_strides = np.minimum(_get_num_even_divisions(x.shape[1]), len(conv_dims))
+        num_2strides = np.minimum(_get_num_even_divisions(x.shape[1]), len(conv_dims))
+        if self.max_2strides is not None:
+            num_2strides = np.minimum(num_2strides, self.max_2strides)
 
         h = x
         i = -1
@@ -60,7 +63,7 @@ class Encoder(nn.Module):
             h = nn.Conv(
                 conv_dim,
                 kernel_size=(3, 3),
-                strides=(2, 2) if i < num_2_strides else (1, 1),
+                strides=(2, 2) if i < num_2strides else (1, 1),
                 name=f"conv_{i}",
             )(h)
             h = self.norm_cls(name=f"norm_{i}")(h)
@@ -102,6 +105,7 @@ class Decoder(nn.Module):
     σ_min: float = 1e-2
     dropout_rate: float = 0.0
     input_dropout_rate: float = 0.0
+    max_2strides: Optional[int] = None
     train: Optional[bool] = None
 
     @nn.compact
@@ -113,7 +117,9 @@ class Decoder(nn.Module):
 
         assert self.image_shape[0] == self.image_shape[1], "Images should be square."
         output_size = self.image_shape[0]
-        num_2_strides = np.minimum(_get_num_even_divisions(output_size), len(conv_dims))
+        num_2strides = np.minimum(_get_num_even_divisions(output_size), len(conv_dims))
+        if self.max_2strides is not None:
+            num_2strides = np.minimum(num_2strides, self.max_2strides)
 
         z = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(z)
 
@@ -124,7 +130,7 @@ class Decoder(nn.Module):
             z = self.act_fn(z)
             z = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(z)
 
-        dense_size = output_size // (2 ** num_2_strides)
+        dense_size = output_size // (2**num_2strides)
         h = nn.Dense(dense_size * dense_size * 3, name=f"resize")(z)
         h = h.reshape(dense_size, dense_size, 3)
 
@@ -133,7 +139,7 @@ class Decoder(nn.Module):
                 conv_dim,
                 kernel_size=(3, 3),
                 # use stride of 2 for the last few layers
-                strides=(2, 2) if i >= len(conv_dims) - num_2_strides else (1, 1),
+                strides=(2, 2) if i >= len(conv_dims) - num_2strides else (1, 1),
                 name=f"conv_{i+j+1}",
             )(h)
             h = self.norm_cls(name=f"norm_{i+j+1}")(h)
