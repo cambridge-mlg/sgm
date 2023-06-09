@@ -227,6 +227,8 @@ class Trunk(nn.Module):
     act_fn: Callable = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
     dropout_rate: float = 0.1
+    max_2strides: Optional[int] = None
+    resize: bool = True
     train: Optional[bool] = None
 
     @nn.compact
@@ -235,8 +237,11 @@ class Trunk(nn.Module):
         dense_dims = self.dense_dims if self.dense_dims is not None else [256, 128]
 
         train = nn.merge_param("train", self.train, train)
-        if train is None:
-            train = False
+
+        assert x.shape[0] == x.shape[1], "Images should be square."
+        num_2strides = np.minimum(_get_num_even_divisions(x.shape[0]), len(conv_dims))
+        if self.max_2strides is not None:
+            num_2strides = np.minimum(num_2strides, self.max_2strides)
 
         h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(x)
 
@@ -245,7 +250,7 @@ class Trunk(nn.Module):
             h = nn.Conv(
                 conv_dim,
                 kernel_size=(3, 3),
-                strides=(2, 2) if i == 0 else (1, 1),
+                strides=(2, 2) if i < num_2strides else (1, 1),
                 name=f"conv_{i}",
             )(h)
             h = self.norm_cls(name=f"norm_{i}")(h)
@@ -256,6 +261,9 @@ class Trunk(nn.Module):
         #     h = jnp.mean(h, axis=(0, 1))
         # else:
         #     h = h.flatten()
+
+        if self.resize:
+            h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"resize")(h)
 
         h = h.flatten()
 
