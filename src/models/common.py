@@ -52,26 +52,27 @@ class Encoder(nn.Module):
 
         x = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(x)
 
-        assert x.shape[0] == x.shape[1], "Images should be square."
-        num_2strides = np.minimum(_get_num_even_divisions(x.shape[1]), len(conv_dims))
-        if self.max_2strides is not None:
-            num_2strides = np.minimum(num_2strides, self.max_2strides)
-
         h = x
         i = -1
-        for i, conv_dim in enumerate(conv_dims):
-            h = nn.Conv(
-                conv_dim,
-                kernel_size=(3, 3),
-                strides=(2, 2) if i < num_2strides else (1, 1),
-                name=f"conv_{i}",
-            )(h)
-            h = self.norm_cls(name=f"norm_{i}")(h)
-            h = self.act_fn(h)
+        if len(x.shape) > 1:
+            assert x.shape[0] == x.shape[1], "Images should be square."
+            num_2strides = np.minimum(_get_num_even_divisions(x.shape[0]), len(conv_dims))
+            if self.max_2strides is not None:
+                num_2strides = np.minimum(num_2strides, self.max_2strides)
 
-        h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"resize")(h)
+            for i, conv_dim in enumerate(conv_dims):
+                h = nn.Conv(
+                    conv_dim,
+                    kernel_size=(3, 3),
+                    strides=(2, 2) if i < num_2strides else (1, 1),
+                    name=f"conv_{i}",
+                )(h)
+                h = self.norm_cls(name=f"norm_{i}")(h)
+                h = self.act_fn(h)
 
-        h = h.flatten()
+            h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"resize")(h)
+
+            h = h.flatten()
 
         for j, dense_dim in enumerate(dense_dims):
             h = nn.Dense(dense_dim, name=f"dense_{j+i+1}")(h)
@@ -115,7 +116,8 @@ class Decoder(nn.Module):
         conv_dims = self.conv_dims if self.conv_dims is not None else [256, 128, 64]
         dense_dims = self.dense_dims if self.dense_dims is not None else [32, 64]
 
-        assert self.image_shape[0] == self.image_shape[1], "Images should be square."
+        if len(self.image_shape) == 3:
+            assert self.image_shape[0] == self.image_shape[1], "Images should be square."
         output_size = self.image_shape[0]
         num_2strides = np.minimum(_get_num_even_divisions(output_size), len(conv_dims))
         if self.max_2strides is not None:
