@@ -239,7 +239,7 @@ def ssil_loss_fn(
     return loss, metrics
 
 
-def make_ssil_batch_loss(model, agg=jnp.mean, train=True):
+def make_ssil_batch_loss(model, agg=jnp.mean, train=True, **unused_kwargs):
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
@@ -266,7 +266,7 @@ def make_ssil_reconstruction_plot(x, n_visualize, model, state, visualisation_rn
             α=state.α,
             train=train,
             method=model.reconstruct,
-            rngs={'dropout': rng_dropout},
+            rngs={"dropout": rng_dropout},
         )
 
     x_proto = jax.vmap(

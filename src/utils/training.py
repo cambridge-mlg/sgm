@@ -486,8 +486,8 @@ def train_loop(
                 model,
                 jnp.sum,
                 False,
-                config.get("run_iwlb", False),
-                iwlb_config.to_dict() if iwlb_config is not None else {},
+                run_iwlb=config.get("run_iwlb", False),
+                iwlb_kwargs=iwlb_config.to_dict() if iwlb_config is not None else {},
             )
 
             loss, (metrics, mask) = batch_loss(state.params, x_batch, mask, rng_local, state)
@@ -718,10 +718,10 @@ def train_loop(
                 hais_mlls = []
                 num_examples = 0
                 for i, batch in tqdm(enumerate(input_utils.start_input_pipeline(summary_ds, 1))):
-                    for j, imgs_batch in enumerate(batch['image']):
+                    for j, imgs_batch in enumerate(batch["image"]):
                         hais_rng = jax.random.fold_in(summary_rng, i + j)
                         hais_mlls.append(hais_mll_estimator(imgs_batch, hais_rng))
-                    num_examples += batch['mask'].sum()
+                    num_examples += batch["mask"].sum()
 
                 hais_mll = jnp.concatenate(hais_mlls, axis=0).sum(axis=0) / num_examples
                 run.summary["hais_mll"] = hais_mll
