@@ -12,41 +12,46 @@ def get_config(params) -> config_dict.ConfigDict:
 
     config.seed = 0
     # Dataset config
-    config.dataset = 'MNIST'
+    config.dataset = "MNIST"
     # config.data_dir = '~/data'
     config.shuffle_buffer_size = 50_000
     config.repeat_after_batch = True  # NOTE: ordering of PP and repeat is important!
-    config.train_split = f'train[{num_val}:{num_val+num_trn}]'
-    config.pp_train = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image"])'
-    config.val_split = f'train[:{num_val}]'
+    config.train_split = f"train[{num_val}:{num_val+num_trn}]"
+    config.pp_train = (
+        f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image"])'
+    )
+    config.val_split = f"train[:{num_val}]"
     config.pp_eval = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image", "label"])'
 
     # Model config
-    config.model_name = 'VAE'
+    config.model_name = "VAE"
     config.model = config_dict.ConfigDict()
-    config.model.latent_dim = 128
-    ## q(Z|X̂) config
+    config.model.latent_dim = 16
+    ## q(Z|X) config
     config.model.Z_given_X = config_dict.ConfigDict()
     config.model.Z_given_X.conv_dims = [64, 128, 256]
     config.model.Z_given_X.dense_dims = [256]
-    ## p(X̂|Z) config
+    config.model.Z_given_X.max_2strides = 2
+    ## p(X|Z) config
     config.model.X_given_Z = config_dict.ConfigDict()
     config.model.X_given_Z.conv_dims = [256, 128, 64]
     config.model.X_given_Z.dense_dims = [256]
+    config.model.X_given_Z.max_2strides = 2
 
     # Training config
     config.total_steps = 7501
     config.eval_every = 500
     config.batch_size = 512
+    config.batch_size_eval = 64
 
     ## Optimizer config
-    config.optim_name = 'adamw'
+    config.optim_name = "adamw"
     config.learning_rate = 1e-4
     config.optim = config_dict.ConfigDict()
     config.optim.weight_decay = 1e-4
 
     ## LR config
-    config.lr_schedule_name = 'warmup_cosine_decay_schedule'
+    config.lr_schedule_name = "warmup_cosine_decay_schedule"
     config.lr_schedule = config_dict.ConfigDict()
     config.lr_schedule.peak_value = 10 * config.learning_rate
     config.lr_schedule.end_value = 1 * config.learning_rate
@@ -66,5 +71,16 @@ def get_config(params) -> config_dict.ConfigDict:
 
     ## γ config
     config.γ = 1
+
+    # MLL config
+    config.run_hais = True
+    config.hais = config_dict.ConfigDict()
+    config.hais.num_chains = 100
+    config.hais.num_steps = 30
+    config.hais.step_size = 1e-2
+    config.hais.num_leapfrog_steps = 2
+    config.run_iwlb = True
+    config.iwlb = config_dict.ConfigDict()
+    config.iwlb.num_samples = 100
 
     return config
