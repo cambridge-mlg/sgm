@@ -5,10 +5,11 @@ from jax import numpy as jnp
 def get_config(params) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
 
-    angle, num_trn = params.split(",")
-    angle = int(angle)
-    num_trn = int(num_trn)
-    num_val = 10000
+    angle, num_trn, total_steps = params.split(",")[:3]
+    config.angle = int(angle)
+    config.num_trn = int(num_trn)
+    config.num_val = 10000
+    config.total_steps = int(total_steps)
 
     config.seed = 0
     # Dataset config
@@ -16,12 +17,12 @@ def get_config(params) -> config_dict.ConfigDict:
     # config.data_dir = '~/data'
     config.shuffle_buffer_size = 50_000
     config.repeat_after_batch = True  # NOTE: ordering of PP and repeat is important!
-    config.train_split = f"train[{num_val}:{num_val+num_trn}]"
+    config.train_split = f"train[{config.num_val}:{config.num_val+config.num_trn}]"
     config.pp_train = (
-        f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image"])'
+        f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image"])'
     )
-    config.val_split = f"train[:{num_val}]"
-    config.pp_eval = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image", "label"])'
+    config.val_split = f"train[:{config.num_val}]"
+    config.pp_eval = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'
 
     # Model config
     config.model_name = "VAE"
@@ -39,10 +40,9 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.X_given_Z.max_2strides = 2
 
     # Training config
-    config.total_steps = 7501
     config.eval_every = 500
     config.batch_size = 512
-    config.batch_size_eval = 64
+    config.batch_size_eval = 256
 
     ## Optimizer config
     config.optim_name = "adamw"
@@ -75,9 +75,9 @@ def get_config(params) -> config_dict.ConfigDict:
     # MLL config
     config.run_hais = True
     config.hais = config_dict.ConfigDict()
-    config.hais.num_chains = 100
-    config.hais.num_steps = 30
-    config.hais.step_size = 1e-2
+    config.hais.num_chains = 300
+    config.hais.num_steps = 100
+    config.hais.step_size = 8e-3
     config.hais.num_leapfrog_steps = 2
     config.run_iwlb = True
     config.iwlb = config_dict.ConfigDict()
