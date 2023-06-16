@@ -35,7 +35,7 @@ def plot_img_array(array, ncol=16, padding=2, pad_value=0.0, title=None):
 
     grid = rescale_for_imshow(grid)
 
-    fig = plt.figure(figsize=(2 * xmaps, 2 * ymaps), dpi=400)
+    fig = plt.figure(figsize=(2 * xmaps, 2 * ymaps), dpi=100)
     plt.imshow(grid)
     plt.axis("off")
     plt.tight_layout()
