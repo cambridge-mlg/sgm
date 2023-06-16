@@ -21,7 +21,7 @@ flags.mark_flag_as_required("config")
 flags.DEFINE_enum("wandb_mode", "online", ["online", "offline", "disabled"], "Mode for wandb.run.")
 flags.DEFINE_list("wandb_tags", [], "Tags for wandb.run.")
 flags.DEFINE_string("wandb_notes", "", "Notes for wandb.run.")
-flags.DEFINE_string("wandb_project", "neurips2023experiments", "Project for wandb.run.")
+flags.DEFINE_string("wandb_project", "iclr2024experiments", "Project for wandb.run.")
 flags.DEFINE_string("wandb_entity", "invariance-learners", "Entity for wandb.run.")
 
 
