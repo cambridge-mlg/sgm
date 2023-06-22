@@ -15,8 +15,9 @@ def get_config(params) -> config_dict.ConfigDict:
     # Dataset config
     config.dataset = "MNIST"
     # config.data_dir = '~/data'
+    config.shuffle = "preprocessed"
     config.shuffle_buffer_size = 50_000
-    config.repeat_after_batch = True  # NOTE: ordering of PP and repeat is important!
+    config.repeat_after_batching = True  # NOTE: ordering of PP, shuffle, and repeat is important!
     config.train_split = f"train[{config.num_val}:{config.num_val+config.num_trn}]"
     config.pp_train = (
         f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image"])'
@@ -30,13 +31,13 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.latent_dim = 16
     ## q(Z|X) config
     config.model.Z_given_X = config_dict.ConfigDict()
-    config.model.Z_given_X.conv_dims = [64, 128, 256]
-    config.model.Z_given_X.dense_dims = [256]
+    config.model.Z_given_X.conv_dims = (64, 128, 256)
+    config.model.Z_given_X.dense_dims = (256,)
     config.model.Z_given_X.max_2strides = 2
     ## p(X|Z) config
     config.model.X_given_Z = config_dict.ConfigDict()
-    config.model.X_given_Z.conv_dims = [256, 128, 64]
-    config.model.X_given_Z.dense_dims = [256]
+    config.model.X_given_Z.conv_dims = (256, 128, 64)
+    config.model.X_given_Z.dense_dims = (256,)
     config.model.X_given_Z.max_2strides = 2
 
     # Training config
@@ -73,7 +74,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.γ = 1
 
     # MLL config
-    config.run_hais = True
+    config.run_hais = False
     config.hais = config_dict.ConfigDict()
     config.hais.num_chains = 300
     config.hais.num_steps = 100

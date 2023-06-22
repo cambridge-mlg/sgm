@@ -307,6 +307,7 @@ def get_dataset_splits(
         preprocess_fn=preprocess_spec.parse(
             spec=config.pp_train, available_ops=preprocess_utils.all_ops()  # type: ignore
         ),
+        shuffle=config.get("shuffle", "preprocessed"),  # type: ignore
         shuffle_buffer_size=config.shuffle_buffer_size,  # type: ignore
         repeat_after_batching=config.get("repeat_after_batching", True),  # type: ignore
         prefetch_size=config.get("prefetch_to_host", 2),  # type: ignore

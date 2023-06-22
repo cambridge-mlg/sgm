@@ -190,7 +190,7 @@ def get_data(
     cache: Union[str, bool] = False,
     num_epochs: Optional[int] = None,
     repeat_after_batching: bool = False,
-    shuffle: bool = True,
+    shuffle: Union[str, bool] = "loaded",
     shuffle_buffer_size: int = 10_000,
     prefetch_size: int = 4,
     drop_remainder: bool = True,
@@ -216,7 +216,10 @@ def get_data(
         forever.
       repeat_after_batching: Whether to `repeat` the dataset before or after
         batching.
-      shuffle: Whether to shuffle the dataset (both on file and example level).
+      shuffle: Whether to shuffle the dataset (both on file and example level). Either
+        shuffle unprocessed dataset in memory before preprocessing and (potentially)
+        batching ("loaded"), after preprocessing and (potentially) batching ("batched"),
+        or not at all (False).
       shuffle_buffer_size: Number of examples in the shuffle buffer.
       prefetch_size: The number of elements in the final dataset to prefetch in
         the background. This should be a small (say <10) positive integer or
@@ -236,6 +239,10 @@ def get_data(
       multi-process setup.
     """
     assert cache in ("loaded", "batched", False, None)
+    assert shuffle in ("loaded", "preprocessed", False, None)
+
+    assert not ((shuffle == "preprocessed") and (not repeat_after_batching))
+    # ^ pretty sure that this doesn't ever make sense.
 
     rng_available = rng is not None
     if not rng_available and shuffle:
@@ -253,12 +260,16 @@ def get_data(
     else:
         rngs = 3 * [[None, None]]
 
+    file_shuffle_seed = rngs.pop()[0]
+    shuffle_seed = rngs.pop()[0]
+    pp_seed = rngs.pop()
+
     ds = _build_dataset(
         dataset,
         data_dir=data_dir,
         split=split,
-        shuffle_files=shuffle,
-        file_shuffle_seed=rngs.pop()[0],
+        shuffle_files=shuffle in ("loaded", "preprocessed"),
+        file_shuffle_seed=file_shuffle_seed,
         process_index=process_index,
         process_count=process_count,
         drop_remainder=drop_remainder,
@@ -267,8 +278,8 @@ def get_data(
     if cache == "loaded":
         ds = ds.cache()
 
-    if shuffle:
-        ds = ds.shuffle(shuffle_buffer_size, seed=rngs.pop()[0])
+    if shuffle == "loaded":
+        ds = ds.shuffle(shuffle_buffer_size, seed=shuffle_seed)
 
     if not repeat_after_batching:
         ds = ds.repeat(num_epochs)
@@ -280,9 +291,12 @@ def get_data(
         preprocess_and_mask_fn = mask_fn
 
     if rng_available:
-        ds = _preprocess_with_per_example_rng(ds, preprocess_and_mask_fn, rng=rngs.pop())
+        ds = _preprocess_with_per_example_rng(ds, preprocess_and_mask_fn, rng=pp_seed)
     else:
         ds = ds.map(preprocess_and_mask_fn, num_parallel_calls=tf.data.AUTOTUNE)
+
+    if shuffle == "preprocessed":
+        ds = ds.shuffle(shuffle_buffer_size, seed=shuffle_seed)
 
     # Batch and reshape to [num_devices, batch_size_per_device] with padding.
     num_devices = jax.local_device_count()
