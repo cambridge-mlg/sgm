@@ -1,3 +1,4 @@
+import copy
 from ml_collections import config_dict
 from jax import numpy as jnp
 
@@ -24,21 +25,21 @@ def get_config(params) -> config_dict.ConfigDict:
     config.pp_eval = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'
 
     # Model config
-    config.model_name = "VAE"
+    config.model_name = "SSILVAE"
     config.model = config_dict.ConfigDict()
     config.model.bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
-    config.model.offset = (0., 0., 0., 0., 0.)
+    config.model.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
     config.model.latent_dim = 16
-    ## q(Z|X) config
-    config.model.Z_given_X = config_dict.ConfigDict()
-    config.model.Z_given_X.conv_dims = (64, 128, 256)
-    config.model.Z_given_X.dense_dims = (256,)
-    config.model.Z_given_X.max_2strides = 2
-    ## p(X|Z) config
-    config.model.X_given_Z = config_dict.ConfigDict()
-    config.model.X_given_Z.conv_dims = (256, 128, 64)
-    config.model.X_given_Z.dense_dims = (256,)
-    config.model.X_given_Z.max_2strides = 2
+    ## q(Z|Xhat) config
+    config.model.Z_given_Xhat = config_dict.ConfigDict()
+    config.model.Z_given_Xhat.conv_dims = (64, 128, 256)
+    config.model.Z_given_Xhat.dense_dims = (256,)
+    config.model.Z_given_Xhat.max_2strides = 2
+    ## p(Xhat|Z) config
+    config.model.Xhat_given_Z = config_dict.ConfigDict()
+    config.model.Xhat_given_Z.conv_dims = (256, 128, 64)
+    config.model.Xhat_given_Z.dense_dims = (256,)
+    config.model.Xhat_given_Z.max_2strides = 2
     # p(η|Xhat) config
     config.model.Η_given_Xhat = config_dict.ConfigDict()
     config.model.Η_given_Xhat.num_layers = 1
@@ -46,30 +47,28 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.Η_given_Xhat.base = config_dict.ConfigDict()
     config.model.Η_given_Xhat.base.dense_dims = (64, 32, 16)
     config.model.Η_given_Xhat.base.conv_dims = ()
-    config.model.Η_given_Xhat.base.dropout_rate = 0.
+    config.model.Η_given_Xhat.base.dropout_rate = 0.0
     config.model.Η_given_Xhat.conditioner = config_dict.ConfigDict()
     config.model.Η_given_Xhat.conditioner.hidden_dims = (256, 128)
-    config.model.Η_given_Xhat.conditioner.dropout_rate = 0.
+    config.model.Η_given_Xhat.conditioner.dropout_rate = 0.0
     config.model.Η_given_Xhat.trunk = config_dict.ConfigDict()
     config.model.Η_given_Xhat.trunk.dense_dims = (256,)
     config.model.Η_given_Xhat.trunk.conv_dims = (32, 64, 128)
-    config.model.Η_given_Xhat.trunk.dropout_rate = 0.
+    config.model.Η_given_Xhat.trunk.dropout_rate = 0.0
     # p(η|X) config
-    config.model.Η_given_X = config.model.Η_given_Xhat.copy()
+    config.model.Η_given_X = copy.deepcopy(config.model.Η_given_Xhat)
 
     # Training config
-    config.total_steps = per_stage_steps * 2 + 1
+    config.total_steps = config.per_stage_steps * 2
     config.eval_every = 500
     config.batch_size = 512
 
     ## Parameter parition config
-    config.reset_step = per_stage_steps
+    config.reset_step = config.per_stage_steps
     config.partition_names = ("SSIL", "VAE")
     config.lr_schedule_halfs = ("first", "second")
     config.partition_fn = (
-        lambda path, _: "SSIL"
-        if path[0] in ("p_Η_given_Xhat", "q_Η_given_X", "σ_")
-        else "VAE"
+        lambda path, _: "SSIL" if path[0] in ("p_Η_given_Xhat", "q_Η_given_X", "σ_") else "VAE"
     )
 
     ## Optimizer config
@@ -88,8 +87,8 @@ def get_config(params) -> config_dict.ConfigDict:
     for i in range(len(config.lr_schedule)):
         config.lr_schedule[i].peak_value = 10 * config.learning_rate[i]
         config.lr_schedule[i].end_value = 1 * config.learning_rate[i]
-        config.lr_schedule[i].decay_steps = per_stage_steps
-        config.lr_schedule[i].warmup_steps = per_stage_steps // 10
+        config.lr_schedule[i].decay_steps = config.per_stage_steps
+        config.lr_schedule[i].warmup_steps = config.per_stage_steps // 10
 
     ## α config
     config.α = 1
@@ -101,16 +100,16 @@ def get_config(params) -> config_dict.ConfigDict:
     config.β_schedule = config_dict.ConfigDict()
     config.β_end_value = 1
     config.β_schedule.alpha = config.β_end_value / config.β
-    config.β_schedule.decay_steps = per_stage_steps
+    config.β_schedule.decay_steps = config.per_stage_steps
 
     ## γ config
     config.γ_schedule_half = "first"
-    config.γ = 10 * γ_mult
+    config.γ = 10 * config.γ_mult
     config.γ_schedule_name = "cosine_decay_schedule"
     config.γ_schedule = config_dict.ConfigDict()
-    config.γ_end_value = 1 * γ_mult
+    config.γ_end_value = 1 * config.γ_mult
     config.γ_schedule.alpha = config.γ_end_value / config.γ
-    config.γ_schedule.decay_steps = per_stage_steps
+    config.γ_schedule.decay_steps = config.per_stage_steps
 
     # MLL config
     config.run_hais = False

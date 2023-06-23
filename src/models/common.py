@@ -263,7 +263,8 @@ class Trunk(nn.Module):
         #     h = h.flatten()
 
         if self.resize:
-            h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"resize")(h)
+            h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"trunk_resize")(h)
+            # TODO: investigate why we get name collisions if this is just called "resize".
 
         h = h.flatten()
 

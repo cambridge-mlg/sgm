@@ -345,7 +345,13 @@ def ssil_loss_fn(
     return loss, metrics
 
 
-def make_ssilvae_batch_loss(model, agg=jnp.mean, train=True):
+def make_ssilvae_batch_loss(
+    model,
+    agg=jnp.mean,
+    train=True,
+    run_iwlb=False,
+    iwlb_kwargs: Optional[Mapping[str, Any]] = None,
+):
     def batch_loss(params, x_batch, mask, rng, state):
         # Broadcast loss over batch and aggregate.
         loss, metrics = jax.vmap(
