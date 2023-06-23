@@ -19,9 +19,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.shuffle_buffer_size = 50_000
     config.repeat_after_batching = True  # NOTE: ordering of PP, shuffle, and repeat is important!
     config.train_split = f"train[{config.num_val}:{config.num_val+config.num_trn}]"
-    config.pp_train = (
-        f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image"])'
-    )
+    config.pp_train = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image"])'
     config.val_split = f"train[:{config.num_val}]"
     config.pp_eval = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'
 
@@ -66,8 +64,8 @@ def get_config(params) -> config_dict.ConfigDict:
     config.β = 10
     config.β_schedule_name = "cosine_decay_schedule"
     config.β_schedule = config_dict.ConfigDict()
-    β_end_value = 1
-    config.β_schedule.alpha = β_end_value / config.β
+    config.β_end_value = 1
+    config.β_schedule.alpha = config.β_end_value / config.β
     config.β_schedule.decay_steps = config.total_steps
 
     ## γ config
