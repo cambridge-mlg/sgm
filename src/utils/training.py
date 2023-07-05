@@ -107,45 +107,6 @@ def _get_value_for_step(step, val_or_schedule):
         return val_or_schedule
 
 
-# the empty node is a struct.dataclass to be compatible with JAX.
-@traverse_util.struct.dataclass
-class _EmptyNode:
-    pass
-
-
-empty_node = _EmptyNode()
-
-
-def _path_aware_map(
-    f: Callable[[Tuple[str, ...], Any], Any], nested_dict: Mapping[str, Mapping[str, Any]]
-) -> Mapping[str, Mapping[str, Any]]:
-    """A map function that operates over nested dictionary structures while taking
-    the path to each leaf into account.
-
-    Example::
-
-      >>> import jax.numpy as jnp
-      >>> from flax import traverse_util
-      ...
-      >>> params = {'a': {'x': 10, 'y': 3}, 'b': {'x': 20}}
-      >>> f = lambda path, x: x + 5 if 'x' in path else -x
-      >>> traverse_util.path_aware_map(f, params)
-      {'a': {'x': 15, 'y': -3}, 'b': {'x': 25}}
-
-    Args:
-      f: A callable that takes in ``(path, value)`` arguments and maps them
-        to a new value. Here ``path`` is a tuple of strings.
-      nested_dict: A nested dictionary structure.
-
-    Returns:
-      A new nested dictionary structure with the mapped values.
-    """
-    flat = traverse_util.flatten_dict(nested_dict, keep_empty_nodes=True)
-    return traverse_util.unflatten_dict(
-        {k: f(k, v) if v is not empty_node else v for k, v in flat.items()}
-    )
-
-
 def setup_model(
     config: config_dict.ConfigDict,
     rng: PRNGKey,
@@ -245,7 +206,7 @@ def setup_model(
                 partition_optimizers[parition_name] = optax.set_to_zero()
 
         parition_fn = config.partition_fn
-        param_partitions = freeze(_path_aware_map(parition_fn, params))
+        param_partitions = freeze(traverse_util.path_aware_map(parition_fn, params))
 
         tx = optax.multi_transform(
             partition_optimizers,

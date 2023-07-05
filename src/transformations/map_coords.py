@@ -15,7 +15,7 @@ import numpy as np
 from jax._src import api
 from jax._src import util
 from jax import lax, vmap
-from jax._src.numpy import lax_numpy as jnp
+import jax.numpy as jnp
 from jax._src.numpy.util import _wraps
 from jax._src.util import safe_zip as zip
 from jax._src.numpy.linalg import inv
