@@ -145,3 +145,6 @@ logs/
 
 # jobs
 *%*.txt
+
+# checkpoints
+checkpoints/
