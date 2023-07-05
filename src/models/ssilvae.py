@@ -238,6 +238,155 @@ class SSILVAE(nn.Module):
 
         return xrecon
 
+    def importance_weighted_lower_bound_full(
+        self,
+        x: Array,
+        rng: PRNGKey,
+        num_samples: int = 50,
+        train: bool = False,
+        ε: float = 1e-6,
+    ):
+        η_rng, z_rng = random.split(rng, 2)
+
+        q_Η_given_x = self.q_Η_given_X(x, train=train)
+
+        def single_sample_w(i):
+            z_rng_i = random.fold_in(z_rng, i)
+            η_rng_i = random.fold_in(η_rng, i)
+
+            η = q_Η_given_x.sample(seed=η_rng_i)
+            logq_η_given_x = q_Η_given_x.log_prob(η)
+
+            xhat = transform_image(x, -η)
+
+            p_Η_given_x = self.p_Η_given_Xhat(x, train=train)
+            logp_η_given_x = p_Η_given_x.log_prob(
+                η.clip(
+                    min=(1 - ε) * (-self.bounds_array) + self.offset_array,
+                    max=(1 - ε) * (self.bounds_array) + self.offset_array,
+                )
+            )
+
+            q_Z_given_xhat = self.q_Z_given_Xhat(xhat, train=train)
+            z = q_Z_given_xhat.sample(seed=z_rng_i, sample_shape=())
+            logq_z_given_xhat = q_Z_given_xhat.log_prob(z)
+
+            p_Xhat_given_z = self.p_Xhat_given_Z(z, train=train)
+            logp_xhat_given_z = p_Xhat_given_z.log_prob(xhat)
+
+            logp_z = self.p_Z.log_prob(z)
+
+            p_X_given_xhat_and_η = distrax.Independent(
+                distrax.Normal(transform_image(xhat, η), self.σ),
+                reinterpreted_batch_ndims=len(x.shape),
+            )
+            logp_x_given_xhat_and_η = p_X_given_xhat_and_η.log_prob(x)
+
+            return logp_xhat_given_z + logp_z - logq_z_given_xhat + logp_η_given_x - logq_η_given_x + logp_x_given_xhat_and_η
+
+        log_ws = jax.vmap(single_sample_w)(jnp.arange(num_samples))
+
+        return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
+
+    def importance_weighted_lower_bound_marginalise(
+        self,
+        x: Array,
+        rng: PRNGKey,
+        num_samples: int = 50,
+        train: bool = False,
+        ε: float = 1e-6,
+    ):
+        η_rng, z_rng = random.split(rng, 2)
+
+        q_Η_given_x = self.q_Η_given_X(x, train=train)
+
+        def single_sample_w(i):
+            z_rng_i = random.fold_in(z_rng, i)
+            η_rng_i = random.fold_in(η_rng, i)
+
+            η = q_Η_given_x.sample(seed=η_rng_i)
+            logq_η_given_x = q_Η_given_x.log_prob(η)
+
+            xhat = transform_image(x, -η)
+
+            p_Η_given_x = self.p_Η_given_Xhat(x, train=train)
+            logp_η_given_x = p_Η_given_x.log_prob(
+                η.clip(
+                    min=(1 - ε) * (-self.bounds_array) + self.offset_array,
+                    max=(1 - ε) * (self.bounds_array) + self.offset_array,
+                )
+            )
+
+            q_Z_given_xhat = self.q_Z_given_Xhat(xhat, train=train)
+            z = q_Z_given_xhat.sample(seed=z_rng_i, sample_shape=())
+            logq_z_given_xhat = q_Z_given_xhat.log_prob(z)
+
+            p_Xhat_given_z = self.p_Xhat_given_Z(z, train=train)
+            logp_xhat_given_z = p_Xhat_given_z.log_prob(xhat)
+
+            logp_z = self.p_Z.log_prob(z)
+
+            return logp_xhat_given_z + logp_z - logq_z_given_xhat + logp_η_given_x - logq_η_given_x
+
+        log_ws = jax.vmap(single_sample_w)(jnp.arange(num_samples))
+
+        return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
+
+    def importance_weighted_lower_bound_mode(
+        self,
+        x: Array,
+        rng: PRNGKey,
+        num_samples: int = 50,
+        train: bool = False,
+    ):
+        η_rng, z_rng = random.split(rng, 2)
+
+        q_Η_given_x = self.q_Η_given_X(x, train=train)
+        η = approximate_mode(q_Η_given_x, 100, rng=η_rng)
+
+        xhat = transform_image(x, -η)
+
+        def single_sample_w(i):
+            rng_i = random.fold_in(z_rng, i)
+            q_Z_given_xhat = self.q_Z_given_Xhat(xhat, train=train)
+            z = q_Z_given_xhat.sample(seed=rng_i, sample_shape=())
+            logq_z_given_xhat = q_Z_given_xhat.log_prob(z)
+
+            p_Xhat_given_z = self.p_Xhat_given_Z(z, train=train)
+            logp_xhat_given_z = p_Xhat_given_z.log_prob(xhat)
+
+            logp_z = self.p_Z.log_prob(z)
+
+            return logp_xhat_given_z + logp_z - logq_z_given_xhat
+
+        log_ws = jax.vmap(single_sample_w)(jnp.arange(num_samples))
+
+        return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
+
+    def importance_weighted_lower_bound_vae(
+        self,
+        xhat: Array,
+        rng: PRNGKey,
+        num_samples: int = 50,
+        train: bool = False,
+    ):
+        def single_sample_w(i):
+            rng_i = random.fold_in(rng, i)
+            q_Z_given_xhat = self.q_Z_given_Xhat(xhat, train=train)
+            z = q_Z_given_xhat.sample(seed=rng_i, sample_shape=())
+            logq_z_given_xhat = q_Z_given_xhat.log_prob(z)
+
+            p_Xhat_given_z = self.p_Xhat_given_Z(z, train=train)
+            logp_xhat_given_z = p_Xhat_given_z.log_prob(xhat)
+
+            logp_z = self.p_Z.log_prob(z)
+
+            return logp_xhat_given_z + logp_z - logq_z_given_xhat
+
+        log_ws = jax.vmap(single_sample_w)(jnp.arange(num_samples))
+
+        return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
+
 
 def calculate_ssilvae_elbo(
     x: Array,
