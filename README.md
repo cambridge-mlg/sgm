@@ -12,18 +12,12 @@ python3.9 -m venv ~/.virtualenvs/inv
 source ~/.virtualenvs/inv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install "jax[cuda]==0.3.4" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# ^ for GPU support, can be modified to get a different CUDA version
 pip install -e .
-python3.9 -m ipykernel install --user --name=inv
+python3 -m ipykernel install --user --name=inv
 # ^ optional, for easily running IPython/Jupyter notebooks with the virtual env.
 ```
-
-## TODO:
-
- - [ ] Setup expiriment sweep code
- - [ ] Run sweep over different augmentations in MNIST and see if LIVAE learns the mean
- - [ ] Run experiments for inv-VAEs with rotations in the data. We expect that in this case the inv encoders will perform better than non-inv ones. 
- - [ ] Make CNN implementation match that of [Dubois et al.](https://github.com/YannDubs/lossyless/blob/462af23a52d68f860e5ae2ff9c59f04cfb8c5fd5/lossyless/architectures.py#L235). That is, resize images to be of power 2, then have the CNN downsample in h & w dims at each stage. Use [this](https://jax.readthedocs.io/en/latest/_autosummary/jax.image.resize.html) rather than [this](https://pytorch.org/vision/main/generated/torchvision.transforms.Resize.html).
 
 
  ## Javi convo take-aways
