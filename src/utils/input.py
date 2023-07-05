@@ -182,7 +182,7 @@ def _build_dataset(
 
 
 def get_data(
-    dataset: Union[str, tfds.core.DatasetBuilder],
+    dataset: Union[str, tfds.core.DatasetBuilder, tf.data.Dataset],
     split: str,
     rng: Optional[Array],
     process_batch_size: int,
@@ -264,16 +264,19 @@ def get_data(
     shuffle_seed = rngs.pop()[0]
     pp_seed = rngs.pop()
 
-    ds = _build_dataset(
-        dataset,
-        data_dir=data_dir,
-        split=split,
-        shuffle_files=shuffle in ("loaded", "preprocessed"),
-        file_shuffle_seed=file_shuffle_seed,
-        process_index=process_index,
-        process_count=process_count,
-        drop_remainder=drop_remainder,
-    )
+    if not isinstance(dataset, tf.data.Dataset):
+        ds = _build_dataset(
+            dataset,
+            data_dir=data_dir,
+            split=split,
+            shuffle_files=shuffle in ("loaded", "preprocessed"),
+            file_shuffle_seed=file_shuffle_seed,
+            process_index=process_index,
+            process_count=process_count,
+            drop_remainder=drop_remainder,
+        )
+    else:
+        ds = dataset
 
     if cache == "loaded":
         ds = ds.cache()

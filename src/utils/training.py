@@ -254,7 +254,11 @@ def setup_model(
 
 
 def get_dataset_splits(
-    config: config_dict.ConfigDict, rng: PRNGKey, local_batch_size: int, local_batch_size_eval: int
+    config: config_dict.ConfigDict,
+    rng: PRNGKey,
+    local_batch_size: int,
+    local_batch_size_eval: int,
+    train_epochs=None,
 ) -> Tuple[tf.data.Dataset, tf.data.Dataset, Optional[tf.data.Dataset]]:
     rng, train_ds_rng = jax.random.split(rng)
     train_ds_rng = jax.random.fold_in(train_ds_rng, jax.process_index())
@@ -274,6 +278,7 @@ def get_dataset_splits(
         prefetch_size=config.get("prefetch_to_host", 2),  # type: ignore
         drop_remainder=False,
         data_dir=config.get("data_dir"),  # type: ignore
+        num_epochs=train_epochs,
     )
 
     _write_note("Initializing val dataset...")
