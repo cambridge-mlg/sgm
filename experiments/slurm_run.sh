@@ -7,9 +7,9 @@
 # Single job mode: pass the python arguments to this script
 # Batch job mode: pass a file with first the job tag and second the commands per line
 
-# JMH233-SL3-GPU T2-CS117-GPU T2-CS133-GPU
+# JMH233-SL3-GPU T2-CS117-GPU T2-CS133-GPU T2-CS169-GPU
 
-#SBATCH -A JMH233-SL3-GPU
+#SBATCH -A T2-CS169-GPU
 #SBATCH --nodes=1
 #SBATCH --partition=ampere
 #SBATCH --mail-type=FAIL
