@@ -62,6 +62,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.total_steps = config.per_stage_steps * 2
     config.eval_every = 500
     config.batch_size = 512
+    config.batch_size_eval = 64
 
     ## Parameter parition config
     config.reset_step = config.per_stage_steps

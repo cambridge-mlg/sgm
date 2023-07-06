@@ -41,7 +41,7 @@ def get_config(params) -> config_dict.ConfigDict:
     # Training config
     config.eval_every = 500
     config.batch_size = 512
-    config.batch_size_eval = 256
+    config.batch_size_eval = 64
 
     ## Optimizer config
     config.optim_name = "adamw"
