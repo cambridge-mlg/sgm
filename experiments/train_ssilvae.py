@@ -2,6 +2,7 @@ import os
 
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".45"
 
+import random
 import functools
 from absl import app
 from absl import flags
@@ -43,7 +44,16 @@ flags.DEFINE_string("wandb_project", "iclr2024experiments", "Project for wandb.r
 flags.DEFINE_string("wandb_entity", "invariance-learners", "Entity for wandb.run.")
 
 
+def random_word(length=5):
+    consonants = "bcdfghjklmnpqrstvwxyz"
+    vowels = "aeiou"
+
+    return "".join(random.choice((consonants, vowels)[i%2]) for i in range(length))
+
+
 def main(argv):
+    common_tag = random_word(9)
+
     # Set the seed
     rng = random.PRNGKey(FLAGS.seed)
     data_rng, model_rng = random.split(rng)
@@ -66,7 +76,7 @@ def main(argv):
         val_ds,
         wandb_kwargs={
             "mode": FLAGS.wandb_mode,
-            "tags": FLAGS.wandb_tags,
+            "tags": FLAGS.wandb_tags + [common_tag],
             "notes": FLAGS.wandb_notes,
             "project": FLAGS.wandb_project,
             "entity": FLAGS.wandb_entity,
@@ -175,7 +185,7 @@ def main(argv):
         valid_ds_aug,
         wandb_kwargs={
             "mode": FLAGS.wandb_mode,
-            "tags": FLAGS.wandb_tags,
+            "tags": FLAGS.wandb_tags + [common_tag],
             "notes": FLAGS.wandb_notes,
             "project": FLAGS.wandb_project,
             "entity": FLAGS.wandb_entity,
