@@ -1,3 +1,4 @@
+import copy
 from ml_collections import config_dict
 from jax import numpy as jnp
 
@@ -6,23 +7,21 @@ def get_config(params) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
 
     angle, num_trn, γ_mult = params.split(",")
-    angle = int(angle)
-    num_trn = int(num_trn)
-    num_val = 10000
-    γ_mult = int(γ_mult)
+    config.angle = int(angle)
+    config.num_trn = int(num_trn)
+    config.num_val = 10000
+    config.γ_mult = int(γ_mult)
 
     config.seed = 0
     # Dataset config
     config.dataset = "MNIST"
     # config.data_dir = '~/data'
     config.shuffle_buffer_size = 50_000
-    config.repeat_after_batch = True  # NOTE: ordering of PP and repeat is important!
-    config.train_split = f"train[{num_val}:{num_val+num_trn}]"
-    config.pp_train = (
-        f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image"])'
-    )
-    config.val_split = f"train[:{num_val}]"
-    config.pp_eval = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image", "label"])'
+    config.repeat_after_batching = True  # NOTE: ordering of PP, shuffle, and repeat is important!
+    config.train_split = f"train[{config.num_val}:{config.num_val+config.num_trn}]"
+    config.pp_train = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image"])'
+    config.val_split = f"train[:{config.num_val}]"
+    config.pp_eval = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'
 
     # Model config
     config.model_name = "SSIL"
@@ -34,18 +33,18 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.Η_given_Xhat.num_layers = 1
     config.model.Η_given_Xhat.num_bins = 5
     config.model.Η_given_Xhat.base = config_dict.ConfigDict()
-    config.model.Η_given_Xhat.base.dense_dims = [64, 32, 16]
-    config.model.Η_given_Xhat.base.conv_dims = []
+    config.model.Η_given_Xhat.base.dense_dims = (64, 32, 16)
+    config.model.Η_given_Xhat.base.conv_dims = ()
     config.model.Η_given_Xhat.base.dropout_rate = 0.0
     config.model.Η_given_Xhat.conditioner = config_dict.ConfigDict()
-    config.model.Η_given_Xhat.conditioner.hidden_dims = [256, 128]
+    config.model.Η_given_Xhat.conditioner.hidden_dims = (256, 128)
     config.model.Η_given_Xhat.conditioner.dropout_rate = 0.0
     config.model.Η_given_Xhat.trunk = config_dict.ConfigDict()
-    config.model.Η_given_Xhat.trunk.dense_dims = [256]
-    config.model.Η_given_Xhat.trunk.conv_dims = [32, 64, 128]
+    config.model.Η_given_Xhat.trunk.dense_dims = (256,)
+    config.model.Η_given_Xhat.trunk.conv_dims = (32, 64, 128)
     config.model.Η_given_Xhat.trunk.dropout_rate = 0.0
     # p(η|X) config
-    config.model.Η_given_X = config.model.Η_given_Xhat
+    config.model.Η_given_X = copy.deepcopy(config.model.Η_given_Xhat)
 
     # Training config
     config.total_steps = 5001
@@ -70,10 +69,10 @@ def get_config(params) -> config_dict.ConfigDict:
     config.α = 1
 
     ## γ config
-    config.γ = 10 * γ_mult
+    config.γ = 10 * config.γ_mult
     config.γ_schedule_name = "cosine_decay_schedule"
     config.γ_schedule = config_dict.ConfigDict()
-    config.γ_end_value = 1 * γ_mult
+    config.γ_end_value = 1 * config.γ_mult
     config.γ_schedule.alpha = config.γ_end_value / config.γ
     config.γ_schedule.decay_steps = config.total_steps
 
