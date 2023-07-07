@@ -5,11 +5,10 @@ from jax import numpy as jnp
 def get_config(params) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
 
-    angle, num_trn, total_steps = params.split(",")[:3]
+    angle, num_trn = params.split(",")[:2]
     config.angle = int(angle)
     config.num_trn = int(num_trn)
     config.num_val = 10000
-    config.total_steps = int(total_steps)
 
     config.seed = 0
     # Dataset config
@@ -39,6 +38,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.X_given_Z.max_2strides = 2
 
     # Training config
+    config.total_steps = 7501
     config.eval_every = 500
     config.batch_size = 512
     config.batch_size_eval = 64

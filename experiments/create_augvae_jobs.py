@@ -14,7 +14,7 @@ ANGLES = [0, 1, 5, 15, 30, 45, 90, 135, 180, 270, 360]
 NUM_TRNS = [50_000] # [50_000, 25_000, 12_500, 6_250, 3_125, 1_562]
 TOTAL_STEPS = [7501] # [15_001, 7501, 3751]
 RANDOM_SEEDS = [0]
-FLAGS_TO_ADD = ["--wandb_tags=augvae,mnist,angle_sweep"]
+FLAGS_TO_ADD = ["--wandb_tags=mnist,angle_sweep"]
 
 ################################################################################
 

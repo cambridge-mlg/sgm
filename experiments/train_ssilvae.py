@@ -61,8 +61,9 @@ def main(argv):
 
     ssilvae_config = get_ssilvae_config(f"{FLAGS.angle},{FLAGS.num_trn},{FLAGS.total_steps},1")
     ssilvae_config.seed = FLAGS.seed
-    vae_config = get_vae_config(f"{FLAGS.angle},{FLAGS.num_trn},{FLAGS.total_steps}")
+    vae_config = get_vae_config(f"{FLAGS.angle},{FLAGS.num_trn}")
     vae_config.seed = FLAGS.seed
+    vae_config.total_steps = FLAGS.total_steps
 
     train_ds, val_ds, _ = get_dataset_splits(
         vae_config, data_rng, vae_config.batch_size, vae_config.batch_size
@@ -79,7 +80,7 @@ def main(argv):
         val_ds,
         wandb_kwargs={
             "mode": FLAGS.wandb_mode,
-            "tags": FLAGS.wandb_tags + [common_tag],
+            "tags": FLAGS.wandb_tags + [common_tag, "ssilvae"],
             "notes": FLAGS.wandb_notes,
             "project": FLAGS.wandb_project,
             "entity": FLAGS.wandb_entity,
@@ -199,7 +200,7 @@ def main(argv):
         valid_ds_aug,
         wandb_kwargs={
             "mode": FLAGS.wandb_mode,
-            "tags": FLAGS.wandb_tags + [common_tag],
+            "tags": FLAGS.wandb_tags + [common_tag, "augvae"],
             "notes": FLAGS.wandb_notes,
             "project": FLAGS.wandb_project,
             "entity": FLAGS.wandb_entity,
