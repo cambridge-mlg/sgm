@@ -31,13 +31,12 @@ def transform_image(
     Args:
         image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax/TF image format.
 
-        η: an Array with 7 entries:
+        η: an Array with 5 entries:
         * η_0 controls translation in x.
         * η_1 controls translation in y.
         * η_2 is the angle of rotation.
         * η_3 is the scaling factor in x.
         * η_4 is the scaling factor in y.
-        * η_5 controls hue.
 
     Returns:
         A transformed image of same shape as the input.
