@@ -1,4 +1,5 @@
 from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
+from functools import partial
 
 import numpy as np
 import jax
@@ -310,7 +311,8 @@ class Trunk(nn.Module):
     dense_dims: Optional[Sequence[int]] = None
     act_fn: Callable = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
-    dropout_rate: float = 0.1
+    dropout_rate: float = 0.
+    input_dropout_rate: float = 0.
     max_2strides: Optional[int] = None
     resize: bool = True
     train: Optional[bool] = None
@@ -327,7 +329,7 @@ class Trunk(nn.Module):
         if self.max_2strides is not None:
             num_2strides = np.minimum(num_2strides, self.max_2strides)
 
-        h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(x)
+        h = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(x)
 
         i = -1
         for i, conv_dim in enumerate(conv_dims):
@@ -339,12 +341,6 @@ class Trunk(nn.Module):
             )(h)
             h = self.norm_cls(name=f"norm_{i}")(h)
             h = self.act_fn(h)
-            # h = BasicBlock(conv_dim, act_fn=self.act_fn, norm_cls=self.norm_cls)(h)
-
-        # if len(conv_dims) > 0:
-        #     h = jnp.mean(h, axis=(0, 1))
-        # else:
-        #     h = h.flatten()
 
         if self.resize:
             h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"trunk_resize")(h)
@@ -356,6 +352,7 @@ class Trunk(nn.Module):
             h = nn.Dense(dense_dim, name=f"dense_{j+i+1}")(h)
             h = self.norm_cls(name=f"norm_{j+i+1}")(h)
             h = self.act_fn(h)
+            h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(h)
 
         return h
 
@@ -378,6 +375,7 @@ class Flow(nn.Module):
 
         # extract features
         features = Trunk(train=train, **(self.trunk or {}))(x)
+        # features = ResNet18(head=False, lowres=True)(x, train=train)
 
         # Number of parameters for the rational-quadratic spline:
         # - `num_bins` bin widths
