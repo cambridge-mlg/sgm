@@ -336,7 +336,7 @@ def get_data(
     return ds.prefetch(prefetch_size)
 
 
-def start_input_pipeline(dataset, n_prefetch, devices=None):
+def start_input_pipeline(dataset, n_prefetch=None, devices=None):
     """Creates a data iterator with optional prefetching and padding."""
     it = iter(dataset)
 
