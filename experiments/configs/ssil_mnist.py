@@ -6,11 +6,11 @@ from jax import numpy as jnp
 def get_config(params) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
 
-    angle, num_trn, γ_mult = params.split(",")
+    angle, num_trn = params.split(",")
     config.angle = int(angle)
     config.num_trn = int(num_trn)
     config.num_val = 10000
-    config.γ_mult = int(γ_mult)
+    # config.γ_mult = int(γ_mult)
 
     config.seed = 0
     # Dataset config
@@ -69,11 +69,11 @@ def get_config(params) -> config_dict.ConfigDict:
     config.α = 1
 
     ## γ config
-    config.γ = 10 * config.γ_mult
+    config.γ = 1
     config.γ_schedule_name = "cosine_decay_schedule"
     config.γ_schedule = config_dict.ConfigDict()
-    config.γ_end_value = 1 * config.γ_mult
+    config.γ_end_value = 0
     config.γ_schedule.alpha = config.γ_end_value / config.γ
-    config.γ_schedule.decay_steps = config.total_steps
+    config.γ_schedule.decay_steps = config.total_steps // 2
 
     return config
