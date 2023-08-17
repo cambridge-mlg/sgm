@@ -70,34 +70,34 @@ class SSIL(nn.Module):
     def __call__(
         self, x: Array, rng: PRNGKey, α: float = 1.0, train: bool = True
     ) -> Tuple[distrax.Distribution, ...]:
-        η_rng, η_unif_rng, η_tot_rng = random.split(rng, 3)
+        η_rng, η_rand_rng, η_tot_rng = random.split(rng, 3)
 
-        Η_uniform = distrax.Uniform(
+        Η_rand = distrax.Uniform(
             low=-α * self.bounds_array + self.offset_array,
             high=α * self.bounds_array + self.offset_array,
         )
-        η_uniform = Η_uniform.sample(seed=η_unif_rng)
-
-        x_uniform = transform_image(x, η_uniform)
-
-        q_Η_given_x_uniform = self.q_Η_given_X(x_uniform, train=train)
-        η_tot = q_Η_given_x_uniform.sample(seed=η_tot_rng)
-        # add a small noise to η_tot
-        # η_tot = η_tot + 0.03 * α * self.bounds_array * random.uniform(
-        #     η_tot_rng, η_tot.shape, minval=-1, maxval=1
+        # Η_rand = distrax.Transformed(
+        #     distrax.MixtureOfTwo(
+        #         α,
+        #         distrax.Transformed(distrax.Uniform(-2.0, 2.0), distrax.Tanh()),
+        #         distrax.Uniform(-1.0, 1.0),
+        #     ),
+        #     distrax.ScalarAffine(shift=self.bounds_array, scale=self.bounds_array),
         # )
+        η_rand = Η_rand.sample(seed=η_rand_rng)
 
-        xhat = transform_image(x_uniform, -η_tot)
+        x_rand = transform_image(x, η_rand)
+
+        q_Η_given_x_rand = self.q_Η_given_X(x_rand, train=train)
+        η_tot = q_Η_given_x_rand.sample(seed=η_tot_rng)
+
+        xhat = transform_image(x_rand, -η_tot)
 
         p_Η_given_xhat = self.p_Η_given_Xhat(xhat, train=train)
-        # p_Η = distrax.Normal(jnp.zeros((7,)), 0.5)
-        # p_Η_given_xhat = distrax.MixtureOfTwo(0.9, p_Η_given_xhat_, p_Η)
         η_ = p_Η_given_xhat.sample(seed=η_rng)
 
         q_Η_given_x = self.q_Η_given_X(x, train=train)
         η = q_Η_given_x.sample(seed=η_rng)
-        # add a small noise to η
-        # η = η + 0.03 * α * self.bounds_array * random.uniform(η_rng, η.shape, minval=-1, maxval=1)
 
         p_X_given_xhat_and_η = distrax.Independent(
             distrax.Normal(transform_image(xhat, η), self.σ),
