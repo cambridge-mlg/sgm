@@ -277,7 +277,7 @@ class ResNet(nn.Module):
             x = conv(self.num_filters, (7, 7), (2, 2), padding=[(3, 3), (3, 3)], name="conv_init")(
                 x
             )
-        x = self.norm_cls(name="bn_init")(x)
+        x = self.norm_cls(name="norm_init")(x)
         x = self.act_fn(x)
         x = nn.max_pool(x, (3, 3), strides=(2, 2), padding="SAME") if not self.lowres else x
         for i, block_size in enumerate(self.stage_sizes):
