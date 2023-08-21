@@ -1,0 +1,3 @@
+[submodule "CommonLoopUtils"]
+	path = CommonLoopUtils
+	url = https://github.com/JamesAllingham/CommonLoopUtils.git
