@@ -10,6 +10,9 @@ sudo apt-get install python3.9-venv
 # ^ if not already installed
 python3.9 -m venv ~/.virtualenvs/inv
 source ~/.virtualenvs/inv/bin/activate
+git clone --recurse-submodules git@github.com:JamesAllingham/learning-invariances.git
+# ^ the --recurse-submodules flag is important!
+cd learning-invariances
 pip install --upgrade pip
 pip install -r requirements.txt
 pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html

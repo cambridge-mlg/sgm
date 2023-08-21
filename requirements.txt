@@ -12,7 +12,7 @@ tensorflow-probability==0.20.1
 torch==2.0.1+cpu
 torchdiffeq==0.2.3
 absl-py==1.4.0
-clu==0.0.9
+-e ./CommonLoopUtils
 tqdm==4.65.0
 ml-collections==0.1.1
 matplotlib==3.7.1
