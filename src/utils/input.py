@@ -349,4 +349,5 @@ def start_input_pipeline(dataset, n_prefetch=None, devices=None):
 
     if n_prefetch:
         it = flax.jax_utils.prefetch_to_device(it, n_prefetch, devices=devices)
+        # Note, on a single 3090 GPU, with a ResNet18, and bs 256, prefetching MNIST is 50% slower than not
     return it
