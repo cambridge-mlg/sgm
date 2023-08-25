@@ -4,11 +4,11 @@ Let's try learn some invariances
 ## Getting Started
 
 ```bash
-module load python-3.9.6-gcc-5.4.0-sbr552h
+module load python/3.11.0-icl
 # ^ for Cambridge HPC only
-sudo apt-get install python3.9-venv
+sudo apt-get install python3.11-venv
 # ^ if not already installed
-python3.9 -m venv ~/.virtualenvs/inv
+python3.11 -m venv ~/.virtualenvs/inv
 source ~/.virtualenvs/inv/bin/activate
 git clone --recurse-submodules git@github.com:JamesAllingham/learning-invariances.git
 # ^ the --recurse-submodules flag is important!
