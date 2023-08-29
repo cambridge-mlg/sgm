@@ -148,3 +148,4 @@ logs/
 
 # checkpoints
 checkpoints/
+checkpoint_*
