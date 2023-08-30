@@ -11,13 +11,14 @@ from torchdiffeq import odeint
 from PIL import Image
 
 from src.transformations.affine import (
-    _transform_image,
+    affine_transform_image,
     gen_transform_mat,
     create_generator_matrices,
 )
 
 
-def _pytorch_transform_image(image, G):
+def _pytorch_transform_image(image, η):
+    G = np.array(gen_transform_mat(η))
     image = torch.from_numpy(np.moveaxis(image[np.newaxis, :, :], -1, 1))
     flowgrid = F.affine_grid(
         torch.from_numpy(G[np.newaxis, :2, :]), size=image.size(), align_corners=True
@@ -37,10 +38,10 @@ class AffineTransformTests(parameterized.TestCase):
         self.input_array = jnp.array(input_image, dtype=jnp.float32)
 
     def test_identity(self):
-        T = gen_transform_mat(jnp.zeros(7, dtype=jnp.float32))
+        η = jnp.zeros(7, dtype=jnp.float32)
 
-        jax_output = _transform_image(self.input_array, T)
-        pt_output = _pytorch_transform_image(np.array(self.input_array), np.array(T))
+        jax_output = affine_transform_image(self.input_array, η)
+        pt_output = _pytorch_transform_image(np.array(self.input_array), η)
 
         self.assertLess(jnp.mean(jnp.abs(jax_output - self.input_array)) / 255, 0.02)
         self.assertLess(jnp.mean(jnp.abs(jax_output - pt_output)) / 255, 0.02)
@@ -71,10 +72,8 @@ class AffineTransformTests(parameterized.TestCase):
         {"testcase_name": "all", "η": [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]},
     )
     def test_vs_pytorch(self, η):
-        T = gen_transform_mat(jnp.array(η))
-
-        jax_output = _transform_image(self.input_array, T)
-        pt_output = _pytorch_transform_image(np.array(self.input_array), np.array(T))
+        jax_output = affine_transform_image(self.input_array, jnp.array(η))
+        pt_output = _pytorch_transform_image(np.array(self.input_array), jnp.array(η))
 
         self.assertLess(jnp.mean(jnp.abs(jax_output - pt_output)) / 255, 0.02)
 
