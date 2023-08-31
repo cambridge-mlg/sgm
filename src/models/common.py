@@ -57,7 +57,9 @@ class Encoder(nn.Module):
         i = -1
         if len(x.shape) > 1:
             assert x.shape[0] == x.shape[1], "Images should be square."
-            num_2strides = np.minimum(_get_num_even_divisions(x.shape[0]), len(conv_dims))
+            num_2strides = np.minimum(
+                _get_num_even_divisions(x.shape[0]), len(conv_dims)
+            )
             if self.max_2strides is not None:
                 num_2strides = np.minimum(num_2strides, self.max_2strides)
 
@@ -82,7 +84,9 @@ class Encoder(nn.Module):
             h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(h)
 
         # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
-        μ = nn.Dense(self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ")(h)
+        μ = nn.Dense(
+            self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ"
+        )(h)
         σ = jax.nn.softplus(
             nn.Dense(
                 self.latent_dim,
@@ -92,7 +96,9 @@ class Encoder(nn.Module):
             )(h)
         )
 
-        return distrax.Independent(distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min)), 1)
+        return distrax.Independent(
+            distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min)), 1
+        )
 
 
 class Decoder(nn.Module):
@@ -118,7 +124,9 @@ class Decoder(nn.Module):
         dense_dims = self.dense_dims if self.dense_dims is not None else [32, 64]
 
         if len(self.image_shape) == 3:
-            assert self.image_shape[0] == self.image_shape[1], "Images should be square."
+            assert (
+                self.image_shape[0] == self.image_shape[1]
+            ), "Images should be square."
         output_size = self.image_shape[0]
         num_2strides = np.minimum(_get_num_even_divisions(output_size), len(conv_dims))
         if self.max_2strides is not None:
@@ -148,7 +156,9 @@ class Decoder(nn.Module):
             h = self.norm_cls(name=f"norm_{i+j+1}")(h)
             h = self.act_fn(h)
 
-        μ = nn.Conv(self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ")(h)
+        μ = nn.Conv(
+            self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ"
+        )(h)
         σ = jax.nn.softplus(self.param("σ_", self.σ_init, self.image_shape))
 
         return distrax.Independent(
@@ -213,7 +223,9 @@ class BasicBlock(nn.Module):
         y = self.norm_cls(scale_init=nn.initializers.zeros_init())(y)
 
         if residual.shape != y.shape:
-            residual = self.conv(self.filters, (1, 1), self.strides, name="conv_proj")(residual)
+            residual = self.conv(self.filters, (1, 1), self.strides, name="conv_proj")(
+                residual
+            )
             residual = self.norm_cls(name="norm_proj")(residual)
 
         return self.act_fn(residual + y)
@@ -245,7 +257,9 @@ class BottleneckBlock(nn.Module):
         y = self.norm_cls(scale_init=nn.initializers.zeros_init())(y)
 
         if residual.shape != y.shape:
-            residual = self.conv(self.filters * 4, (1, 1), self.strides, name="conv_proj")(residual)
+            residual = self.conv(
+                self.filters * 4, (1, 1), self.strides, name="conv_proj"
+            )(residual)
             residual = self.norm_cls(name="norm_proj")(residual)
 
         return self.act_fn(residual + y)
@@ -270,16 +284,28 @@ class ResNet(nn.Module):
         conv = partial(self.conv_cls, use_bias=False, dtype=self.dtype)
 
         if self.lowres:
-            x = conv(self.num_filters, (3, 3), (1, 1), padding=[(1, 1), (1, 1)], name="conv_init")(
-                x
-            )
+            x = conv(
+                self.num_filters,
+                (3, 3),
+                (1, 1),
+                padding=[(1, 1), (1, 1)],
+                name="conv_init",
+            )(x)
         else:
-            x = conv(self.num_filters, (7, 7), (2, 2), padding=[(3, 3), (3, 3)], name="conv_init")(
-                x
-            )
+            x = conv(
+                self.num_filters,
+                (7, 7),
+                (2, 2),
+                padding=[(3, 3), (3, 3)],
+                name="conv_init",
+            )(x)
         x = self.norm_cls(name="norm_init")(x)
         x = self.act_fn(x)
-        x = nn.max_pool(x, (3, 3), strides=(2, 2), padding="SAME") if not self.lowres else x
+        x = (
+            nn.max_pool(x, (3, 3), strides=(2, 2), padding="SAME")
+            if not self.lowres
+            else x
+        )
         for i, block_size in enumerate(self.stage_sizes):
             for j in range(block_size):
                 strides = (2, 2) if i > 0 and j == 0 else (1, 1)
@@ -311,8 +337,8 @@ class Trunk(nn.Module):
     dense_dims: Optional[Sequence[int]] = None
     act_fn: Callable = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
-    dropout_rate: float = 0.
-    input_dropout_rate: float = 0.
+    dropout_rate: float = 0.0
+    input_dropout_rate: float = 0.0
     max_2strides: Optional[int] = None
     resize: bool = True
     train: Optional[bool] = None
@@ -485,7 +511,9 @@ def transform_η(η: Array, bounds: Array, offset: Optional[Array] = None) -> Ar
     return η
 
 
-def approximate_mode(distribution: distrax.Distribution, num_samples: int, rng: PRNGKey) -> Array:
+def approximate_mode(
+    distribution: distrax.Distribution, num_samples: int, rng: PRNGKey
+) -> Array:
     """Approximates the mode of a distribution by taking a number of samples and returning the most likely.
 
     Args:
@@ -496,5 +524,7 @@ def approximate_mode(distribution: distrax.Distribution, num_samples: int, rng: 
     Returns:
         An approximate mode.
     """
-    samples, log_probs = distribution.sample_and_log_prob(seed=rng, sample_shape=(num_samples,))
+    samples, log_probs = distribution.sample_and_log_prob(
+        seed=rng, sample_shape=(num_samples,)
+    )
     return samples[jnp.argmax(log_probs)]
