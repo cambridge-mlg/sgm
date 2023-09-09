@@ -7,9 +7,10 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.k `p_x_given_z`.
 """
 
-from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 from functools import partial
 
+import numpy as np
 import jax
 from jax import numpy as jnp
 from jax import random, lax
@@ -20,11 +21,158 @@ import distrax
 
 import tensorflow_probability.substrates.jax as tfp
 
-from src.models.common import Encoder, Decoder, INV_SOFTPLUS_1
 import src.utils.plotting as plot_utils
 
 KwArgs = Mapping[str, Any]
 PRNGKey = Any
+
+
+INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.0)
+
+
+def _get_num_even_divisions(x):
+    """Returns the number of times x can be divided by 2."""
+    i = 0
+    while x % 2 == 0:
+        x = x // 2
+        i += 1
+    return i
+
+
+class Encoder(nn.Module):
+    """p(z|x) = N(μ(x), σ(x)), where μ(x) and σ(x) are neural networks."""
+
+    latent_dim: int
+    conv_dims: Optional[Sequence[int]] = None
+    dense_dims: Optional[Sequence[int]] = None
+    act_fn: Callable = nn.relu
+    norm_cls: nn.Module = nn.LayerNorm
+    σ_min: float = 1e-2
+    dropout_rate: float = 0.0
+    input_dropout_rate: float = 0.0
+    max_2strides: Optional[int] = None
+    train: Optional[bool] = None
+
+    @nn.compact
+    def __call__(self, x: Array, train: Optional[bool] = None) -> distrax.Distribution:
+        train = nn.merge_param("train", self.train, train)
+
+        conv_dims = self.conv_dims if self.conv_dims is not None else [64, 128, 256]
+        dense_dims = self.dense_dims if self.dense_dims is not None else [64, 32]
+
+        x = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(x)
+
+        h = x
+        i = -1
+        if len(x.shape) > 1:
+            assert x.shape[0] == x.shape[1], "Images should be square."
+            num_2strides = np.minimum(
+                _get_num_even_divisions(x.shape[0]), len(conv_dims)
+            )
+            if self.max_2strides is not None:
+                num_2strides = np.minimum(num_2strides, self.max_2strides)
+
+            for i, conv_dim in enumerate(conv_dims):
+                h = nn.Conv(
+                    conv_dim,
+                    kernel_size=(3, 3),
+                    strides=(2, 2) if i < num_2strides else (1, 1),
+                    name=f"conv_{i}",
+                )(h)
+                h = self.norm_cls(name=f"norm_{i}")(h)
+                h = self.act_fn(h)
+
+            h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"resize")(h)
+
+            h = h.flatten()
+
+        for j, dense_dim in enumerate(dense_dims):
+            h = nn.Dense(dense_dim, name=f"dense_{j+i+1}")(h)
+            h = self.norm_cls(name=f"norm_{j+i+1}")(h)
+            h = self.act_fn(h)
+            h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(h)
+
+        # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
+        μ = nn.Dense(
+            self.latent_dim, kernel_init=init.zeros, bias_init=init.zeros, name="μ"
+        )(h)
+        σ = jax.nn.softplus(
+            nn.Dense(
+                self.latent_dim,
+                kernel_init=init.zeros,
+                bias_init=init.constant(INV_SOFTPLUS_1),
+                name="σ_",
+            )(h)
+        )
+
+        return distrax.Independent(
+            distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min)), 1
+        )
+
+
+class Decoder(nn.Module):
+    """p(x|z) = N(μ(z), σ), where μ(z) is a neural network."""
+
+    image_shape: Tuple[int, int, int]
+    conv_dims: Optional[Sequence[int]] = None
+    dense_dims: Optional[Sequence[int]] = None
+    σ_init: Callable = init.constant(INV_SOFTPLUS_1)
+    act_fn: Callable = nn.relu
+    norm_cls: nn.Module = nn.LayerNorm
+    σ_min: float = 1e-2
+    dropout_rate: float = 0.0
+    input_dropout_rate: float = 0.0
+    max_2strides: Optional[int] = None
+    train: Optional[bool] = None
+
+    @nn.compact
+    def __call__(self, z: Array, train: Optional[bool] = None) -> distrax.Distribution:
+        train = nn.merge_param("train", self.train, train)
+
+        conv_dims = self.conv_dims if self.conv_dims is not None else [256, 128, 64]
+        dense_dims = self.dense_dims if self.dense_dims is not None else [32, 64]
+
+        if len(self.image_shape) == 3:
+            assert (
+                self.image_shape[0] == self.image_shape[1]
+            ), "Images should be square."
+        output_size = self.image_shape[0]
+        num_2strides = np.minimum(_get_num_even_divisions(output_size), len(conv_dims))
+        if self.max_2strides is not None:
+            num_2strides = np.minimum(num_2strides, self.max_2strides)
+
+        z = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(z)
+
+        j = -1
+        for j, dense_dim in enumerate(dense_dims):
+            z = nn.Dense(dense_dim, name=f"dense_{j}")(z)
+            z = self.norm_cls(name=f"norm_{j}")(z)
+            z = self.act_fn(z)
+            z = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(z)
+
+        dense_size = output_size // (2**num_2strides)
+        h = nn.Dense(dense_size * dense_size * 3, name=f"resize")(z)
+        h = h.reshape(dense_size, dense_size, 3)
+
+        for i, conv_dim in enumerate(conv_dims):
+            h = nn.ConvTranspose(
+                conv_dim,
+                kernel_size=(3, 3),
+                # use stride of 2 for the last few layers
+                strides=(2, 2) if i >= len(conv_dims) - num_2strides else (1, 1),
+                name=f"conv_{i+j+1}",
+            )(h)
+            h = self.norm_cls(name=f"norm_{i+j+1}")(h)
+            h = self.act_fn(h)
+
+        μ = nn.Conv(
+            self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ"
+        )(h)
+        σ = jax.nn.softplus(self.param("σ_", self.σ_init, self.image_shape))
+
+        return distrax.Independent(
+            distrax.Normal(loc=μ, scale=σ.clip(min=self.σ_min)), len(self.image_shape)
+        )
 
 
 class VAE(nn.Module):
@@ -55,7 +203,9 @@ class VAE(nn.Module):
         # q(Z|X)
         self.q_Z_given_X = Encoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
         # p(X|Z)
-        self.p_X_given_Z = Decoder(image_shape=self.image_shape, **(self.X_given_Z or {}))
+        self.p_X_given_Z = Decoder(
+            image_shape=self.image_shape, **(self.X_given_Z or {})
+        )
 
     def __call__(
         self, x: Array, rng: PRNGKey, train: bool = True
@@ -166,7 +316,7 @@ def vae_loss_fn(
     rng: PRNGKey,
     β: float = 1.0,
     train: bool = True,
-    **kwargs
+    **kwargs,
 ) -> Tuple[float, Mapping[str, float]]:
     """Single example loss function for VAE."""
     # TODO: this loss function is a 1 sample estimate, add an option for more samples?
@@ -250,7 +400,9 @@ def create_vae_hais_mll_estimator(
             seed=rng,
         )
 
-        log_normalizer_estimate = jax.nn.logsumexp(ais_weights, axis=0) - jnp.log(num_chains)
+        log_normalizer_estimate = jax.nn.logsumexp(ais_weights, axis=0) - jnp.log(
+            num_chains
+        )
 
         return log_normalizer_estimate
 
@@ -286,13 +438,17 @@ def make_vae_batch_loss(
             metrics["iwlb"] = _iwlb(x_batch)
 
         # ... and aggregate.
-        loss, metrics, mask = jax.tree_util.tree_map(partial(agg, axis=0), (loss, metrics, mask))
+        loss, metrics, mask = jax.tree_util.tree_map(
+            partial(agg, axis=0), (loss, metrics, mask)
+        )
         return loss, (metrics, mask)
 
     return batch_loss
 
 
-def make_vae_reconstruction_plot(x, n_visualize, model, state, visualisation_rng, train=False):
+def make_vae_reconstruction_plot(
+    x, n_visualize, model, state, visualisation_rng, train=False
+):
     def reconstruct(x, sample_z=False, sample_xrecon=False):
         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
         rng_dropout, rng_apply = random.split(rng)

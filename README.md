@@ -22,8 +22,41 @@ python3 -m ipykernel install --user --name=inv
 # ^ optional, for easily running IPython/Jupyter notebooks with the virtual env.
 ```
 
+## (Maybe) useful (deleted) code, from `contrasive` branch
 
- ## Javi convo take-aways
+ - `notebooks/ssilvae_vs_vae.ipynb`: code for moodifying a dataset, see below, and various IWLB comparisons.
+
+    ```
+    def modify_dataset(dataset_iter):
+
+      modified_dataset = []
+      for batch in dataset_iter:
+          modified_images = get_proto(batch["image"])
+          batch['image'] = modified_images
+          modified_dataset.append(batch)
+
+      return modified_dataset
+
+    modified_train_data = modify_dataset(input_utils.start_input_pipeline(train_ds_1_epoch, ssilvae_config.get("prefetch_to_device", 1)))
+
+    train_dataset = tf.data.Dataset.from_generator(
+        lambda: (batch for batch in modified_train_data),
+        output_signature={
+            'image': tf.TensorSpec(shape=(1, 500, 28, 28, 1), dtype=tf.float32),  # image shape
+            'mask': tf.TensorSpec(shape=(1, 500), dtype=tf.float32)    # mask shape
+        }
+    ).unbatch().unbatch().filter(lambda x: x['mask'] == 1.).map(drop_mask)
+    ```
+
+  - `notebooks/ssil.ipynb`: some code for playing with color transformations.
+  - `notebooks/hais.ipynb`: code for testing `tfp`'s Hamiltonian Annealed Importance Sampling.
+  - `notebooks/classification.ipynb`: simple code for training a NN with `ciclo` and `clu` loops/metrics/etc.
+  - `notebooks/simplified.ipynb`: code for training a self-supervised prototype predictor. Includes code for resampling the distribution over transformations to make them more 'difficult'. 
+  - `experiments/train_{vae|ssilvae}.py`: example training scripts to use with `experiments/create_jobs.py`
+
+## Some old notes
+
+### Javi convo take-aways
 
   - Fix prior at loc=0 to avoid identifiability issues
   - Equivariance proof from AGW is only valid when transformation is closed (e.g. rotations in 0 to 2π)
@@ -37,7 +70,7 @@ python3 -m ipykernel install --user --name=inv
   - Can we learn invariances without the generative model? Should be possible if we have a partially invariant η encoder???
 
 
-## JAvi convo 6 Feb
+### JAvi convo 6 Feb
 
   - Make prior on η depend on x rather than x_hat, and simply be rotationally invariant network? That way it doesn't depend on the quality of the z|x or xhat|x inference network? 
   - Can't model η independently since we know that the prior is not independent (i.e. to get a an x from an x)hat we could rotate or we could shear but not both?)
