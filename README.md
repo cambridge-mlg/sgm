@@ -22,7 +22,7 @@ python3 -m ipykernel install --user --name=inv
 # ^ optional, for easily running IPython/Jupyter notebooks with the virtual env.
 ```
 
-## (Maybe) useful (deleted) code, from `contrasive` branch
+## (Maybe) useful (deleted) code, from `contrastive` branch
 
  - `notebooks/ssilvae_vs_vae.ipynb`: code for moodifying a dataset, see below, and various IWLB comparisons.
 
