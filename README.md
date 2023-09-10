@@ -54,7 +54,7 @@ python3 -m ipykernel install --user --name=inv
   - `notebooks/simplified.ipynb`: code for training a self-supervised prototype predictor. Includes code for resampling the distribution over transformations to make them more 'difficult'. 
   - `notebooks/vae.ipynb`: some results for testing IWLB.
   - `experiments/train_{vae|ssilvae}.py`: example training scripts to use with `experiments/create_jobs.py`
-  - `experiments/configs/vae_dspirites`: config for training a VAE with dsprites data (which has slightly different data preprocessing to MNIST)
+  - `experiments/configs/vae_dsprites`: config for training a VAE with dsprites data (which has slightly different data preprocessing to MNIST)
 
 ## Some old notes
 
