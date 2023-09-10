@@ -14,7 +14,7 @@ import numpy as np
 import jax
 from jax import numpy as jnp
 from jax import random, lax
-from chex import Array
+from chex import Array, PRNGKey
 from flax import linen as nn
 import flax.linen.initializers as init
 import distrax
@@ -22,9 +22,7 @@ import distrax
 import tensorflow_probability.substrates.jax as tfp
 
 import src.utils.plotting as plot_utils
-
-KwArgs = Mapping[str, Any]
-PRNGKey = Any
+from src.utils.types import KwArgs
 
 
 INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.0)

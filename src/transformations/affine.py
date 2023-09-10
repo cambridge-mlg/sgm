@@ -1,5 +1,4 @@
 """Affine transformations of images."""
-import jax
 from jax import numpy as jnp
 from jax.scipy.linalg import expm
 from chex import Array, assert_shape, assert_rank

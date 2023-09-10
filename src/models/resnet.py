@@ -1,16 +1,9 @@
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Optional, Sequence, Tuple
 from functools import partial
 
 from jax import numpy as jnp
 from chex import Array
 from flax import linen as nn
-
-
-INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.0)
-# ^ this value is softplus^{-1}(1), i.e. if we get σ as softplus(σ_),
-# and we init σ_ to this value, we effectively init σ to 1.
-PRNGKey = Any
-KwArgs = Mapping[str, Any]
 
 
 class BasicBlock(nn.Module):
