@@ -1,15 +1,16 @@
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple
 
 import jax
 from jax import numpy as jnp
 from jax import random
-from chex import Array, assert_rank, assert_equal_shape
+from chex import Array, PRNGKey, assert_rank, assert_equal_shape
 import distrax
 
 from src.transformations import transform_image
 
 
-PRNGKey = Any
+def reset_metrics(state):
+    return state.replace(metrics=state.metrics.empty())
 
 
 def transform_η(η: Array, bounds: Array, offset: Optional[Array] = None) -> Array:
