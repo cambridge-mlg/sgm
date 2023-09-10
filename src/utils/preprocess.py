@@ -1,6 +1,6 @@
 import math
 import dataclasses
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 from collections import abc
 
 from clu import preprocess_spec
@@ -9,7 +9,6 @@ import tensorflow_addons as tfa
 
 
 Features = preprocess_spec.Features
-PRNGKey = Any
 
 
 def all_ops():
