@@ -52,7 +52,9 @@ python3 -m ipykernel install --user --name=inv
   - `notebooks/hais.ipynb`: code for testing `tfp`'s Hamiltonian Annealed Importance Sampling.
   - `notebooks/classification.ipynb`: simple code for training a NN with `ciclo` and `clu` loops/metrics/etc.
   - `notebooks/simplified.ipynb`: code for training a self-supervised prototype predictor. Includes code for resampling the distribution over transformations to make them more 'difficult'. 
+  - `notebooks/vae.ipynb`: some results for testing IWLB.
   - `experiments/train_{vae|ssilvae}.py`: example training scripts to use with `experiments/create_jobs.py`
+  - `experiments/configs/vae_dspirites`: config for training a VAE with dsprites data (which has slightly different data preprocessing to MNIST)
 
 ## Some old notes
 
