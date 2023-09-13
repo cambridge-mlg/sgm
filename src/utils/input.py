@@ -7,6 +7,7 @@ from clu import preprocess_spec
 
 
 from src.utils.preprocess import all_ops
+from src.utils.datasets.augmented_dsprites import construct_augmented_dsprites
 
 
 def get_data(
@@ -15,13 +16,20 @@ def get_data(
 ):
     train_rng, val_rng, test_rng = jax.random.split(rng, 3)
 
-    dataset_builder = tfds.builder(config.dataset)
-    dataset_builder.download_and_prepare()
+    if config.dataset == "aug_dsprites":
+        dataset_or_builder = construct_augmented_dsprites(
+            aug_dsprites_config=config.aug_dsprites,
+            sampler_rng=train_rng,
+        )
+    else:
+        dataset_builder = tfds.builder(config.dataset)
+        dataset_builder.download_and_prepare()
+        dataset_or_builder = dataset_builder
 
     local_batch_size = config.batch_size // jax.device_count()
 
     train_ds = deterministic_data.create_dataset(
-        dataset_builder,
+        dataset_or_builder,
         split=tfds.split_for_jax_process(config.train_split),
         # This RNG key will be used to derive all randomness in shuffling, data
         # preprocessing etc.
@@ -37,12 +45,19 @@ def get_data(
         shuffle="loaded",
     )
 
-    num_val_examples = dataset_builder.info.splits[config.val_split].num_examples
+    if config.dataset == "aug_dsprites":
+        dataset_or_builder = construct_augmented_dsprites(
+            aug_dsprites_config=config.aug_dsprites,
+            sampler_rng=val_rng,  # Use a different RNG key for validation.
+        )
+        num_val_examples = config.get("num_val_examples", 1000)
+    else:
+        num_val_examples = dataset_builder.info.splits[config.val_split].num_examples
     # Compute how many batches we need to contain the entire val set.
     pad_up_to_batches = int(jnp.ceil(num_val_examples / config.batch_size))
 
     val_ds = deterministic_data.create_dataset(
-        dataset_builder,
+        dataset_or_builder,
         split=tfds.split_for_jax_process(config.val_split),
         rng=val_rng,
         batch_dims=[jax.local_device_count(), local_batch_size],
