@@ -14,7 +14,7 @@ def create_generator_matrices() -> Array:
         None
 
     Returns:
-        A 7x3x3 array containing the 7 3x3 generator matrices, in order:
+        A 6x3x3 array containing the 6 3x3 generator matrices, in order:
         translation in x, translation in y, rotation, scale in x, scale in y, shearing in x, and shearing in y.
     """
     G_trans_x = jnp.zeros((3, 3), jnp.float32).at[0, 2].set(1)
@@ -22,9 +22,8 @@ def create_generator_matrices() -> Array:
     G_rot = jnp.zeros((3, 3), jnp.float32).at[1, 0].set(1).at[0, 1].set(-1)
     G_scale_x = jnp.zeros((3, 3), jnp.float32).at[0, 0].set(1)
     G_scale_y = jnp.zeros((3, 3), jnp.float32).at[1, 1].set(1)
-    G_shear_x = jnp.zeros((3, 3), jnp.float32).at[0, 1].set(1)
-    G_shear_y = jnp.zeros((3, 3), jnp.float32).at[1, 0].set(1)
-    Gs = jnp.array([G_trans_x, G_trans_y, G_rot, G_scale_x, G_scale_y, G_shear_x, G_shear_y])
+    G_shear = jnp.zeros((3, 3), jnp.float32).at[0, 1].set(1).at[1, 0].set(1)
+    Gs = jnp.array([G_trans_x, G_trans_y, G_rot, G_scale_x, G_scale_y, G_shear])
 
     return Gs
 
@@ -39,19 +38,18 @@ def gen_transform_mat(
     Ouderaa and van der Wilk.
 
     Args:
-        η: an Array with 7 entries:
+        η: an Array with 6 entries:
         * η_0 controls translation in x.
         * η_1 controls translation in y.
         * η_2 is the angle of rotation.
         * η_3 is the scaling factor in x.
         * η_4 is the scaling factor in y.
-        * η_5 controls shearing in x.
-        * η_6 controls shearing in y.
+        * η_5 controls shearing in x and y.
 
     Returns:
         A 3x3 affine transformation array.
     """
-    assert_shape(η, (7,))
+    assert_shape(η, (6,))
 
     Gs = create_generator_matrices()
 
@@ -98,7 +96,11 @@ def _transform_image(
     output = jnp.stack(
         [
             map_coordinates(
-                image[:, :, i], transformed_pts[::-1], order=3, mode=fill_mode, cval=fill_value
+                image[:, :, i],
+                transformed_pts[::-1],
+                order=3,
+                mode=fill_mode,
+                cval=fill_value,
             )
             # Note: usually we would use bicubic interpolation (order=3), but this isn't available
             # in jax, so we have to use linear interpolation.
@@ -126,20 +128,19 @@ def affine_transform_image(
     Args:
         image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax/TF image format.
 
-        η: an Array with 7 entries:
+        η: an Array with 6 entries:
         * η_0 controls translation in x.
         * η_1 controls translation in y.
         * η_2 is the angle of rotation.
         * η_3 is the scaling factor in x.
         * η_4 is the scaling factor in y.
-        * η_5 controls shearing in x.
-        * η_6 controls shearing in y.
+        * η_5 controls shearing in x and y.
 
     Returns:
         A transformed image of same shape as the input.
     """
     assert_rank(image, 3)
-    assert_shape(η, (7,))
+    assert_shape(η, (6,))
 
     T = gen_transform_mat(η)
     return _transform_image(image, T, fill_mode=fill_mode, fill_value=fill_value)
