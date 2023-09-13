@@ -102,8 +102,6 @@ def _transform_image(
                 mode=fill_mode,
                 cval=fill_value,
             )
-            # Note: usually we would use bicubic interpolation (order=3), but this isn't available
-            # in jax, so we have to use linear interpolation.
             for i in range(num_channels)
         ],
         axis=-1,
