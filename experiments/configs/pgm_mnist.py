@@ -24,6 +24,7 @@ def get_config(params) -> config_dict.ConfigDict:
     )
     config.n_samples = 5
     config.eval_freq = 0.01
+    config.difficulty_weighted_inf_loss = True
 
     config.gen_steps = 10_000
     config.gen_init_lr = 1e-4

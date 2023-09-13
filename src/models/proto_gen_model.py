@@ -291,10 +291,10 @@ def make_pgm_train_and_eval(config, model):
         rngs = random.split(rng_local, config.n_samples)
         x_mse, difficulty, log_p_η_x_hat, η_grad = jax.vmap(per_sample_loss)(rngs)
 
-        # do a weighted average based on the difficulty of the sample
+        # (maybe) do a weighted average based on the difficulty of the sample
         weights = (
             difficulty / difficulty.sum()
-            if train
+            if train and config.difficulty_weighted_inf_loss
             else jnp.ones((config.n_samples,)) / config.n_samples
         )
         x_mse = (x_mse * weights).sum(axis=0)
