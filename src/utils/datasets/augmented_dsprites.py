@@ -250,5 +250,7 @@ def construct_sample_func(
                     maxval=kwargs["maxval"],
                 )
             )
+        case DistributionType.DELTA:
+            return lambda rng: float(kwargs["value"])
         case _:
             raise NotImplemented(f"Invalid distribution type {distribution_conf.type}")
