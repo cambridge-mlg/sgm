@@ -1,33 +1,24 @@
-from ml_collections import ConfigDict
-import tensorflow_datasets as tfds
-import tensorflow as tf
-import numpy as np
-import matplotlib.pyplot as plt
-from typing import Mapping, NamedTuple, Protocol
-from jax import random
-import jax
+import enum
+from enum import StrEnum
+from typing import Callable, Mapping, NamedTuple, Protocol, Union
+
+import distrax
 import jax.numpy as jnp
+import tensorflow as tf
+import tensorflow_datasets as tfds
+from jax import random
 from jax._src import dtypes
 
 from src.utils.algorithmic import get_closest_value_in_sorted_sequence
 
 
-import enum
-import functools
-from typing import Callable, Optional, Union
-import distrax
-from jax import random
-import jax.numpy as jnp
-from ml_collections import ConfigDict
-
-
 # --- Schema classes for the configuration of the augmented DSprites dataset:
-class DistributionType(str, enum.Enum):
-    UNIFORM = "uniform"
-    TRUNCATED_NORMAL = "normal"
-    TRUNCATED_BINORMAL = "truncated_binormal"
-    BIUNIFORM = "biuniform"
-    DELTA = "delta"
+class DistributionType(StrEnum):
+    UNIFORM = enum.auto()
+    TRUNCATED_NORMAL = enum.auto()
+    TRUNCATED_BINORMAL = enum.auto()
+    BIUNIFORM = enum.auto()
+    DELTA = enum.auto()
 
 
 class DistributionConfig(NamedTuple):
@@ -60,6 +51,7 @@ class ShapeDistributionConfig(Protocol):
 
 class AugDspritesConfig(Protocol):
     """Configuration for the augmented DSprites dataset."""
+
     square_distribution: ShapeDistributionConfig
     ellipse_distribution: ShapeDistributionConfig
     heart_distribution: ShapeDistributionConfig
@@ -89,7 +81,8 @@ def construct_augmented_dsprites(
     # Make a mapping so that we can easily look up the index for a given
     # configuration of augmentations:
     latent_to_index: Mapping[DspritesLatent, int] = {
-        extract_latents_from_example(example): idx for idx, example in enumerate(dataset_list)
+        extract_latents_from_example(example): idx
+        for idx, example in enumerate(dataset_list)
     }
 
     # --- Get all the unique configurations of latents
@@ -136,9 +129,9 @@ def construct_augmented_dsprites(
 
     # Get a generator that samples latents according to the distributions specified in the configuration:
 
-    latent_sampler: Callable[[random.PRNGKey], DspritesLatent] = get_dsprites_latent_sampler(
-        aug_dsprites_config
-    )
+    latent_sampler: Callable[
+        [random.PRNGKey], DspritesLatent
+    ] = get_dsprites_latent_sampler(aug_dsprites_config)
 
     # Make a generator that returns examples with latents sampled from the latent_sampler:
     def example_generator(rng: random.PRNGKey):
@@ -178,16 +171,24 @@ def get_dsprites_latent_sampler(config: AugDspritesConfig):
             # Sample the label
             label_shape=(shape := int(shape_distribution.sample(seed=rng_shape))),
             # Then, sample the other latents conditioned on the label:
-            value_orientation=construct_sample_func(config_per_shape[shape].orientation)(rng_orient),
+            value_orientation=construct_sample_func(
+                config_per_shape[shape].orientation
+            )(rng_orient),
             value_scale=construct_sample_func(config_per_shape[shape].scale)(rng_scale),
-            value_x_position=construct_sample_func(config_per_shape[shape].x_position)(rng_x),
-            value_y_position=construct_sample_func(config_per_shape[shape].y_position)(rng_y),
+            value_x_position=construct_sample_func(config_per_shape[shape].x_position)(
+                rng_x
+            ),
+            value_y_position=construct_sample_func(config_per_shape[shape].y_position)(
+                rng_y
+            ),
         )
 
     return sample
 
 
-def truncated_gaussian(key, loc, scale, minval, maxval, shape=None, dtype=dtypes.float_):
+def truncated_gaussian(
+    key, loc, scale, minval, maxval, shape=None, dtype=dtypes.float_
+):
     """Truncated normal with changeable location and scale"""
     return loc + scale * random.truncated_normal(
         lower=(minval - loc) / scale,
@@ -216,7 +217,9 @@ def construct_sample_func(
     distribution_conf: DistributionConfig,
 ) -> distrax.Distribution:
     kwargs = distribution_conf.kwargs
-    assert set(kwargs.keys()) == expected_kwargs_for_distribution_type(distribution_conf.type), (
+    assert set(kwargs.keys()) == expected_kwargs_for_distribution_type(
+        distribution_conf.type
+    ), (
         f"Expected kwargs {expected_kwargs_for_distribution_type(distribution_conf.type)} "
         f"for distribution type {distribution_conf.type}, got {set(kwargs.keys())}"
     )
