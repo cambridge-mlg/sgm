@@ -170,16 +170,12 @@ def get_dsprites_latent_sampler(config: AugDspritesConfig):
             # Sample the label
             label_shape=(shape := int(shape_distribution.sample(seed=rng_shape))),
             # Then, sample the other latents conditioned on the label:
-            value_orientation=construct_sample_func(
-                config_per_shape[shape].orientation
-            )(rng_orient),
-            value_scale=construct_sample_func(config_per_shape[shape].scale)(rng_scale),
-            value_x_position=construct_sample_func(config_per_shape[shape].x_position)(
-                rng_x
+            value_orientation=get_sample_func(config_per_shape[shape].orientation)(
+                rng_orient
             ),
-            value_y_position=construct_sample_func(config_per_shape[shape].y_position)(
-                rng_y
-            ),
+            value_scale=get_sample_func(config_per_shape[shape].scale)(rng_scale),
+            value_x_position=get_sample_func(config_per_shape[shape].x_position)(rng_x),
+            value_y_position=get_sample_func(config_per_shape[shape].y_position)(rng_y),
         )
 
     return sample
@@ -212,7 +208,7 @@ def mixture_sample(
     return jnp.where(is_component_a, a, b)
 
 
-def construct_sample_func(
+def get_sample_func(
     distribution_conf: DistributionConfig,
 ) -> Callable[[random.PRNGKeyArray], float]:
     kwargs = distribution_conf.kwargs
