@@ -165,8 +165,7 @@ def get_dsprites_latent_sampler(config: AugDspritesConfig):
     }
 
     def sample(rng: random.PRNGKey) -> DspritesLatent:
-        rng_shape, rng = random.split(rng)
-        rng_orient, rng_scale, rng_x, rng_y = random.split(rng, num=4)
+        rng_shape, rng_orient, rng_scale, rng_x, rng_y = random.split(rng, num=5)
         return DspritesLatent(
             # Sample the label
             label_shape=(shape := int(shape_distribution.sample(seed=rng_shape))),
