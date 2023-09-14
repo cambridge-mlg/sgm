@@ -51,10 +51,11 @@ def get_data(
             sampler_rng=val_rng,  # Use a different RNG key for validation.
         )
         num_val_examples = config.get("num_val_examples", 1000)
+        pad_up_to_batches = None
     else:
         num_val_examples = dataset_builder.info.splits[config.val_split].num_examples
-    # Compute how many batches we need to contain the entire val set.
-    pad_up_to_batches = int(jnp.ceil(num_val_examples / config.batch_size))
+        # Compute how many batches we need to contain the entire val set.
+        pad_up_to_batches = int(jnp.ceil(num_val_examples / config.batch_size))
 
     val_ds = deterministic_data.create_dataset(
         dataset_or_builder,
