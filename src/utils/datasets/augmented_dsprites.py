@@ -214,7 +214,7 @@ def mixture_sample(
 
 def construct_sample_func(
     distribution_conf: DistributionConfig,
-) -> distrax.Distribution:
+) -> Callable[[random.PRNGKeyArray], float]:
     kwargs = distribution_conf.kwargs
     assert set(kwargs.keys()) == expected_kwargs_for_distribution_type(
         distribution_conf.type
