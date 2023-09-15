@@ -45,7 +45,7 @@ def transform_image(
     assert_shape(η, (5,))
 
     # Apply affine transformations
-    η_affine = jnp.concatenate((η[:5], jnp.zeros(2, dtype=η.dtype)))
+    η_affine = jnp.concatenate((η[:5], jnp.zeros(1, dtype=η.dtype)))
     image = affine_transform_image(image, η_affine, fill_mode=fill_mode, fill_value=fill_value)
 
     # # Apply color transformations
