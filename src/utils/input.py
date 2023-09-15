@@ -17,10 +17,13 @@ def get_data(
     train_rng, val_rng, test_rng = jax.random.split(rng, 3)
 
     if config.dataset == "aug_dsprites":
-        dataset_or_builder = construct_augmented_dsprites(
+        dataset = construct_augmented_dsprites(
             aug_dsprites_config=config.aug_dsprites,
             sampler_rng=train_rng,
         )
+        # Add mask elements:
+        dataset = dataset.map(lambda d: {**d, "mask": [False]})
+        dataset_or_builder = dataset
     else:
         dataset_builder = tfds.builder(config.dataset)
         dataset_builder.download_and_prepare()
