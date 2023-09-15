@@ -2,6 +2,10 @@ import enum
 from enum import StrEnum
 from typing import Callable, Mapping, NamedTuple, Protocol, Union
 
+import requests
+from pathlib import Path
+from os import PathLike
+import numpy as np
 import distrax
 import jax.numpy as jnp
 import tensorflow as tf
@@ -65,18 +69,64 @@ class DspritesLatent(NamedTuple):
     label_shape: int
 
 
+def construct_dsprites(
+    root: PathLike,
+    download: bool = True,
+) -> list[dict[str, np.ndarray]]:
+    """
+    DSprites dataset from https://github.com/deepmind/dsprites-dataset with 3 classes (shapes).
+
+    Contains 737280 images.
+
+    Images (inputs) are of shape [64, 64, 1]
+
+    """
+    filepath = Path(root) / "dsprites.npz"
+    # filepath_hda = Path(root) / "dsprites.hdf5"
+    if download and not filepath.exists():
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        download_dsprites(filepath)
+    # Load dataset from file
+    dataset_zip = np.load(filepath, allow_pickle=True, encoding="latin1")
+
+    imgs = dataset_zip["imgs"]
+    shapes = dataset_zip["latents_classes"][:, 1]
+    latents = dataset_zip["latents_values"][:, 2:]
+    scales, orientations, x_positions, y_positions = latents.T
+
+    dataset_list = [
+        {
+            "image": img[:, :, None],  # Shape [64, 64, 1] (add channel dim.)
+            "label_shape": shape,
+            "value_scale": scale,
+            "value_orientation": orientation,
+            "value_x_position": x_position,
+            "value_y_position": y_position,
+        } for img, shape, scale, orientation, x_position, y_position in zip(
+            imgs, shapes, scales, orientations, x_positions, y_positions
+        )
+    ]
+    return dataset_list
+
+
+def download_dsprites(filepath: PathLike):
+    filepath = Path(filepath)
+    # Download the dataset from https://github.com/deepmind/dsprites-dataset
+    if filepath.exists():
+        raise FileExistsError(f"File {filepath} already exists.")
+    url = "https://github.com/deepmind/dsprites-dataset/blob/master/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz?raw=true"
+    r = requests.get(url, allow_redirects=True)
+    # Open or create file:
+    with open(filepath, "wb") as f:
+        f.write(r.content)
+
+
 def construct_augmented_dsprites(
     aug_dsprites_config: AugDspritesConfig,
     sampler_rng: random.PRNGKeyArray,
 ) -> tf.data.Dataset:
-    ds_builder = tfds.builder("dsprites")
-    ds_builder.download_and_prepare()
-    ds = ds_builder.as_dataset(split="train")
 
-    # --- Load the dataset into memory so that it can be easily indexed into
-    # (It takes about ~1min to decompress TFRecord files. Could save the dataset to disk
-    # in a format that allows for easier random access.)
-    dataset_list = list(ds)
+    dataset_list = construct_dsprites(root="data/dsprites", download=True)
 
     # Make a mapping so that we can easily look up the index for a given
     # configuration of augmentations:
@@ -142,7 +192,18 @@ def construct_augmented_dsprites(
             yield dataset_list[idx]
 
     return tf.data.Dataset.from_generator(
-        example_generator, output_signature=ds.element_spec, args=(sampler_rng,)
+        example_generator,
+        output_signature=(
+            {
+                "image": tf.TensorSpec(shape=(64, 64, 1), dtype=tf.uint8),
+                "label_shape": tf.TensorSpec(shape=(), dtype=tf.int64),
+                "value_scale": tf.TensorSpec(shape=(), dtype=tf.float64),
+                "value_orientation": tf.TensorSpec(shape=(), dtype=tf.float64),
+                "value_x_position": tf.TensorSpec(shape=(), dtype=tf.float64),
+                "value_y_position": tf.TensorSpec(shape=(), dtype=tf.float64),
+            }
+        ),
+        args=(sampler_rng,),
     )
 
 
