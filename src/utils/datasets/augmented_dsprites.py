@@ -10,6 +10,7 @@ import distrax
 import jax.numpy as jnp
 import tensorflow as tf
 import tensorflow_datasets as tfds
+import scipy.stats
 from jax import random
 from jax._src import dtypes
 
@@ -180,14 +181,15 @@ def construct_augmented_dsprites(
     # Get a generator that samples latents according to the distributions specified in the configuration:
 
     latent_sampler: Callable[
-        [random.PRNGKey], DspritesLatent
+        [np.random.Generator], DspritesLatent
     ] = get_dsprites_latent_sampler(aug_dsprites_config)
 
     # Make a generator that returns examples with latents sampled from the latent_sampler:
     def example_generator(rng: random.PRNGKey):
+        # Get a numpy rng
+        rng = np.random.default_rng(np.array(rng))
         while True:
-            rng, rng_sample = random.split(rng)
-            latent = latent_sampler(rng_sample)
+            latent = latent_sampler(rng)
             idx = get_closest_dsprites_example_given_latent(latent)
             yield dataset_list[idx]
 
@@ -216,57 +218,69 @@ def extract_latents_from_example(example: dict):
         label_shape=int(example["label_shape"]),
     )
 
+ScalarSampler = Callable[[np.random.Generator], float]
+
 
 def get_dsprites_latent_sampler(config: AugDspritesConfig):
-    shape_distribution = distrax.Categorical(probs=jnp.ones(3) / 3)
     config_per_shape: dict[int, ShapeDistributionConfig] = {
         0: config.square_distribution,
         1: config.ellipse_distribution,
         2: config.heart_distribution,  # TODO check order is right
     }
 
-    def sample(rng: random.PRNGKey) -> DspritesLatent:
-        rng_shape, rng_orient, rng_scale, rng_x, rng_y = random.split(rng, num=5)
+    class LatentSamplerPerShape(NamedTuple):
+        orientation: ScalarSampler
+        scale: ScalarSampler
+        x_position: ScalarSampler
+        y_position: ScalarSampler
+
+    sampler_per_shape = {
+        shape: LatentSamplerPerShape(
+            orientation=get_sample_func(config.orientation),
+            scale=get_sample_func(config.scale),
+            x_position=get_sample_func(config.x_position),
+            y_position=get_sample_func(config.y_position),
+        ) for shape, config in config_per_shape.items()
+    }
+    
+    shapes, probs = [0, 1, 2], [1/3, 1/3, 1/3]
+    shape_sampler: ScalarSampler = lambda rng: rng.choice(shapes, p=probs)
+    def sample(rng: np.random.Generator) -> DspritesLatent:
         return DspritesLatent(
             # Sample the label
-            label_shape=(shape := int(shape_distribution.sample(seed=rng_shape))),
+            label_shape=(shape := shape_sampler(rng)),
             # Then, sample the other latents conditioned on the label:
-            value_orientation=get_sample_func(config_per_shape[shape].orientation)(
-                rng_orient
-            ),
-            value_scale=get_sample_func(config_per_shape[shape].scale)(rng_scale),
-            value_x_position=get_sample_func(config_per_shape[shape].x_position)(rng_x),
-            value_y_position=get_sample_func(config_per_shape[shape].y_position)(rng_y),
+            value_orientation=sampler_per_shape[shape].orientation(rng),
+            value_scale=sampler_per_shape[shape].scale(rng),
+            value_x_position=sampler_per_shape[shape].x_position(rng),
+            value_y_position=sampler_per_shape[shape].y_position(rng),
         )
 
     return sample
 
 
 def truncated_gaussian(
-    key, loc, scale, minval, maxval, shape=None, dtype=dtypes.float_
-):
-    """Truncated normal with changeable location and scale"""
-    return loc + scale * random.truncated_normal(
-        lower=(minval - loc) / scale,
-        upper=(maxval - loc) / scale,
-        key=key,
-        shape=shape,
-        dtype=dtype,
+    loc: float, scale: float, minval: float, maxval: float,
+) -> ScalarSampler:
+    distr = scipy.stats.truncnorm(
+        a=(minval - loc) / scale,
+        b=(maxval - loc) / scale,
+        loc=loc,
+        scale=scale,
+    )
+    return lambda rng: distr.rvs(
+        random_state=rng,
     )
 
 
-def mixture_sample(
-    key: random.PRNGKeyArray,
+def mixture_sampler(
     prob_a: float,
-    component_a: Callable[[random.PRNGKeyArray], float],
-    component_b: Callable[[random.PRNGKeyArray], float],
-) -> float:
+    component_a: ScalarSampler,
+    component_b: ScalarSampler,
+) -> ScalarSampler:
     """Sample from a mixture of two distributions"""
-    key_which_component, key_component_a, key_component_b = random.split(key, num=3)
-    is_component_a = random.bernoulli(key_which_component, prob_a)
-    a = component_a(key_component_a)
-    b = component_b(key_component_b)
-    return jnp.where(is_component_a, a, b)
+    distr = scipy.stats.bernoulli(p=prob_a)
+    return lambda rng: component_a(rng) if distr.rvs(random_state=rng) else component_b(rng)
 
 
 def get_sample_func(
@@ -281,33 +295,24 @@ def get_sample_func(
     )
     match distribution_conf.type:
         case DistributionType.UNIFORM:
-            return lambda rng: float(
-                random.uniform(key=rng, minval=kwargs["low"], maxval=kwargs["high"])
-            )
+            distr = scipy.stats.uniform(loc=kwargs["low"], scale=kwargs["high"] - kwargs["low"])
+            return lambda rng: distr.rvs(random_state=rng)
         case DistributionType.BIUNIFORM:
-            return lambda rng: float(
-                mixture_sample(
-                    key=rng,
-                    prob_a=0.5,
-                    component_a=lambda key: random.uniform(
-                        key=key, minval=kwargs["low1"], maxval=kwargs["high1"]
-                    ),
-                    component_b=lambda key: random.uniform(
-                        key=key, minval=kwargs["low2"], maxval=kwargs["high2"]
-                    ),
-                )
+            component_a_distr = scipy.stats.uniform(loc=kwargs["low1"], scale=kwargs["high1"] - kwargs["low1"])
+            component_b_distr = scipy.stats.uniform(loc=kwargs["low2"], scale=kwargs["high2"] - kwargs["low2"])
+            return mixture_sampler(
+                prob_a=0.5,
+                component_a = lambda rng: component_a_distr.rvs(random_state=rng),
+                component_b = lambda rng: component_b_distr.rvs(random_state=rng),
             )
         case DistributionType.TRUNCATED_NORMAL:
-            return lambda rng: float(
-                truncated_gaussian(
-                    key=rng,
-                    loc=kwargs["loc"],
-                    scale=kwargs["scale"],
-                    minval=kwargs["minval"],
-                    maxval=kwargs["maxval"],
-                )
+            return truncated_gaussian(
+                loc=kwargs["loc"],
+                scale=kwargs["scale"],
+                minval=kwargs["minval"],
+                maxval=kwargs["maxval"],
             )
         case DistributionType.DELTA:
-            return lambda rng: float(kwargs["value"])
+            return lambda rng: kwargs["value"]
         case _:
             raise NotImplemented(f"Invalid distribution type {distribution_conf.type}")
