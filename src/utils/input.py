@@ -49,11 +49,18 @@ def get_data(
     )
 
     if config.dataset == "aug_dsprites":
-        dataset_or_builder = construct_augmented_dsprites(
+        dataset = construct_augmented_dsprites(
             aug_dsprites_config=config.aug_dsprites,
             sampler_rng=val_rng,  # Use a different RNG key for validation.
         )
-        num_val_examples = config.get("num_val_examples", 1000)
+        dataset = dataset.map(lambda d: {**d, "mask": False})
+
+        num_val_examples = config.get("num_val_examples", 10240)
+        dataset = dataset.take(num_val_examples)
+        dataset_or_builder = dataset
+        # import tensorflow as tf
+        # dataset = dataset.apply(tf.data.experimental.assert_cardinality(num_val_examples))
+
         pad_up_to_batches = None
     else:
         num_val_examples = dataset_builder.info.splits[config.val_split].num_examples
