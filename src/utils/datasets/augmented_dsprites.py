@@ -177,7 +177,7 @@ def construct_augmented_dsprites(
     norm_log_probs = log_probs - scipy.special.logsumexp(log_probs)
     probs = np.exp(norm_log_probs)
 
-    def example_idx_sampler(rng: random.PRNGKeyArray, num_batched_samples: int = 50000) -> Iterable[int]:
+    def example_idx_sampler(rng: random.PRNGKeyArray, num_vectorized_idx_samples: int = 50000) -> Iterable[int]:
         """
         Sample an example index from the dataset with probability proportional to `probs`.
         `num_batched_samples` helps with speed by vectorising the otherwise expenseive
@@ -186,12 +186,12 @@ def construct_augmented_dsprites(
         rng = np.random.default_rng(np.array(rng))
         num_examples = len(probs)
         while True:
-            yield from rng.choice(num_examples, size=num_batched_samples, p=probs)
+            yield from rng.choice(num_examples, size=num_vectorized_idx_samples, p=probs)
     
     index_dataset = tf.data.Dataset.from_generator(
         example_idx_sampler,
         output_signature=tf.TensorSpec(shape=(), dtype=tf.int64),
-        args=(sampler_rng,),
+        args=(sampler_rng, aug_dsprites_config.get("num_vectorized_idx_samples", 100000)),
     )
 
     dataset_examples_tf = DspritesExamples(
