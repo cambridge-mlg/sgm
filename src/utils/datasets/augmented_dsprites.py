@@ -226,12 +226,12 @@ def latent_log_prob(
 
     Not always a log-prob, not always a density, but a mix. Depends on the distribution.
     As long as we normalise the log-probs on a discrete grid at the end (and don't do mixtures of discrete and
-    continuous districtuions), it's fine.
+    continuous distributions), it's fine.
     """
     config_per_shape: dict[int, ShapeDistributionConfig] = {
         0: config.square_distribution,
         1: config.ellipse_distribution,
-        2: config.heart_distribution,  # TODO check order is right
+        2: config.heart_distribution,
     }
 
     class LatentLogProbFuncPerShape(NamedTuple):

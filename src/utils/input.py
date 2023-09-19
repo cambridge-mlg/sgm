@@ -51,8 +51,6 @@ def get_data(
             aug_dsprites_config=config.aug_dsprites,
             sampler_rng=val_rng,  # Use a different RNG key for validation.
         )
-        dataset = dataset.map(lambda d: {**d, "mask": False})
-
         num_val_examples = config.get("num_val_examples", 10240)
         dataset = dataset.take(num_val_examples)
         dataset_or_builder = dataset

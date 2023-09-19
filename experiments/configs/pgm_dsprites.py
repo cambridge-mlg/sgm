@@ -2,7 +2,7 @@ from ml_collections import config_dict
 from jax import numpy as jnp
 import math
 
-from src.utils.datasets.augmented_dsprites import DistributionConfig, DistributionType
+from src.utils.datasets.augmented_dsprites import DistributionConfig
 
 
 def get_config() -> config_dict.ConfigDict:
@@ -16,8 +16,8 @@ def get_config() -> config_dict.ConfigDict:
     config.shuffle_buffer_size = 1  # Doesn't matter for augmentedDsprites
     config.repeat_after_batching = False  # Doesn't matter for augmentedDsprites
 
-    config.train_split = f"train[0.1:1.0]"  # Doesn't matter for augmentedDsprites
-    config.val_split = f"train[:0.1]"  # Doesn't matter for augmentedDsprites
+    config.train_split = ""  # Doesn't matter for augmentedDsprites
+    config.val_split = ""  # Doesn't matter for augmentedDsprites
 
     config.pp_train = f'value_range(-1, 1)|keep(["image", "mask"])'
     config.pp_eval = f'value_range(-1, 1)|keep(["image", "mask", "label_shape"])'
