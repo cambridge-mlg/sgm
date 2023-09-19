@@ -137,7 +137,7 @@ def construct_augmented_dsprites(
 ) -> tf.data.Dataset:
     dataset_examples = construct_dsprites(root="data/dsprites", download=True)
 
-    # --- Get the probability of each example's latent configuration under config:
+    # --- Get the log-density of each example's latent configuration under config:
     @jax.jit
     def latent_log_prob_for_config(
         value_orientation: float,
@@ -166,6 +166,19 @@ def construct_augmented_dsprites(
     )
     # Convert to numpy and float64 for numerical stability:
     log_probs = np.array(log_probs, dtype=np.float64)
+    # These are log-densities, so they will not sum to 1. Need to normalise.
+    # However, we can't just divide by the sum, because we want to preserve the marginal
+    # probability of each shape. Hence, we need to find the indices for a given shape, and
+    # then normalise the log-densities for that shape.
+    def normalise_log_probs_for_mask(log_p: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        return log_p - scipy.special.logsumexp(np.where(mask, log_p, -np.infty)) * mask
+
+    # Normalise for squares (0), ellipses (1), and hearts (2):
+    log_probs = normalise_log_probs_for_mask(log_probs, dataset_examples.label_shape == 0)
+    log_probs = normalise_log_probs_for_mask(log_probs, dataset_examples.label_shape == 1)
+    log_probs = normalise_log_probs_for_mask(log_probs, dataset_examples.label_shape == 2)
+
+    # Normalise once more to get the final probabilities (and for numerical stability)
     norm_log_probs = log_probs - scipy.special.logsumexp(log_probs)
     probs = np.exp(norm_log_probs)
 
@@ -222,6 +235,11 @@ def latent_log_prob(
     latent: DspritesLatent,
     config: AugDspritesConfig,
 ) -> float:
+    """
+    Not always a log-prob, not always a density, but a mix. Depends on the distribution.
+    As long as we normalise the log-probs on a discrete grid at the end (and don't do mixtures of discrete and
+    continuous districtuions), it's fine.
+    """
     config_per_shape: dict[int, ShapeDistributionConfig] = {
         0: config.square_distribution,
         1: config.ellipse_distribution,
@@ -244,25 +262,28 @@ def latent_log_prob(
         for shape, shape_config in config_per_shape.items()
     }
 
-    log_prob_func_per_shape = {
-        shape: (
-            lambda x: (
-                log_probs_funcs.orientation(x.value_orientation)
-                + log_probs_funcs.scale(x.value_scale)
-                + log_probs_funcs.x_position(x.value_x_position)
-                + log_probs_funcs.y_position(x.value_y_position)
+    def per_latent_log_prob_funcs_to_joint_log_prob(log_probs_funcs: LatentLogProbFuncPerShape):
+        """
+        Cautionary tale: do not use dictionary/list comprehensions with lambda functions
+        (e.g. `{shape: lambda x: func_for_shape[shape](x) for shape in shapes}`), but
+        construct functions explicitely. That's because the lambda function will be evaluated
+        at the end of the loop, and will always use the last value of the loop variable.
+        """
+        def joint_log_prob(l: DspritesLatent) -> float:
+            return (
+                log_probs_funcs.orientation(l.value_orientation)
+                + log_probs_funcs.scale(l.value_scale)
+                + log_probs_funcs.x_position(l.value_x_position)
+                + log_probs_funcs.y_position(l.value_y_position)
                 + jnp.log(1 / 3)  # Shape probability
             )
-        )
-        for shape, log_probs_funcs in log_probs_funcs_per_shape.items()
-    }
+        return joint_log_prob
 
     return jax.lax.switch(
         latent.label_shape,
         [
-            log_prob_func_per_shape[0],
-            log_prob_func_per_shape[1],
-            log_prob_func_per_shape[2],
+            per_latent_log_prob_funcs_to_joint_log_prob(log_probs_funcs_per_shape[shape])
+            for shape in range(3)
         ],
         latent,
     )
