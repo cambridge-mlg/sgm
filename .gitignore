@@ -149,3 +149,6 @@ logs/
 # checkpoints
 checkpoints/
 checkpoint_*
+
+# data:
+*.npz
