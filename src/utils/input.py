@@ -35,7 +35,7 @@ def get_data(
         # This RNG key will be used to derive all randomness in shuffling, data
         # preprocessing etc.
         rng=train_rng,
-        shuffle_buffer_size=config.shuffle_buffer_size,
+        shuffle_buffer_size=config.get("shuffle_buffer_size", 1),
         # Depending on TPU/other runtime, local device count will be 8/1.
         batch_dims=[jax.local_device_count(), local_batch_size],
         repeat_after_batching=False,
@@ -54,9 +54,12 @@ def get_data(
         num_val_examples = config.get("num_val_examples", 10240)
         dataset = dataset.take(num_val_examples)
         dataset_or_builder = dataset
+        # Need to specify cardinality for the dataset manually
+        cardinality = num_val_examples
     else:
         num_val_examples = dataset_builder.info.splits[config.val_split].num_examples
-        # Compute how many batches we need to contain the entire val set.
+        cardinality = None
+    # Compute how many batches we need to contain the entire val set.
     pad_up_to_batches = int(jnp.ceil(num_val_examples / config.batch_size))
 
     val_ds = deterministic_data.create_dataset(
@@ -71,6 +74,7 @@ def get_data(
         ),
         # Pad with masked examples instead of dropping incomplete final batch.
         pad_up_to_batches=pad_up_to_batches,
+        cardinality=cardinality,
         shuffle=False,
     )
 
