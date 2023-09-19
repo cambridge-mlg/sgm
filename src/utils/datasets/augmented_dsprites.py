@@ -1,22 +1,17 @@
 import enum
-from enum import StrEnum
 import functools
-from typing import Callable, Iterable, Mapping, NamedTuple, Protocol, Union
-import jax
-
-import requests
-from pathlib import Path
+from enum import StrEnum
 from os import PathLike
-import numpy as np
-import distrax
-import jax.numpy as jnp
-import tensorflow as tf
-import tensorflow_datasets as tfds
-import scipy.stats
-from jax import random
-from jax._src import dtypes
+from pathlib import Path
+from typing import Callable, Iterable, NamedTuple, Protocol, Union
 
-from src.utils.algorithmic import get_closest_value_in_sorted_sequence
+import jax
+import jax.numpy as jnp
+import numpy as np
+import requests
+import scipy.stats
+import tensorflow as tf
+from jax import random
 
 
 # --- Schema classes for the configuration of the augmented DSprites dataset:
@@ -221,21 +216,14 @@ def construct_augmented_dsprites(
     return index_dataset.map(get_dataset_example, num_parallel_calls=tf.data.AUTOTUNE)
 
 
-def extract_latents_from_example(example: dict):
-    return DspritesLatent(
-        value_orientation=float(example["value_orientation"]),
-        value_scale=float(example["value_scale"]),
-        value_x_position=float(example["value_x_position"]),
-        value_y_position=float(example["value_y_position"]),
-        label_shape=int(example["label_shape"]),
-    )
-
-
 def latent_log_prob(
     latent: DspritesLatent,
     config: AugDspritesConfig,
 ) -> float:
     """
+    Evaluate the log-prob/density of the latent configuration under the given config. Written to be jittable and 
+    vmappable by jax.
+
     Not always a log-prob, not always a density, but a mix. Depends on the distribution.
     As long as we normalise the log-probs on a discrete grid at the end (and don't do mixtures of discrete and
     continuous districtuions), it's fine.
@@ -264,6 +252,8 @@ def latent_log_prob(
 
     def per_latent_log_prob_funcs_to_joint_log_prob(log_probs_funcs: LatentLogProbFuncPerShape):
         """
+        Get the joint log-probability/density of a latent configuration from the log-probability.
+
         Cautionary tale: do not use dictionary/list comprehensions with lambda functions
         (e.g. `{shape: lambda x: func_for_shape[shape](x) for shape in shapes}`), but
         construct functions explicitely. That's because the lambda function will be evaluated
@@ -354,141 +344,5 @@ def get_log_prob_func(
             )(x)
         case DistributionType.DELTA:
             return lambda x: jnp.select(x == kwargs["value"], 0, -np.infty)
-        case _:
-            raise NotImplemented(f"Invalid distribution type {distribution_conf.type}")
-
-
-ScalarSampler = Callable[[np.random.Generator], float]
-
-
-def get_dsprites_latent_sampler(config: AugDspritesConfig, size: int = 1):
-    config_per_shape: dict[int, ShapeDistributionConfig] = {
-        0: config.square_distribution,
-        1: config.ellipse_distribution,
-        2: config.heart_distribution,  # TODO check order is right
-    }
-
-    class LatentSamplerPerShape(NamedTuple):
-        orientation: ScalarSampler
-        scale: ScalarSampler
-        x_position: ScalarSampler
-        y_position: ScalarSampler
-
-    get_samp_fn_for_size = functools.partial(get_sample_func, size=size)
-    sampler_per_shape = {
-        shape: LatentSamplerPerShape(
-            orientation=get_samp_fn_for_size(config.orientation),
-            scale=get_samp_fn_for_size(config.scale),
-            x_position=get_samp_fn_for_size(config.x_position),
-            y_position=get_samp_fn_for_size(config.y_position),
-        )
-        for shape, config in config_per_shape.items()
-    }
-
-    shapes, probs = [0, 1, 2], [1 / 3, 1 / 3, 1 / 3]
-    shape_sampler: ScalarSampler = lambda rng: rng.choice(shapes, p=probs, size=size)
-
-    def sample(rng: np.random.Generator) -> DspritesLatent:
-        return DspritesLatent(
-            # Sample the label
-            label_shape=(shape := shape_sampler(rng)),
-            # Then, sample the other latents conditioned on the label:
-            value_orientation=sampler_per_shape[shape].orientation(rng),
-            value_scale=sampler_per_shape[shape].scale(rng),
-            value_x_position=sampler_per_shape[shape].x_position(rng),
-            value_y_position=sampler_per_shape[shape].y_position(rng),
-        )
-
-    return sample
-
-
-def truncated_gaussian(
-    loc: float,
-    scale: float,
-    minval: float,
-    maxval: float,
-    size: int = 1,
-) -> ScalarSampler:
-    distr = scipy.stats.truncnorm(
-        a=(minval - loc) / scale,
-        b=(maxval - loc) / scale,
-        loc=loc,
-        scale=scale,
-    )
-    return lambda rng: distr.rvs(
-        random_state=rng,
-        size=size,
-    )
-
-
-def mixture_sampler(
-    prob_a: float,
-    component_a: ScalarSampler,
-    component_b: ScalarSampler,
-    size: int = 1,
-) -> ScalarSampler:
-    """Sample from a mixture of two distributions"""
-    distr = scipy.stats.bernoulli(p=prob_a)
-    if size == 1:
-        return (
-            lambda rng: component_a(rng)
-            if distr.rvs(random_state=rng)
-            else component_b(rng)
-        )
-    else:
-        return lambda rng: np.where(
-            distr.rvs(random_state=rng, size=size),
-            component_a(rng),
-            component_b(rng),
-        )
-
-
-def get_sample_func(
-    distribution_conf: DistributionConfig,
-    size: int = 1,
-) -> Callable[[random.PRNGKeyArray], float]:
-    kwargs = distribution_conf.kwargs
-    assert set(kwargs.keys()) == expected_kwargs_for_distribution_type(
-        distribution_conf.type
-    ), (
-        f"Expected kwargs {expected_kwargs_for_distribution_type(distribution_conf.type)} "
-        f"for distribution type {distribution_conf.type}, got {set(kwargs.keys())}"
-    )
-    match distribution_conf.type:
-        case DistributionType.UNIFORM:
-            distr = scipy.stats.uniform(
-                loc=kwargs["low"], scale=kwargs["high"] - kwargs["low"]
-            )
-            return lambda rng: distr.rvs(random_state=rng, size=size)
-        case DistributionType.BIUNIFORM:
-            component_a_distr = scipy.stats.uniform(
-                loc=kwargs["low1"], scale=kwargs["high1"] - kwargs["low1"]
-            )
-            component_b_distr = scipy.stats.uniform(
-                loc=kwargs["low2"], scale=kwargs["high2"] - kwargs["low2"]
-            )
-            return mixture_sampler(
-                prob_a=0.5,
-                component_a=lambda rng: component_a_distr.rvs(
-                    random_state=rng, size=size
-                ),
-                component_b=lambda rng: component_b_distr.rvs(
-                    random_state=rng, size=size
-                ),
-            )
-        case DistributionType.TRUNCATED_NORMAL:
-            return truncated_gaussian(
-                loc=kwargs["loc"],
-                scale=kwargs["scale"],
-                minval=kwargs["minval"],
-                maxval=kwargs["maxval"],
-                size=size,
-            )
-        case DistributionType.DELTA:
-            return (
-                lambda rng: kwargs["value"]
-                if size == 1
-                else np.full(size, kwargs["value"])
-            )
         case _:
             raise NotImplemented(f"Invalid distribution type {distribution_conf.type}")
