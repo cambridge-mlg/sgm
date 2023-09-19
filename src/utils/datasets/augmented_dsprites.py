@@ -186,13 +186,16 @@ def construct_augmented_dsprites(
         rng = np.random.default_rng(np.array(rng))
         num_examples = len(probs)
         while True:
-            yield from rng.choice(num_examples, size=num_vectorized_idx_samples, p=probs)
+            yield rng.choice(num_examples, size=num_vectorized_idx_samples, p=probs)
     
+    num_vectorized_idx_samples = aug_dsprites_config.get("num_vectorized_idx_samples", 100000)
     index_dataset = tf.data.Dataset.from_generator(
         example_idx_sampler,
-        output_signature=tf.TensorSpec(shape=(), dtype=tf.int64),
-        args=(sampler_rng, aug_dsprites_config.get("num_vectorized_idx_samples", 100000)),
+        output_signature=tf.TensorSpec(shape=(num_vectorized_idx_samples, ), dtype=tf.int64),
+        args=(sampler_rng, num_vectorized_idx_samples),
     )
+    # Unbatch vectorised samples of indices
+    index_dataset = index_dataset.unbatch()
 
     dataset_examples_tf = DspritesExamples(
         image=tf.convert_to_tensor(dataset_examples.image[..., None]),
@@ -213,6 +216,7 @@ def construct_augmented_dsprites(
             "value_x_position": dataset_examples_tf.value_x_position[idx],
             "value_y_position": dataset_examples_tf.value_y_position[idx],
         }
+
     return index_dataset.map(get_dataset_example, num_parallel_calls=tf.data.AUTOTUNE)
 
 
