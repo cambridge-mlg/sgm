@@ -56,14 +56,10 @@ def get_data(
         num_val_examples = config.get("num_val_examples", 10240)
         dataset = dataset.take(num_val_examples)
         dataset_or_builder = dataset
-        # import tensorflow as tf
-        # dataset = dataset.apply(tf.data.experimental.assert_cardinality(num_val_examples))
-
-        pad_up_to_batches = None
     else:
         num_val_examples = dataset_builder.info.splits[config.val_split].num_examples
         # Compute how many batches we need to contain the entire val set.
-        pad_up_to_batches = int(jnp.ceil(num_val_examples / config.batch_size))
+    pad_up_to_batches = int(jnp.ceil(num_val_examples / config.batch_size))
 
     val_ds = deterministic_data.create_dataset(
         dataset_or_builder,
