@@ -13,8 +13,6 @@ def get_config() -> config_dict.ConfigDict:
     # --- Dataset ---
     config.batch_size = 512
     config.dataset = "aug_dsprites"
-    config.shuffle_buffer_size = 1  # Doesn't matter for augmentedDsprites
-    config.repeat_after_batching = False  # Doesn't matter for augmentedDsprites
 
     config.train_split = ""  # Doesn't matter for augmentedDsprites
     config.val_split = ""  # Doesn't matter for augmentedDsprites
