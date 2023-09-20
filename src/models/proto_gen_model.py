@@ -1,20 +1,20 @@
 from typing import Callable, Optional, Sequence
 
-import numpy as np
+import ciclo
+import distrax
+import flax
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import jax.random as random
-from jax import lax
+import numpy as np
+import optax
 from chex import Array, PRNGKey
-import flax
-import flax.linen as nn
+from clu import metrics
+from flax import traverse_util
 from flax.linen import initializers as init
 from flax.training import train_state
-from flax import traverse_util
-import distrax
-from clu import metrics
-import optax
-import ciclo
+from jax import lax
 
 from src.transformations import transform_image
 from src.utils.types import KwArgs
@@ -273,7 +273,7 @@ def make_pgm_train_and_eval(config, model):
 
             x_hat = jax.lax.stop_gradient(transform_image(x, η_rand - η_x_rand))
 
-            # Use the gradient of the density w.r.t η to regularises log_p_η_x_hat, 
+            # Use the gradient of the density w.r.t η to regularises log_p_η_x_hat,
             # so that you'd get a smooth density from the generative model.
             def get_log_p_η_x_hat(η_x):
                 return model.apply(
@@ -301,8 +301,8 @@ def make_pgm_train_and_eval(config, model):
         )
         x_mse = (x_mse * weights).sum(axis=0)
 
-        # Regularise p(η|x_hat) densities against small pertubations on x_hat, 
-        # by minimizing the difference between desitities for slighty different 
+        # Regularise p(η|x_hat) densities against small pertubations on x_hat,
+        # by minimizing the difference between desitities for slighty different
         # x_hat's, that result from an imperfect inference net.
         pairwise_diffs = jax.vmap(
             jax.vmap(lambda x, y: x - y, in_axes=(0, None)), in_axes=(None, 0)
@@ -413,16 +413,16 @@ def create_pgm_optimizer(params, config):
             optax.join_schedules(
                 [
                     optax.warmup_cosine_decay_schedule(
-                        config.gen_init_lr,
-                        config.gen_init_lr * config.gen_peak_lr_mult,
-                        config.gen_warmup_steps,
-                        config.gen_steps,
-                        config.gen_init_lr * config.gen_final_lr_mult,
+                        config.inf_init_lr,
+                        config.inf_init_lr * config.inf_peak_lr_mult,
+                        config.inf_warmup_steps,
+                        config.inf_steps,
+                        config.inf_init_lr * config.inf_final_lr_mult,
                     ),
                     optax.constant_schedule(0.0),
                 ],
                 [
-                    config.gen_steps,
+                    config.inf_steps,
                 ],
             ),
             2.0,
@@ -433,14 +433,14 @@ def create_pgm_optimizer(params, config):
                     optax.warmup_cosine_decay_schedule(
                         config.σ_lr,
                         config.σ_lr * 3,
-                        config.gen_warmup_steps,
-                        config.gen_steps,
+                        config.inf_warmup_steps,
+                        config.inf_steps,
                         config.σ_lr / 3,
                     ),
                     optax.constant_schedule(0.0),
                 ],
                 [
-                    config.gen_steps,
+                    config.inf_steps,
                 ],
             )
         ),
@@ -449,15 +449,15 @@ def create_pgm_optimizer(params, config):
                 [
                     optax.constant_schedule(0.0),
                     optax.warmup_cosine_decay_schedule(
-                        config.inf_init_lr,
-                        config.inf_init_lr * config.inf_peak_lr_mult,
-                        config.inf_warmup_steps,
-                        config.inf_steps,
-                        config.inf_init_lr * config.inf_final_lr_mult,
+                        config.gen_init_lr,
+                        config.gen_init_lr * config.gen_peak_lr_mult,
+                        config.gen_warmup_steps,
+                        config.gen_steps,
+                        config.gen_init_lr * config.gen_final_lr_mult,
                     ),
                 ],
                 [
-                    config.inf_steps,
+                    config.gen_steps,
                 ],
             ),
             2.0,

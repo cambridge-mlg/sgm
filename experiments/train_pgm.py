@@ -9,7 +9,7 @@ import numpy as np
 from jax.config import config
 
 jnp.log(jnp.exp(1) - 1.0)
-# TODO: figure out why we get CUDA failures this ^ isn't here.
+# TODO: figure out why we get CUDA failures if this ^ isn't here.
 
 import ciclo
 import flax
