@@ -273,6 +273,8 @@ def make_pgm_train_and_eval(config, model):
 
             x_hat = jax.lax.stop_gradient(transform_image(x, η_rand - η_x_rand))
 
+            # Use the gradient of the density w.r.t η to regularises log_p_η_x_hat, 
+            # so that you'd get a smooth density from the generative model.
             def get_log_p_η_x_hat(η_x):
                 return model.apply(
                     {"params": params},
@@ -299,6 +301,9 @@ def make_pgm_train_and_eval(config, model):
         )
         x_mse = (x_mse * weights).sum(axis=0)
 
+        # Regularise p(η|x_hat) densities against small pertubations on x_hat, 
+        # by minimizing the difference between desitities for slighty different 
+        # x_hat's, that result from an imperfect inference net.
         pairwise_diffs = jax.vmap(
             jax.vmap(lambda x, y: x - y, in_axes=(0, None)), in_axes=(None, 0)
         )(log_p_η_x_hat, log_p_η_x_hat)
