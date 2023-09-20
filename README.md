@@ -22,6 +22,28 @@ python3 -m ipykernel install --user --name=inv
 # ^ optional, for easily running IPython/Jupyter notebooks with the virtual env.
 ```
 
+## TODOs:
+
+  [ ] Implement and test the correct η-gradient loss term, which regularises the p(η|x_hat) densities against small pertubations on x_hat (i.e., T(x_hat, η_small)), rather than encouraging smoothness of the output as we are currently doing. See https://github.com/JamesAllingham/learning-invariances/pull/5#discussion_r1322016289.
+  ```
+  x_hat = jax.lax.stop_gradient(transform_image(x, η_rand - η_x_rand))
+            def get_log_p_η_x_hat(η_temp):
+                x_hat = transform_image(x_hat, η_temp)
+                return model.apply(
+                    {"params": params},
+                    x_hat,
+                    η_x,
+                    train=train,
+                    method=model.generative_net_ll,
+                )
+
+            log_p_η_x_hat, η_grad = jax.value_and_grad(get_log_p_η_x_hat)(
+                jnp.zeros_like(η_rand)
+            )
+            η_grad_regularizer = jnp.abs(η_grad).mean()
+  ```
+  [ ] Revist the shearing transformation for MNIST. It is currently disabled, but it would be nice to show that we can still learn with it.
+
 ## (Maybe) useful (deleted) code, from `contrastive` branch
 
  - `notebooks/ssilvae_vs_vae.ipynb`: code for moodifying a dataset, see below, and various IWLB comparisons.
