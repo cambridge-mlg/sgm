@@ -4,11 +4,40 @@ Let's try learn some invariances
 ## Getting Started
 
 ```bash
-module load python/3.11.0-icl
-# ^ for Cambridge HPC only
+# install openssl
+wget https://www.openssl.org/source/openssl-1.1.1w.tar.gz
+md5sum openssl-1.1.1w.tar.gz  # should be 3f76825f195e52d4b10c70040681a275
+tar -xzvf openssl-1.1.1w.tar.gz
+cd openssl-1.1.1w/
+./config --prefix=$HOME/.openssl
+make
+make install
+~/.openssl/bin/openssl version  # should be OpenSSL 1.1.1w  11 Sep 2023
+# install python
+export PYTHON_VERSION=3.11.5
+export PYTHON_MAJOR=3
+export LD_LIBRARY_PATH="$HOME/.openssl/lib:$LD_LIBRARY_PATH"
+export CPPFLAGS="-I$HOME/.openssl/include $CPPFLAGS"
+curl -O https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz
+md5sum Python-3.11.5.tgz  # should be b628f21aae5e2c3006a12380905bb640
+tar -xvzf Python-${PYTHON_VERSION}.tgz
+cd Python-${PYTHON_VERSION}
+./configure \
+    --prefix=$HOME/.localpython \
+    --enable-optimizations \
+    --enable-ipv6 \
+    LDFLAGS=-Wl,-rpath=/opt/python/${PYTHON_VERSION}/lib,--disable-new-dtags \
+    --with-openssl=$HOME/.openssl
+make
+make install
+# install pip (might not be necessary)
+~/.localpython/bin/python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"  # should be OpenSSL 1.1.1w  11 Sep 2023
+curl -O https://bootstrap.pypa.io/get-pip.py
+~/.localpython/bin/pip3 install numpy  # should succeed
+# ^^^^^^^^ installation on Cambridge HPC
 sudo apt-get install python3.11-venv
 # ^ if not already installed
-python3.11 -m venv ~/.virtualenvs/inv
+python3.11 -m venv ~/.virtualenvs/inv  # replace python3.11 with ~/.localpython/bin/python3.11 if necessary
 source ~/.virtualenvs/inv/bin/activate
 git clone --recurse-submodules git@github.com:JamesAllingham/learning-invariances.git
 # ^ the --recurse-submodules flag is important!
