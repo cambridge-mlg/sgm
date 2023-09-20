@@ -44,7 +44,7 @@ git clone --recurse-submodules git@github.com:JamesAllingham/learning-invariance
 cd learning-invariances
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+pip install "jax[cuda11_pip]==0.4.14" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 # ^ for GPU support, can be modified to get a different CUDA version
 pip install -e .
 python3 -m ipykernel install --user --name=inv
