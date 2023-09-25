@@ -29,7 +29,12 @@ class TransformationInferenceNet(nn.Module):
 
     @nn.compact
     def __call__(self, x, train: bool = False):
-        h = x.flatten()
+        h = x
+
+        # apply average pooling
+        h = nn.avg_pool(h, window_shape=(2, 2), strides=(2, 2), padding="SAME")
+
+        h = h.flatten()
 
         for hidden_dim in self.hidden_dims:
             h = nn.Dense(hidden_dim)(h)

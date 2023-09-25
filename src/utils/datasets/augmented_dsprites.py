@@ -45,6 +45,7 @@ def expected_kwargs_for_distribution_type(
 
 
 class ShapeDistributionConfig(Protocol):
+    shape_prob: float
     orientation: DistributionConfig
     scale: DistributionConfig
     x_position: DistributionConfig
@@ -74,8 +75,8 @@ class DspritesExamples(NamedTuple):
     image: ArrayLike
     label_shape: ArrayLike
     value_scale: ArrayLike
-    value_orientation:ArrayLike
-    value_x_position:  ArrayLike
+    value_orientation: ArrayLike
+    value_x_position: ArrayLike
     value_y_position: ArrayLike
 
 
@@ -113,7 +114,7 @@ def construct_dsprites(
         value_y_position=y_positions,
     )
 
-    
+
 def download_dsprites(filepath: PathLike):
     filepath = Path(filepath)
     # Download the dataset from https://github.com/deepmind/dsprites-dataset
@@ -151,7 +152,7 @@ def construct_augmented_dsprites(
             ),
             config=aug_dsprites_config,
         )
-    
+
     log_probs = jax.vmap(latent_log_prob_for_config, in_axes=(0, 0, 0, 0, 0))(
         dataset_examples.value_orientation,
         dataset_examples.value_scale,
@@ -161,6 +162,7 @@ def construct_augmented_dsprites(
     )
     # Convert to numpy and float64 for numerical stability:
     log_probs = np.array(log_probs, dtype=np.float64)
+
     # These are log-densities, so they will not sum to 1. Need to normalise.
     # However, we can't just divide by the sum, because we want to preserve the marginal
     # probability of each shape. Hence, we need to find the indices for a given shape, and
@@ -169,15 +171,23 @@ def construct_augmented_dsprites(
         return log_p - scipy.special.logsumexp(np.where(mask, log_p, -np.infty)) * mask
 
     # Normalise for squares (0), ellipses (1), and hearts (2):
-    log_probs = normalise_log_probs_for_mask(log_probs, dataset_examples.label_shape == 0)
-    log_probs = normalise_log_probs_for_mask(log_probs, dataset_examples.label_shape == 1)
-    log_probs = normalise_log_probs_for_mask(log_probs, dataset_examples.label_shape == 2)
+    log_probs = normalise_log_probs_for_mask(
+        log_probs, dataset_examples.label_shape == 0
+    )
+    log_probs = normalise_log_probs_for_mask(
+        log_probs, dataset_examples.label_shape == 1
+    )
+    log_probs = normalise_log_probs_for_mask(
+        log_probs, dataset_examples.label_shape == 2
+    )
 
     # Normalise once more to get the final probabilities (and for numerical stability)
     norm_log_probs = log_probs - scipy.special.logsumexp(log_probs)
     probs = np.exp(norm_log_probs)
 
-    def example_idx_sampler(rng: random.PRNGKeyArray, num_vectorized_idx_samples: int = 50000) -> Iterable[int]:
+    def example_idx_sampler(
+        rng: random.PRNGKeyArray, num_vectorized_idx_samples: int = 50000
+    ) -> Iterable[int]:
         """
         Sample an example index from the dataset with probability proportional to `probs`.
         `num_batched_samples` helps with speed by vectorising the otherwise expenseive
@@ -187,11 +197,15 @@ def construct_augmented_dsprites(
         num_examples = len(probs)
         while True:
             yield rng.choice(num_examples, size=num_vectorized_idx_samples, p=probs)
-    
-    num_vectorized_idx_samples = aug_dsprites_config.get("num_vectorized_idx_samples", 100000)
+
+    num_vectorized_idx_samples = aug_dsprites_config.get(
+        "num_vectorized_idx_samples", 100000
+    )
     index_dataset = tf.data.Dataset.from_generator(
         example_idx_sampler,
-        output_signature=tf.TensorSpec(shape=(num_vectorized_idx_samples, ), dtype=tf.int64),
+        output_signature=tf.TensorSpec(
+            shape=(num_vectorized_idx_samples,), dtype=tf.int64
+        ),
         args=(sampler_rng, num_vectorized_idx_samples),
     )
     # Unbatch vectorised samples of indices
@@ -225,7 +239,7 @@ def latent_log_prob(
     config: AugDspritesConfig,
 ) -> float:
     """
-    Evaluate the log-prob/density of the latent configuration under the given config. Written to be jittable and 
+    Evaluate the log-prob/density of the latent configuration under the given config. Written to be jittable and
     vmappable by jax.
 
     Not always a log-prob, not always a density, but a mix. Depends on the distribution.
@@ -254,7 +268,9 @@ def latent_log_prob(
         for shape, shape_config in config_per_shape.items()
     }
 
-    def per_latent_log_prob_funcs_to_joint_log_prob(log_probs_funcs: LatentLogProbFuncPerShape):
+    def per_latent_log_prob_funcs_to_joint_log_prob(
+        log_probs_funcs: LatentLogProbFuncPerShape,
+    ):
         """
         Get the joint log-probability/density of a latent configuration from the log-probability.
 
@@ -263,6 +279,7 @@ def latent_log_prob(
         construct functions explicitely. That's because the lambda function will be evaluated
         at the end of the loop, and will always use the last value of the loop variable.
         """
+
         def joint_log_prob(l: DspritesLatent) -> float:
             return (
                 log_probs_funcs.orientation(l.value_orientation)
@@ -271,12 +288,15 @@ def latent_log_prob(
                 + log_probs_funcs.y_position(l.value_y_position)
                 + jnp.log(1 / 3)  # Shape probability
             )
+
         return joint_log_prob
 
     return jax.lax.switch(
         latent.label_shape,
         [
-            per_latent_log_prob_funcs_to_joint_log_prob(log_probs_funcs_per_shape[shape])
+            per_latent_log_prob_funcs_to_joint_log_prob(
+                log_probs_funcs_per_shape[shape]
+            )
             for shape in range(3)
         ],
         latent,
