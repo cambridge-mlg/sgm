@@ -26,17 +26,17 @@ def get_config(params) -> config_dict.ConfigDict:
     config.eval_freq = 0.01
     config.difficulty_weighted_inf_loss = True
 
-    config.gen_steps = 10_000
-    config.gen_init_lr = 1e-4
-    config.gen_peak_lr_mult = 3
-    config.gen_final_lr_mult = 1 / 30
-    config.gen_warmup_steps = 1_000
-    config.σ_lr = 1e-2
     config.inf_steps = 10_000
-    config.inf_init_lr = 3e-4
-    config.inf_peak_lr_mult = 9
-    config.inf_final_lr_mult = 1 / 300
+    config.inf_init_lr = 1e-4
+    config.inf_peak_lr_mult = 3
+    config.inf_final_lr_mult = 1 / 30
     config.inf_warmup_steps = 1_000
+    config.σ_lr = 1e-2
+    config.gen_steps = 10_000
+    config.gen_init_lr = 3e-4
+    config.gen_peak_lr_mult = 9
+    config.gen_final_lr_mult = 1 / 300
+    config.gen_warmup_steps = 1_000
 
     config.α_schedule_pct = 0.25
     config.α_schedule_final_value = 0.0

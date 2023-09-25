@@ -457,7 +457,7 @@ def create_pgm_optimizer(params, config):
                     ),
                 ],
                 [
-                    config.gen_steps,
+                    config.inf_steps,
                 ],
             ),
             2.0,
@@ -561,7 +561,7 @@ def create_pgm_state(params, rng, config):
                 optax.constant_schedule(1.0),
             ],
             [
-                config.gen_steps,
+                config.inf_steps,
             ],
         ),
         α_schedule=optax.join_schedules(
@@ -569,12 +569,12 @@ def create_pgm_state(params, rng, config):
                 optax.constant_schedule(1.0),
                 optax.cosine_decay_schedule(
                     1.0,
-                    int(config.inf_steps * config.α_schedule_pct),
+                    int(config.gen_steps * config.α_schedule_pct),
                     config.α_schedule_final_value,
                 ),
             ],
             [
-                config.gen_steps,
+                config.inf_steps,
             ],
         ),
         β_schedule=optax.join_schedules(
@@ -582,12 +582,12 @@ def create_pgm_state(params, rng, config):
                 optax.constant_schedule(1.0),
                 optax.cosine_decay_schedule(
                     1.0,
-                    int(config.inf_steps * config.β_schedule_pct),
+                    int(config.gen_steps * config.β_schedule_pct),
                     config.β_schedule_final_value,
                 ),
             ],
             [
-                config.gen_steps,
+                config.inf_steps,
             ],
         ),
     )
