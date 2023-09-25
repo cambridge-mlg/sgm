@@ -2,7 +2,6 @@ import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_deterministic_ops=true"
 
-
 import jax.numpy as jnp
 import jax.random as random
 import numpy as np
@@ -13,24 +12,19 @@ jnp.log(jnp.exp(1) - 1.0)
 
 import ciclo
 import flax
-import jax
 import matplotlib.pyplot as plt
 from absl import app, flags, logging
 from clu import deterministic_data, parameter_overview
-from flax.training import checkpoints
 from ml_collections import config_flags
 
 import wandb
-from experiments.configs.pgm_mnist import get_config
 from src.models.proto_gen_model import (
     PrototypicalGenerativeModel,
     create_pgm_state,
     make_pgm_train_and_eval,
 )
 from src.models.utils import reset_metrics
-from src.transformations import transform_image
 from src.utils.input import get_data
-from src.utils.plotting import rescale_for_imshow
 from src.utils.training import custom_wandb_logger
 
 flax.config.update("flax_use_orbax_checkpointing", True)
@@ -47,6 +41,7 @@ flags.DEFINE_list("wandb_tags", [], "Tags for wandb.run.")
 flags.DEFINE_string("wandb_notes", "", "Notes for wandb.run.")
 flags.DEFINE_string("wandb_project", "iclr2024experiments", "Project for wandb.run.")
 flags.DEFINE_string("wandb_entity", "invariance-learners", "Entity for wandb.run.")
+flags.DEFINE_string("wandb_name", None, "Name for wandb.run.")
 
 
 def main(_):
@@ -56,6 +51,8 @@ def main(_):
         notes=FLAGS.wandb_notes,
         project=FLAGS.wandb_project,
         entity=FLAGS.wandb_entity,
+        name=FLAGS.config.name,
+        settings=wandb.Settings(code_dir="../"),
     ) as run:
         rng = random.PRNGKey(FLAGS.config.seed)
         data_rng, init_rng, state_rng = random.split(rng, 3)
