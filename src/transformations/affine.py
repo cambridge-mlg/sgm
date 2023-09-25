@@ -1,8 +1,9 @@
 """Affine transformations of images."""
-import jax
 from jax import numpy as jnp
 from jax.scipy.linalg import expm
-from chex import Array, assert_shape, assert_rank, assert_equal_shape
+from chex import Array, assert_shape, assert_rank
+
+from src.transformations.map_coords import map_coordinates
 
 
 def create_generator_matrices() -> Array:
@@ -13,7 +14,7 @@ def create_generator_matrices() -> Array:
         None
 
     Returns:
-        A 7x3x3 array containing the 7 3x3 generator matrices, in order:
+        A 6x3x3 array containing the 6 3x3 generator matrices, in order:
         translation in x, translation in y, rotation, scale in x, scale in y, shearing in x, and shearing in y.
     """
     G_trans_x = jnp.zeros((3, 3), jnp.float32).at[0, 2].set(1)
@@ -21,9 +22,8 @@ def create_generator_matrices() -> Array:
     G_rot = jnp.zeros((3, 3), jnp.float32).at[1, 0].set(1).at[0, 1].set(-1)
     G_scale_x = jnp.zeros((3, 3), jnp.float32).at[0, 0].set(1)
     G_scale_y = jnp.zeros((3, 3), jnp.float32).at[1, 1].set(1)
-    G_shear_x = jnp.zeros((3, 3), jnp.float32).at[0, 1].set(1)
-    G_shear_y = jnp.zeros((3, 3), jnp.float32).at[1, 0].set(1)
-    Gs = jnp.array([G_trans_x, G_trans_y, G_rot, G_scale_x, G_scale_y, G_shear_x, G_shear_y])
+    G_shear = jnp.zeros((3, 3), jnp.float32).at[0, 1].set(1).at[1, 0].set(1)
+    Gs = jnp.array([G_trans_x, G_trans_y, G_rot, G_scale_x, G_scale_y, G_shear])
 
     return Gs
 
@@ -38,19 +38,18 @@ def gen_transform_mat(
     Ouderaa and van der Wilk.
 
     Args:
-        η: an Array with six entries:
+        η: an Array with 6 entries:
         * η_0 controls translation in x.
         * η_1 controls translation in y.
         * η_2 is the angle of rotation.
         * η_3 is the scaling factor in x.
         * η_4 is the scaling factor in y.
-        * η_5 controls shearing in x.
-        * η_6 controls shearing in y.
+        * η_5 controls shearing in x and y.
 
     Returns:
         A 3x3 affine transformation array.
     """
-    assert_shape(η, (7,))
+    assert_shape(η, (6,))
 
     Gs = create_generator_matrices()
 
@@ -59,16 +58,18 @@ def gen_transform_mat(
     return T
 
 
-def transform_image(
+def _transform_image(
     image: Array,
     T: Array,
+    fill_mode: str = "nearest",
+    fill_value: float = 0.0,
 ) -> Array:
     """Applies an affine transformation to an image.
 
     See Sec 3.2 in "Spatial Transformer Networks" by Jaderberg et al.
 
     Args:
-        image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax image format.
+        image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax/TF image format.
 
         T: a 3x3 affine transformation Array.
 
@@ -81,9 +82,8 @@ def transform_image(
     height, width, num_channels = image.shape
     A = T[:2, :]
 
-    # (x_t, y_t, 1), eq (1) in Jaderberg et al.
-    x_t, y_t = jnp.meshgrid(jnp.linspace(-1, 1, width),
-                            jnp.linspace(-1, 1, height))
+    # (x_t, y_t, 1), (1) in Jaderberg et al.
+    x_t, y_t = jnp.meshgrid(jnp.linspace(-1, 1, width), jnp.linspace(-1, 1, height))
     ones = jnp.ones(x_t.size)
     input_pts = jnp.vstack([x_t.flatten(), y_t.flatten(), ones])
 
@@ -93,12 +93,71 @@ def transform_image(
     transformed_pts = transformed_pts * jnp.array([[width], [height]])
 
     # Transform the image by moving the pixels to their new locations
-    output = jnp.stack([
-        jax.scipy.ndimage.map_coordinates(image[:, :, i], transformed_pts[::-1], order=1, cval=0)
-        # Note: usually we would use bicubic interpolation (order=3), but this isn't available
-        # in jax, so we have to use linear interpolation.
-        for i in range(num_channels)
-    ], axis=-1)
+    output = jnp.stack(
+        [
+            map_coordinates(
+                image[:, :, i],
+                transformed_pts[::-1],
+                order=3,
+                mode=fill_mode,
+                cval=fill_value,
+            )
+            for i in range(num_channels)
+        ],
+        axis=-1,
+    )
     output = jnp.reshape(output, image.shape)
 
     return output
+
+
+def affine_transform_image(
+    image: Array,
+    η: Array,
+    fill_mode: str = "constant",
+    fill_value: float = -1.0,
+) -> Array:
+    """Applies an affine transformation to an image.
+
+    See Sec 3.2 in "Spatial Transformer Networks" by Jaderberg et al. and
+    App. E of "Learning Invariant Weights in Neural Networks" by van der
+    Ouderaa and van der Wilk.
+
+    Args:
+        image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax/TF image format.
+
+        η: an Array with 6 entries:
+        * η_0 controls translation in x.
+        * η_1 controls translation in y.
+        * η_2 is the angle of rotation.
+        * η_3 is the scaling factor in x.
+        * η_4 is the scaling factor in y.
+        * η_5 controls shearing in x and y.
+
+    Returns:
+        A transformed image of same shape as the input.
+    """
+    assert_rank(image, 3)
+    assert_shape(η, (6,))
+
+    T = gen_transform_mat(η)
+    return _transform_image(image, T, fill_mode=fill_mode, fill_value=fill_value)
+
+
+def rotate_image(
+    image: Array,
+    θ: float,
+    fill_value: float = 0.0,
+) -> Array:
+    """Rotates an image by an angle θ.
+
+    Args:
+        image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax/TF image format.
+
+        θ: the angle of rotation in radians.
+
+    Returns:
+        A rotated image of same shape as the input.
+    """
+    η = jnp.array([0, 0, θ, 0, 0, 0, 0])
+    return affine_transform_image(image, η, fill_value=fill_value)

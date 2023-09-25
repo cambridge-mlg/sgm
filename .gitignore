@@ -136,3 +136,19 @@ raw_data/
 
 # weights and biases stuff
 wandb/
+
+# results
+NeurReps/results*/
+
+# logging
+logs/
+
+# jobs
+*%*.txt
+
+# checkpoints
+checkpoints/
+checkpoint_*
+
+# data:
+*.npz
