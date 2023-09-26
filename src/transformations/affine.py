@@ -1,7 +1,7 @@
 """Affine transformations of images."""
+from chex import Array, assert_rank, assert_shape
 from jax import numpy as jnp
 from jax.scipy.linalg import expm
-from chex import Array, assert_shape, assert_rank
 
 from src.transformations.map_coords import map_coordinates
 
@@ -52,6 +52,9 @@ def gen_transform_mat(
     assert_shape(η, (6,))
 
     Gs = create_generator_matrices()
+
+    assert_rank(Gs, 3)
+    assert_shape(Gs, (6, 3, 3))
 
     T = expm((η[:, jnp.newaxis, jnp.newaxis] * Gs).sum(axis=0))
 
