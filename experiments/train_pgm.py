@@ -2,19 +2,15 @@ import os
 
 os.environ["XLA_FLAGS"] = "--xla_gpu_deterministic_ops=true"
 
-import jax.numpy as jnp
-import jax.random as random
-import numpy as np
-from jax.config import config
-
-jnp.log(jnp.exp(1) - 1.0)
-# TODO: figure out why we get CUDA failures if this ^ isn't here.
-
 import ciclo
 import flax
+import jax.numpy as jnp
+import jax.random as random
 import matplotlib.pyplot as plt
+import numpy as np
 from absl import app, flags, logging
 from clu import deterministic_data, parameter_overview
+from jax.config import config
 from ml_collections import config_flags
 
 import wandb
