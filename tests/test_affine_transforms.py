@@ -8,7 +8,6 @@ import torch.nn.functional as F
 from absl.testing import parameterized
 from jax import numpy as jnp
 from PIL import Image
-from torchdiffeq import odeint
 
 from src.transformations.affine import (
     affine_transform_image,
@@ -138,13 +137,6 @@ class AffineMatrixTests(parameterized.TestCase):
         np.testing.assert_allclose(T, T_trans, rtol=1e-7, atol=1e-7)
 
 
-def _pytorch_expm(A, rtol=1e-4):
-    I = torch.eye(A.shape[-1], device=A.device, dtype=A.dtype)
-    return odeint(
-        lambda t, x: A @ x, I, torch.tensor([0.0, 1.0]).to(A.device, A.dtype), rtol=rtol
-    )[-1]
-
-
 class MatrixExpTests(parameterized.TestCase):
     """Tests comparing the jax.scipy and PyTorch (ode-based) matrix exponentials."""
 
@@ -178,7 +170,7 @@ class MatrixExpTests(parameterized.TestCase):
 
         Gsum = (np.array(η)[:, np.newaxis, np.newaxis] * Gs).sum(axis=0)
 
-        pt_T = _pytorch_expm(torch.from_numpy(np.array(Gsum)), rtol=1e-6)
+        pt_T = torch.matrix_exp(torch.from_numpy(np.array(Gsum)))
         jax_T = jax.scipy.linalg.expm(Gsum)
 
         np.testing.assert_allclose(jax_T, pt_T, rtol=1e-6, atol=1e-6)

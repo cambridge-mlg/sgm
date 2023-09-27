@@ -12,7 +12,6 @@ tensorflow-datasets==4.9.2
 tensorflow-probability==0.21.0
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.0.1+cpu
-torchdiffeq
 absl-py
 -e ./CommonLoopUtils
 tqdm
