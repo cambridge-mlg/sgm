@@ -4,6 +4,27 @@ Let's try learn some invariances
 ## Getting Started
 
 ```bash
+sudo apt-get install python3.11-venv
+# ^ if not already installed
+python3.11 -m venv ~/.virtualenvs/inv  # replace python3.11 with ~/.localpython/bin/python3.11 if necessary
+source ~/.virtualenvs/inv/bin/activate
+git clone --recurse-submodules git@github.com:JamesAllingham/learning-invariances.git
+# ^ the --recurse-submodules flag is important!
+cd learning-invariances
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install "jax[cuda11_pip]==0.4.14" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# ^ for GPU support, can be modified to get a different CUDA version
+pip install orbax-checkpoint==0.4.0  --force --no-deps
+# ^ really don't know why this is needed :(
+pip install -e .
+python3 -m ipykernel install --user --name=inv
+# ^ optional, for easily running IPython/Jupyter notebooks with the virtual env.
+```
+
+If Python 3.11 needs to be installed without apt-get or similar, e.g. on Cambridge HPC.
+  
+```bash
 # install openssl
 wget https://www.openssl.org/source/openssl-1.1.1w.tar.gz
 md5sum openssl-1.1.1w.tar.gz  # should be 3f76825f195e52d4b10c70040681a275
@@ -34,21 +55,6 @@ make install
 ~/.localpython/bin/python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"  # should be OpenSSL 1.1.1w  11 Sep 2023
 curl -O https://bootstrap.pypa.io/get-pip.py
 ~/.localpython/bin/pip3 install numpy  # should succeed
-# ^^^^^^^^ installation on Cambridge HPC
-sudo apt-get install python3.11-venv
-# ^ if not already installed
-python3.11 -m venv ~/.virtualenvs/inv  # replace python3.11 with ~/.localpython/bin/python3.11 if necessary
-source ~/.virtualenvs/inv/bin/activate
-git clone --recurse-submodules git@github.com:JamesAllingham/learning-invariances.git
-# ^ the --recurse-submodules flag is important!
-cd learning-invariances
-pip install --upgrade pip
-pip install -r requirements.txt
-pip install "jax[cuda11_pip]==0.4.14" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-# ^ for GPU support, can be modified to get a different CUDA version
-pip install -e .
-python3 -m ipykernel install --user --name=inv
-# ^ optional, for easily running IPython/Jupyter notebooks with the virtual env.
 ```
 
 ## TODOs:
