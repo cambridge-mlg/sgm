@@ -1,12 +1,13 @@
 jax==0.4.14
+jaxlib==0.4.14
 numpy==1.24.3
 flax==0.7.2
 optax==0.1.7
 distrax==0.1.4
 chex==0.1.8
-orbax-checkpoint==0.3.5
+orbax-checkpoint==0.4.0
 ciclo
-tensorflow==2.13.0
+tensorflow-cpu==2.13.0
 tensorflow-addons==0.21.0
 tensorflow-datasets==4.9.2
 tensorflow-probability==0.21.0
