@@ -1,13 +1,11 @@
 import jax
 import jax.numpy as jnp
-from chex import PRNGKey
 import tensorflow_datasets as tfds
-from clu import deterministic_data
-from clu import preprocess_spec
+from chex import PRNGKey
+from clu import deterministic_data, preprocess_spec
 
-
-from src.utils.preprocess import all_ops
 from src.utils.datasets.augmented_dsprites import construct_augmented_dsprites
+from src.utils.preprocess import all_ops
 
 
 def get_data(
@@ -35,15 +33,15 @@ def get_data(
         # This RNG key will be used to derive all randomness in shuffling, data
         # preprocessing etc.
         rng=train_rng,
-        shuffle_buffer_size=config.get("shuffle_buffer_size", 1),
+        shuffle=config.get("shuffle", "loaded"),
+        shuffle_buffer_size=config.get("shuffle_buffer_size", 10_000),
         # Depending on TPU/other runtime, local device count will be 8/1.
         batch_dims=[jax.local_device_count(), local_batch_size],
-        repeat_after_batching=False,
+        repeat_after_batching=config.get("repeat_after_batching", False),
         preprocess_fn=preprocess_spec.parse(
             spec=config.pp_train,
             available_ops=all_ops(),
         ),
-        shuffle="loaded",
     )
 
     if config.dataset == "aug_dsprites":
