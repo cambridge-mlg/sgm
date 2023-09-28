@@ -270,7 +270,6 @@ class Resize:
   """
 
   resize_size: Union[int, Tuple[int, int], List[int]]
-  method: str = "bilinear"
   key: str = "image"
   key_result: Optional[str] = None
 
