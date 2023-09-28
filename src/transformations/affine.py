@@ -66,6 +66,7 @@ def _transform_image(
     T: Array,
     fill_mode: str = "nearest",
     fill_value: float = 0.0,
+    order: int = 3,
 ) -> Array:
     """Applies an affine transformation to an image.
 
@@ -93,7 +94,7 @@ def _transform_image(
     # (x_s, y_s) = A x (x_t, y_t, 1)^T
     transformed_pts = A @ input_pts
     transformed_pts = (transformed_pts + 1) / 2
-    transformed_pts = transformed_pts * jnp.array([[width], [height]])
+    transformed_pts = transformed_pts * jnp.array([[width - 1], [height - 1]])
 
     # Transform the image by moving the pixels to their new locations
     output = jnp.stack(
@@ -101,7 +102,7 @@ def _transform_image(
             map_coordinates(
                 image[:, :, i],
                 transformed_pts[::-1],
-                order=3,
+                order=order,
                 mode=fill_mode,
                 cval=fill_value,
             )
@@ -119,6 +120,7 @@ def affine_transform_image(
     η: Array,
     fill_mode: str = "constant",
     fill_value: float = -1.0,
+    order: int = 3,
 ) -> Array:
     """Applies an affine transformation to an image.
 
@@ -144,13 +146,15 @@ def affine_transform_image(
     assert_shape(η, (6,))
 
     T = gen_transform_mat(η)
-    return _transform_image(image, T, fill_mode=fill_mode, fill_value=fill_value)
+    return _transform_image(image, T, fill_mode=fill_mode, fill_value=fill_value, order=order)
 
 
 def rotate_image(
     image: Array,
     θ: float,
+    fill_mode: str = "constant",
     fill_value: float = 0.0,
+    order: int = 3,
 ) -> Array:
     """Rotates an image by an angle θ.
 
@@ -162,5 +166,5 @@ def rotate_image(
     Returns:
         A rotated image of same shape as the input.
     """
-    η = jnp.array([0, 0, θ, 0, 0, 0, 0])
-    return affine_transform_image(image, η, fill_value=fill_value)
+    η = jnp.array([0, 0, θ, 0, 0, 0])
+    return affine_transform_image(image, η, fill_mode=fill_mode, fill_value=fill_value, order=order)
