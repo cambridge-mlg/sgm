@@ -1,7 +1,8 @@
 """Affine transformations of images."""
-from chex import Array, assert_rank, assert_shape
 import functools
+
 import jax
+from chex import Array, assert_rank, assert_shape
 from jax import numpy as jnp
 from jax.scipy.linalg import expm
 
@@ -183,13 +184,17 @@ def affine_transform_image(
     assert_shape(η, (6,))
 
     T = gen_affine_matrix(η)
-    return transform_image_with_affine_matrix(image, T, fill_mode=fill_mode, fill_value=fill_value, order=order)
+    return transform_image_with_affine_matrix(
+        image, T, fill_mode=fill_mode, fill_value=fill_value, order=order
+    )
 
 
 def rotate_image(
     image: Array,
     θ: float,
+    fill_mode: str = "constant",
     fill_value: float = 0.0,
+    order: int = 3,
 ) -> Array:
     """Rotates an image by an angle θ.
 
@@ -201,5 +206,7 @@ def rotate_image(
     Returns:
         A rotated image of same shape as the input.
     """
-    η = jnp.array([0, 0, θ, 0, 0, 0, 0])
-    return affine_transform_image(image, η, fill_value=fill_value)
+    η = jnp.array([0, 0, θ, 0, 0, 0])
+    return affine_transform_image(
+        image, η, fill_mode=fill_mode, fill_value=fill_value, order=order
+    )
