@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 from jax import lax
-from chex import Array, PRNGKey
+from chex import Array
 import flax
 import flax.linen as nn
 from flax.linen import initializers as init
@@ -13,11 +13,11 @@ from flax import traverse_util
 import distrax
 import optax
 import ciclo
-from models.proto_model import AugmentGenerativeMetrics, TrainStateWithMetrics
 
 from src.transformations import transform_image
 from src.models.utils import clipped_adamw
 from src.utils.types import KwArgs
+from src.models.proto_model import AugmentGenerativeMetrics, TrainStateWithMetrics
 
 
 class Conditioner(nn.Module):
@@ -119,7 +119,7 @@ class TransformationGenerativeNet(nn.Module):
                     ),
                     len(self.event_shape),
                 ),
-                distrax.Block(distrax.Tanh(), len(self.event_shape)),
+                # distrax.Block(distrax.Tanh(), len(self.event_shape)),
                 # We invert the flow so that the `forward` method is called with `log_prob`.
                 distrax.Inverse(distrax.Chain(layers)),
             ]
