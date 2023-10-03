@@ -7,23 +7,26 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.k `p_x_given_z`.
 """
 
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 from functools import partial
+from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
-import numpy as np
-import jax
-from jax import numpy as jnp
-from jax import random, lax
-from chex import Array, PRNGKey
-from flax import linen as nn
-import flax.linen.initializers as init
+import ciclo
 import distrax
-
-import tensorflow_probability.substrates.jax as tfp
+import flax
+import flax.linen.initializers as init
+import jax
+import numpy as np
+import optax
+from chex import Array, PRNGKey
+from clu import metrics
+from flax import linen as nn
+from flax.training import train_state
+from jax import lax
+from jax import numpy as jnp
+from jax import random
 
 import src.utils.plotting as plot_utils
 from src.utils.types import KwArgs
-
 
 INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.0)
 
@@ -47,7 +50,6 @@ class Encoder(nn.Module):
     norm_cls: nn.Module = nn.LayerNorm
     σ_min: float = 1e-2
     dropout_rate: float = 0.0
-    input_dropout_rate: float = 0.0
     max_2strides: Optional[int] = None
     train: Optional[bool] = None
 
@@ -58,10 +60,7 @@ class Encoder(nn.Module):
         conv_dims = self.conv_dims if self.conv_dims is not None else [64, 128, 256]
         dense_dims = self.dense_dims if self.dense_dims is not None else [64, 32]
 
-        x = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(x)
-
         h = x
-        i = -1
         if len(x.shape) > 1:
             assert x.shape[0] == x.shape[1], "Images should be square."
             num_2strides = np.minimum(
@@ -75,18 +74,17 @@ class Encoder(nn.Module):
                     conv_dim,
                     kernel_size=(3, 3),
                     strides=(2, 2) if i < num_2strides else (1, 1),
-                    name=f"conv_{i}",
                 )(h)
-                h = self.norm_cls(name=f"norm_{i}")(h)
+                h = self.norm_cls()(h)
                 h = self.act_fn(h)
 
             h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"resize")(h)
 
             h = h.flatten()
 
-        for j, dense_dim in enumerate(dense_dims):
-            h = nn.Dense(dense_dim, name=f"dense_{j+i+1}")(h)
-            h = self.norm_cls(name=f"norm_{j+i+1}")(h)
+        for dense_dim in dense_dims:
+            h = nn.Dense(dense_dim)(h)
+            h = self.norm_cls()(h)
             h = self.act_fn(h)
             h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(h)
 
@@ -119,7 +117,6 @@ class Decoder(nn.Module):
     norm_cls: nn.Module = nn.LayerNorm
     σ_min: float = 1e-2
     dropout_rate: float = 0.0
-    input_dropout_rate: float = 0.0
     max_2strides: Optional[int] = None
     train: Optional[bool] = None
 
@@ -139,12 +136,9 @@ class Decoder(nn.Module):
         if self.max_2strides is not None:
             num_2strides = np.minimum(num_2strides, self.max_2strides)
 
-        z = nn.Dropout(rate=self.input_dropout_rate, deterministic=not train)(z)
-
-        j = -1
-        for j, dense_dim in enumerate(dense_dims):
-            z = nn.Dense(dense_dim, name=f"dense_{j}")(z)
-            z = self.norm_cls(name=f"norm_{j}")(z)
+        for dense_dim in dense_dims:
+            z = nn.Dense(dense_dim)(z)
+            z = self.norm_cls()(z)
             z = self.act_fn(z)
             z = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(z)
 
@@ -158,9 +152,8 @@ class Decoder(nn.Module):
                 kernel_size=(3, 3),
                 # use stride of 2 for the last few layers
                 strides=(2, 2) if i >= len(conv_dims) - num_2strides else (1, 1),
-                name=f"conv_{i+j+1}",
             )(h)
-            h = self.norm_cls(name=f"norm_{i+j+1}")(h)
+            h = self.norm_cls()(h)
             h = self.act_fn(h)
 
         μ = nn.Conv(
@@ -189,12 +182,11 @@ class VAE(nn.Module):
                     self.param(
                         "prior_σ_",
                         init.constant(INV_SOFTPLUS_1),
-                        # ^ this value is softplus^{-1}(1), i.e., σ starts at 1.
                         (self.latent_dim,),
                     )
                 ).clip(
                     min=self.σ_min
-                ),  # type: ignore
+                ),
             ),
             reinterpreted_batch_ndims=1,
         )
@@ -206,39 +198,28 @@ class VAE(nn.Module):
         )
 
     def __call__(
-        self, x: Array, rng: PRNGKey, train: bool = True
+        self, x: Array, train: bool = True
     ) -> Tuple[distrax.Distribution, ...]:
         q_Z_given_x = self.q_Z_given_X(x, train=train)
-        z = q_Z_given_x.sample(seed=rng)
+        z = q_Z_given_x.sample(seed=self.make_rng("sample"))
 
         p_X_given_z = self.p_X_given_Z(z, train=train)
 
         return q_Z_given_x, p_X_given_z, self.p_Z
 
-    def logp_x_given_z(self, x: Array, z: Array, train: bool = True) -> Array:
-        return self.p_X_given_Z(z, train=train).log_prob(x)
-
-    def logq_z_given_x(self, x: Array, z: Array, train: bool = True) -> Array:
-        return self.q_Z_given_X(x, train=train).log_prob(z)
-
-    def logp_z(self, z: Array) -> Array:
-        return self.p_Z.log_prob(z)
-
     def sample(
         self,
-        rng: PRNGKey,
         sample_x: bool = False,
         train: bool = True,
         return_z: bool = False,
     ) -> Array:
-        z_rng, x_rng = random.split(rng, 2)
-        z = self.p_Z.sample(seed=z_rng)
+        z = self.p_Z.sample(seed=self.make_rng("sample"))
         if return_z:
             return z
 
         p_X_given_z = self.p_X_given_Z(z, train=train)
         if sample_x:
-            x = p_X_given_z.sample(seed=x_rng)
+            x = p_X_given_z.sample(seed=self.make_rng("sample"))
         else:
             x = p_X_given_z.mode()
 
@@ -247,37 +228,46 @@ class VAE(nn.Module):
     def reconstruct(
         self,
         x: Array,
-        rng: PRNGKey,
         sample_z: bool = False,
         sample_xrecon: bool = False,
         train: bool = True,
     ) -> Array:
-        z_rng, x_rng = random.split(rng, 2)
         q_Z_given_x = self.q_Z_given_X(x, train=train)
         if sample_z:
-            z = q_Z_given_x.sample(seed=z_rng)
+            z = q_Z_given_x.sample(seed=self.make_rng("sample"))
         else:
             z = q_Z_given_x.mode()
 
         p_X_given_z = self.p_X_given_Z(z, train=train)
         if sample_xrecon:
-            x_recon = p_X_given_z.sample(seed=x_rng)
+            x_recon = p_X_given_z.sample(seed=self.make_rng("sample"))
         else:
             x_recon = p_X_given_z.mode()
 
         return x_recon
 
+    def elbo(
+        self,
+        x: Array,
+        train: bool = False,
+        β: float = 1.0,
+    ):
+        q_Z_given_x, p_X_given_z, p_Z = self(x, train=train)
+
+        ll = p_X_given_z.log_prob(x) / x.shape[-1]
+        z_kld = q_Z_given_x.kl_divergence(p_Z)
+
+        return ll - β*z_kld, ll, kld
+
     def importance_weighted_lower_bound(
         self,
         x: Array,
-        rng: PRNGKey,
         num_samples: int = 50,
         train: bool = False,
     ):
         def single_sample_w(i):
-            rng_i = random.fold_in(rng, i)
             q_Z_given_x = self.q_Z_given_X(x, train=train)
-            z = q_Z_given_x.sample(seed=rng_i, sample_shape=())
+            z = q_Z_given_x.sample(seed=self.make_rng("sample"), sample_shape=())
             logq_z_given_x = q_Z_given_x.log_prob(z)
 
             p_X_given_z = self.p_X_given_Z(z, train=train)
@@ -292,215 +282,217 @@ class VAE(nn.Module):
         return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
 
 
-def calculate_vae_elbo(
-    x: Array,
-    q_Z_given_x: distrax.Distribution,
-    p_X_given_z: distrax.Distribution,
-    p_Z: distrax.Distribution,
-    β: float = 1.0,
-) -> Tuple[float, Mapping[str, float]]:
-    ll = p_X_given_z.log_prob(x) / x.shape[-1]
-    z_kld = q_Z_given_x.kl_divergence(p_Z)
-
-    elbo = ll - β * z_kld
-
-    return -elbo, {"elbo": elbo, "ll": ll, "z_kld": z_kld}
-
-
-def vae_loss_fn(
-    model: nn.Module,
-    params: nn.FrozenDict,
-    x: Array,
-    rng: PRNGKey,
-    β: float = 1.0,
-    train: bool = True,
-    **kwargs,
-) -> Tuple[float, Mapping[str, float]]:
-    """Single example loss function for VAE."""
-    # TODO: this loss function is a 1 sample estimate, add an option for more samples?
-    rng_local = random.fold_in(rng, lax.axis_index("batch"))
-    rng_apply, rng_dropout = random.split(rng_local)
-    q_Z_given_x, p_X_given_z, p_Z = model.apply(
-        {"params": params},
+def make_vae_train_and_eval(config, model):
+    def loss_fn(
         x,
-        rng_apply,
+        params,
+        state,
+        step_rng,
         train,
-        rngs={"dropout": rng_dropout},
+    ):
+        rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
+
+        q_Z_given_x, p_X_given_z, p_Z = model.apply(
+            {"params": params}, x, train, rngs={"sample": rng_local}
+        )
+
+        ll = p_X_given_z.log_prob(x) / x.shape[-1]
+        z_kld = q_Z_given_x.kl_divergence(p_Z)
+
+        elbo = ll - state.β * z_kld
+        return -elbo, {"loss": -elbo, "elbo": elbo, "ll": ll, "z_kld": z_kld}
+
+    @jax.jit
+    def train_step(state, batch):
+        step_rng = random.fold_in(state.rng, state.step)
+
+        def batch_loss_fn(params):
+            losses, metrics = jax.vmap(
+                loss_fn,
+                in_axes=(0, None, None, None, None),
+                axis_name="batch",
+            )(batch["image"][0], params, state, step_rng, True)
+
+            avg_loss = losses.mean(axis=0)
+
+            return avg_loss, metrics
+
+        (_, metrics), grads = jax.value_and_grad(batch_loss_fn, has_aux=True)(
+            state.params
+        )
+        state = state.apply_gradients(grads=grads)
+
+        metrics = state.metrics.update(**metrics)
+        logs = ciclo.logs()
+        logs.add_stateful_metrics(**metrics.compute())
+        logs.add_entry("schedules", "β", state.β)
+        logs.add_entry(
+            "schedules",
+            "lr",
+            state.opt_state.hyperparams["learning_rate"],
+        )
+
+        return logs, state.replace(metrics=metrics)
+
+    @jax.jit
+    def eval_step(state, batch):
+        step_rng = random.fold_in(state.rng, state.step)
+
+        def batch_loss_fn(params):
+            _, metrics = jax.vmap(
+                loss_fn,
+                in_axes=(0, None, None, None, None),
+                axis_name="batch",
+            )(batch["image"][0], params, state, step_rng, False)
+
+            return metrics
+
+        metrics = batch_loss_fn(state.params)
+
+        metrics = state.metrics.update(**metrics, mask=batch["mask"][0])
+        logs = ciclo.logs()
+        logs.add_stateful_metrics(**metrics.compute())
+
+        return logs, state.replace(metrics=metrics)
+
+    return train_step, eval_step
+
+
+def create_vae_optimizer(config):
+    return optax.inject_hyperparams(optax.adam)(
+        optax.warmup_cosine_decay_schedule(
+            config.init_lr,
+            config.init_lr * config.peak_lr_mult,
+            config.warmup_steps,
+            config.total_steps,
+            config.init_lr * config.final_lr_mult,
+        )
     )
 
-    loss, metrics = calculate_vae_elbo(x, q_Z_given_x, p_X_given_z, p_Z, β)
 
-    return loss, metrics
+@flax.struct.dataclass
+class VaeMetrics(metrics.Collection):
+    loss: metrics.Average.from_output("loss")
+    elbo: metrics.Average.from_output("elbo")
+    ll: metrics.Average.from_output("ll")
+    z_kld: metrics.Average.from_output("z_kld")
+
+    def update(self, **kwargs) -> "VaeMetrics":
+        updates = self.single_from_model_output(**kwargs)
+        return self.merge(updates)
 
 
-def create_vae_hais_mll_estimator(
-    model: nn.Module,
-    params: nn.FrozenDict,
-    train: bool = False,
-    num_chains: int = 100,
-    num_steps: int = 1000,
-    step_size: float = 1e-1,
-    num_leapfrog_steps: int = 2,
-):
-    """Create an estimator for the marginal log likelihood of X under a VAE model.
-    This uses Hamiltonian Annealed Importance Sampling (HAIS) https://arxiv.org/abs/1205.1925.
+class VaeTrainState(train_state.TrainState):
+    metrics: VaeMetrics
+    rng: PRNGKey
+    β: float
+    β_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
 
-    Args:
-        model: The VAE model.
-        params: The parameters of the VAE model.
-        train: Whether to run the model in training mode.
-        num_chains: The number of chains to run.
-        num_steps: The number of steps to run each chain for.
-        step_size: The step size to use for the HMC.
-        num_leapfrog_steps: The number of leapfrog steps to use for the HMC.
+    def apply_gradients(self, *, grads, **kwargs):
+        updates, new_opt_state = self.tx.update(grads, self.opt_state, self.params)
+        new_params = optax.apply_updates(self.params, updates)
 
-    Returns:
-        A function whose arguments are the data, a random number generator, and the params, and which returns
-        an estimate of the marginal log likelihood of the data.
-    """
-
-    def estimate_mll(x: Array, rng: PRNGKey):
-        logp_x_given_z = lambda z: model.apply(
-            {"params": params}, x, z, train=train, method=model.logp_x_given_z
-        )
-        logp_z = lambda z: model.apply({"params": params}, z, method=model.logp_z)
-        logq_z_given_x = lambda z: model.apply(
-            {"params": params}, x, z, train=train, method=model.logq_z_given_x
+        return self.replace(
+            step=self.step + 1,
+            params=new_params,
+            opt_state=new_opt_state,
+            β=self.β_schedule(self.step),
+            **kwargs,
         )
 
-        @jax.vmap
-        def sample_z(rng):
-            return model.apply(
-                {"params": params}, rng, train=train, return_z=True, method=model.sample
-            )
-
-        zs = sample_z(random.split(rng, num_chains))
-
-        @jax.vmap
-        def target_log_prob_fn(z):
-            return logp_z(z) + logp_x_given_z(z)
-
-        @jax.vmap
-        def proposal_log_prob_fn(z):
-            # return logp_z(z)
-            return logq_z_given_x(z)
-
-        _, ais_weights, _ = tfp.mcmc.sample_annealed_importance_chain(
-            num_steps=num_steps,
-            proposal_log_prob_fn=proposal_log_prob_fn,
-            target_log_prob_fn=target_log_prob_fn,
-            current_state=zs,
-            make_kernel_fn=lambda tlp_fn: tfp.mcmc.HamiltonianMonteCarlo(
-                target_log_prob_fn=tlp_fn,
-                step_size=step_size,
-                num_leapfrog_steps=num_leapfrog_steps,
-            ),
-            seed=rng,
+    @classmethod
+    def create(
+        cls,
+        *,
+        apply_fn,
+        params,
+        tx,
+        β_schedule,
+        **kwargs,
+    ):
+        opt_state = tx.init(params)
+        return cls(
+            step=0,
+            apply_fn=apply_fn,
+            params=params,
+            tx=tx,
+            opt_state=opt_state,
+            β_schedule=β_schedule,
+            β=β_schedule(0),
+            **kwargs,
         )
 
-        log_normalizer_estimate = jax.nn.logsumexp(ais_weights, axis=0) - jnp.log(
-            num_chains
-        )
 
-        return log_normalizer_estimate
+def create_vae_state(params, rng, config):
+    opt = create_vae_optimizer(config)
 
-    return estimate_mll
-
-
-def make_vae_batch_loss(
-    model,
-    agg: Callable = jnp.mean,
-    train: bool = True,
-    run_iwlb: bool = False,
-    iwlb_kwargs: Optional[Mapping[str, Any]] = None,
-):
-    def batch_loss(params, x_batch, mask, rng, state):
-        # Broadcast loss over batch...
-        loss, metrics = jax.vmap(
-            vae_loss_fn, in_axes=(None, None, 0, None, None, None), axis_name="batch"  # type: ignore
-        )(model, params, x_batch, rng, state.β, train)
-
-        if run_iwlb:
-            iwlb_kwargs_ = {} if iwlb_kwargs is None else iwlb_kwargs
-
-            @jax.vmap
-            def _iwlb(x):
-                return model.apply(
-                    {"params": params},
-                    x,
-                    rng,
-                    **iwlb_kwargs_,
-                    method=model.importance_weighted_lower_bound,
-                )
-
-            metrics["iwlb"] = _iwlb(x_batch)
-
-        # ... and aggregate.
-        loss, metrics, mask = jax.tree_util.tree_map(
-            partial(agg, axis=0), (loss, metrics, mask)
-        )
-        return loss, (metrics, mask)
-
-    return batch_loss
-
-
-def make_vae_reconstruction_plot(
-    x, n_visualize, model, state, visualisation_rng, train=False
-):
-    def reconstruct(x, sample_z=False, sample_xrecon=False):
-        rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
-        rng_dropout, rng_apply = random.split(rng)
-        return model.apply(
-            {"params": state.params},
-            x,
-            rng_apply,
-            sample_z=sample_z,
-            sample_xrecon=sample_xrecon,
-            train=train,
-            method=model.reconstruct,
-            rngs={"dropout": rng_dropout},
-        )
-
-    x_recon_modes = jax.vmap(
-        reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
-    )(x, False, False)
-
-    recon_fig = plot_utils.plot_img_array(
-        jnp.concatenate((x, x_recon_modes), axis=0),
-        ncol=n_visualize,  # type: ignore
-        pad_value=1,
-        padding=1,
-        title="Original | Reconstruction",
+    return VaeTrainState.create(
+        apply_fn=VAE.apply,
+        params=params,
+        tx=opt,
+        metrics=VaeMetrics.empty(),
+        rng=rng,
+        β_schedule=optax.cosine_decay_schedule(
+            config.β_schedule_init_value,
+            config.steps,
+            config.β_schedule_final_value,
+        ),
     )
 
-    return recon_fig
+
+# def make_vae_reconstruction_plot(
+#     x, n_visualize, model, state, visualisation_rng, train=False
+# ):
+#     def reconstruct(x, sample_z=False, sample_xrecon=False):
+#         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
+#         rng_dropout, rng_apply = random.split(rng)
+#         return model.apply(
+#             {"params": state.params},
+#             x,
+#             rng_apply,
+#             sample_z=sample_z,
+#             sample_xrecon=sample_xrecon,
+#             train=train,
+#             method=model.reconstruct,
+#             rngs={"dropout": rng_dropout},
+#         )
+
+#     x_recon_modes = jax.vmap(
+#         reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
+#     )(x, False, False)
+
+#     recon_fig = plot_utils.plot_img_array(
+#         jnp.concatenate((x, x_recon_modes), axis=0),
+#         ncol=n_visualize,  # type: ignore
+#         pad_value=1,
+#         padding=1,
+#         title="Original | Reconstruction",
+#     )
+
+#     return recon_fig
 
 
-def make_vae_sampling_plot(n_visualize, model, state, visualisation_rng, train=False):
-    def sample(rng, sample_x=False):
-        rng_dropout, rng_apply = random.split(rng)
-        return model.apply(
-            {"params": state.params},
-            rng_apply,
-            sample_x=sample_x,
-            train=train,
-            method=model.sample,
-            rngs={"dropout": rng_dropout},
-        )
+# def make_vae_sampling_plot(n_visualize, model, state, visualisation_rng, train=False):
+#     def sample(rng, sample_x=False):
+#         rng_dropout, rng_apply = random.split(rng)
+#         return model.apply(
+#             {"params": state.params},
+#             rng_apply,
+#             sample_x=sample_x,
+#             train=train,
+#             method=model.sample,
+#             rngs={"dropout": rng_dropout},
+#         )
 
-    sampled_data = jax.vmap(sample, in_axes=(0, None))(  # type: ignore
-        jax.random.split(visualisation_rng, n_visualize), True  # type: ignore
-    )
+#     sampled_data = jax.vmap(sample, in_axes=(0, None))(  # type: ignore
+#         jax.random.split(visualisation_rng, n_visualize), True  # type: ignore
+#     )
 
-    sample_fig = plot_utils.plot_img_array(
-        sampled_data,
-        ncol=n_visualize,  # type: ignore
-        pad_value=1,
-        padding=1,
-        title="Sampled data",
-    )
-    return sample_fig
-
-
-def make_vae_summary_plot(config, final_state, x, rng):
-    return None
+#     sample_fig = plot_utils.plot_img_array(
+#         sampled_data,
+#         ncol=n_visualize,  # type: ignore
+#         pad_value=1,
+#         padding=1,
+#         title="Sampled data",
+#     )
+#     return sample_fig
