@@ -45,6 +45,7 @@ def expected_kwargs_for_distribution_type(
 
 
 class ShapeDistributionConfig(Protocol):
+    shape_prob: float
     orientation: DistributionConfig
     scale: DistributionConfig
     x_position: DistributionConfig
@@ -74,8 +75,8 @@ class DspritesExamples(NamedTuple):
     image: ArrayLike
     label_shape: ArrayLike
     value_scale: ArrayLike
-    value_orientation:ArrayLike
-    value_x_position:  ArrayLike
+    value_orientation: ArrayLike
+    value_x_position: ArrayLike
     value_y_position: ArrayLike
 
 
@@ -113,7 +114,7 @@ def construct_dsprites(
         value_y_position=y_positions,
     )
 
-    
+
 def download_dsprites(filepath: PathLike):
     filepath = Path(filepath)
     # Download the dataset from https://github.com/deepmind/dsprites-dataset
@@ -151,7 +152,7 @@ def construct_augmented_dsprites(
             ),
             config=aug_dsprites_config,
         )
-    
+
     log_probs = jax.vmap(latent_log_prob_for_config, in_axes=(0, 0, 0, 0, 0))(
         dataset_examples.value_orientation,
         dataset_examples.value_scale,
@@ -161,23 +162,52 @@ def construct_augmented_dsprites(
     )
     # Convert to numpy and float64 for numerical stability:
     log_probs = np.array(log_probs, dtype=np.float64)
+
     # These are log-densities, so they will not sum to 1. Need to normalise.
     # However, we can't just divide by the sum, because we want to preserve the marginal
     # probability of each shape. Hence, we need to find the indices for a given shape, and
     # then normalise the log-densities for that shape.
-    def normalise_log_probs_for_mask(log_p: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        return log_p - scipy.special.logsumexp(np.where(mask, log_p, -np.infty)) * mask
+    def normalise_log_probs_for_mask(
+        log_p: np.ndarray, mask: np.ndarray, total_prob: float
+    ) -> np.ndarray:
+        """Normalise the probs to sum up to total_prob"""
+        if total_prob == 0.:
+            return np.where(mask, -np.infty, log_p)
+        else:
+            return np.where(
+                mask,
+                log_p - scipy.special.logsumexp(np.where(mask, log_p, -np.infty)) + np.log(total_prob),
+                log_p,
+            )
 
     # Normalise for squares (0), ellipses (1), and hearts (2):
-    log_probs = normalise_log_probs_for_mask(log_probs, dataset_examples.label_shape == 0)
-    log_probs = normalise_log_probs_for_mask(log_probs, dataset_examples.label_shape == 1)
-    log_probs = normalise_log_probs_for_mask(log_probs, dataset_examples.label_shape == 2)
+    shape_probs = (
+        shape_probs := np.array(
+            [
+                aug_dsprites_config.square_distribution.shape_prob,
+                aug_dsprites_config.ellipse_distribution.shape_prob,
+                aug_dsprites_config.heart_distribution.shape_prob,
+            ]
+        )
+    ) / shape_probs.sum()
+
+    log_probs = normalise_log_probs_for_mask(
+        log_probs, dataset_examples.label_shape == 0, total_prob=shape_probs[0]
+    )
+    log_probs = normalise_log_probs_for_mask(
+        log_probs, dataset_examples.label_shape == 1, total_prob=shape_probs[1]
+    )
+    log_probs = normalise_log_probs_for_mask(
+        log_probs, dataset_examples.label_shape == 2, total_prob=shape_probs[2]
+    )
 
     # Normalise once more to get the final probabilities (and for numerical stability)
     norm_log_probs = log_probs - scipy.special.logsumexp(log_probs)
     probs = np.exp(norm_log_probs)
 
-    def example_idx_sampler(rng: random.PRNGKeyArray, num_vectorized_idx_samples: int = 50000) -> Iterable[int]:
+    def example_idx_sampler(
+        rng: random.PRNGKeyArray, num_vectorized_idx_samples: int = 50000
+    ) -> Iterable[int]:
         """
         Sample an example index from the dataset with probability proportional to `probs`.
         `num_batched_samples` helps with speed by vectorising the otherwise expenseive
@@ -187,11 +217,15 @@ def construct_augmented_dsprites(
         num_examples = len(probs)
         while True:
             yield rng.choice(num_examples, size=num_vectorized_idx_samples, p=probs)
-    
-    num_vectorized_idx_samples = aug_dsprites_config.get("num_vectorized_idx_samples", 100000)
+
+    num_vectorized_idx_samples = aug_dsprites_config.get(
+        "num_vectorized_idx_samples", 100000
+    )
     index_dataset = tf.data.Dataset.from_generator(
         example_idx_sampler,
-        output_signature=tf.TensorSpec(shape=(num_vectorized_idx_samples, ), dtype=tf.int64),
+        output_signature=tf.TensorSpec(
+            shape=(num_vectorized_idx_samples,), dtype=tf.int64
+        ),
         args=(sampler_rng, num_vectorized_idx_samples),
     )
     # Unbatch vectorised samples of indices
@@ -225,7 +259,7 @@ def latent_log_prob(
     config: AugDspritesConfig,
 ) -> float:
     """
-    Evaluate the log-prob/density of the latent configuration under the given config. Written to be jittable and 
+    Evaluate the log-prob/density of the latent configuration under the given config. Written to be jittable and
     vmappable by jax.
 
     Not always a log-prob, not always a density, but a mix. Depends on the distribution.
@@ -254,7 +288,9 @@ def latent_log_prob(
         for shape, shape_config in config_per_shape.items()
     }
 
-    def per_latent_log_prob_funcs_to_joint_log_prob(log_probs_funcs: LatentLogProbFuncPerShape):
+    def per_latent_log_prob_funcs_to_joint_log_prob(
+        log_probs_funcs: LatentLogProbFuncPerShape,
+    ):
         """
         Get the joint log-probability/density of a latent configuration from the log-probability.
 
@@ -263,20 +299,23 @@ def latent_log_prob(
         construct functions explicitely. That's because the lambda function will be evaluated
         at the end of the loop, and will always use the last value of the loop variable.
         """
+
         def joint_log_prob(l: DspritesLatent) -> float:
             return (
                 log_probs_funcs.orientation(l.value_orientation)
                 + log_probs_funcs.scale(l.value_scale)
                 + log_probs_funcs.x_position(l.value_x_position)
                 + log_probs_funcs.y_position(l.value_y_position)
-                + jnp.log(1 / 3)  # Shape probability
             )
+
         return joint_log_prob
 
     return jax.lax.switch(
         latent.label_shape,
         [
-            per_latent_log_prob_funcs_to_joint_log_prob(log_probs_funcs_per_shape[shape])
+            per_latent_log_prob_funcs_to_joint_log_prob(
+                log_probs_funcs_per_shape[shape]
+            )
             for shape in range(3)
         ],
         latent,
@@ -312,9 +351,30 @@ def mixture_log_prob(
     )
 
 
+def convert_str_to_distribution_config(
+    distribution_conf: DistributionConfig | str,
+) -> DistributionConfig:
+    match distribution_conf:
+        case DistributionConfig(_, _):
+            return distribution_conf
+        case str():
+            # expecting a string of the form "distribution_type(kwargs1=val1, ....)"
+            # e.g. "uniform(low=0.0, high=1.0)"
+            assert distribution_conf.endswith(")"), "Expecting a string of the form 'distribution_type(kwargs1=val1, ....)'"
+            distribution_type = distribution_conf.split("(")[0]
+            kwargs = [kwarg_val_pair.split("=") for kwarg_val_pair in distribution_conf.strip().replace(" ", "").split("(")[1][:-1].split(",")]
+            return DistributionConfig(
+                type=distribution_type,
+                kwargs={kwarg: float(val) for kwarg, val in kwargs}
+            )
+        case _:
+            raise NotImplemented(f"Invalid distribution configuration {distribution_conf}")
+
+
 def get_log_prob_func(
-    distribution_conf: DistributionConfig,
+    distribution_conf: DistributionConfig | str,
 ) -> ScalarLogDensity:
+    distribution_conf = convert_str_to_distribution_config(distribution_conf)
     kwargs = distribution_conf.kwargs
     assert set(kwargs.keys()) == expected_kwargs_for_distribution_type(
         distribution_conf.type
@@ -347,6 +407,67 @@ def get_log_prob_func(
                 maxval=kwargs["maxval"],
             )(x)
         case DistributionType.DELTA:
-            return lambda x: jnp.select(x == kwargs["value"], 0, -np.infty)
+            return lambda x: jax.lax.select(x == kwargs["value"], 0.0, -np.infty)
         case _:
             raise NotImplemented(f"Invalid distribution type {distribution_conf.type}")
+
+
+DSPRITES_SCALES = np.linspace(0.5, 1.0, 6)
+DSPRITES_ORIENTATIONS = np.linspace(0.0, 2 * np.pi, 40)
+DSPRITES_X_POSITIONS = np.linspace(0.0, 1.0, 32)
+DSPRITES_Y_POSITIONS = np.linspace(0.0, 1.0, 32)
+
+
+NAME_TO_DOMAIN = {
+    "scale": DSPRITES_SCALES,
+    "orientation": DSPRITES_ORIENTATIONS,
+    "x_position": DSPRITES_X_POSITIONS,
+    "y_position": DSPRITES_Y_POSITIONS,
+}
+
+
+def visualise_latent_distribution_from_config(aug_dsprites_config: AugDspritesConfig):
+    """
+    A plotting utility to visualise the chosen latent distributions from a config.
+    """
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(
+        nrows=3, ncols=4, figsize=(10, 6), sharex="col", sharey="col"
+    )
+
+    for row_idx, (shape, shape_config) in enumerate(
+        zip(
+            ["heart", "ellipse", "square"],
+            [
+                aug_dsprites_config.heart_distribution,
+                aug_dsprites_config.ellipse_distribution,
+                aug_dsprites_config.square_distribution,
+            ],
+        )
+    ):
+        for col_idx, (latent_name, latent_config) in enumerate(
+            zip(
+                ["scale", "orientation", "x_position", "y_position"],
+                [
+                    shape_config.scale,
+                    shape_config.orientation,
+                    shape_config.x_position,
+                    shape_config.y_position,
+                ],
+            )
+        ):
+            domain = NAME_TO_DOMAIN[latent_name]
+            log_probs = jax.vmap(get_log_prob_func(latent_config))(domain)
+            probs = jnp.exp(log_probs)
+            non_zero_idxs = probs > 0.0
+            axes[row_idx, col_idx].stem(domain[non_zero_idxs], probs[non_zero_idxs])
+
+            xlim_buffer = 0.05 * (domain[-1] - domain[0])
+            axes[row_idx, col_idx].set_xlim(
+                [domain[0] - xlim_buffer, domain[-1] + xlim_buffer]
+            )
+            axes[row_idx, col_idx].set_yticks([])
+            axes[row_idx, col_idx].set_xlabel(latent_name.capitalize())
+        axes[row_idx, 0].set_ylabel(shape.capitalize() + " Distribution")
+    return fig, axes
