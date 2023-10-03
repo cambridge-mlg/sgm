@@ -1,9 +1,12 @@
-from wandb.wandb_run import Run
-from ciclo import LoopCallbackBase, LoopState, Logs, Elapsed
+from typing import Tuple
+
+from ciclo import Elapsed, Logs, LoopCallbackBase, LoopState
 from ciclo.types import S
 from ciclo.utils import is_scalar
+from matplotlib.figure import Figure
+from wandb.wandb_run import Run
 
-from typing import Tuple
+import wandb
 
 CallbackOutput = Tuple[Logs, S]
 
@@ -33,6 +36,9 @@ class custom_wandb_logger(LoopCallbackBase[S]):
 
                 if is_scalar(value):
                     data[key] = value
+
+                if isinstance(value, Figure):
+                    data[key] = wandb.Image(value)
 
         if len(data) > 0:
             self.run.log(data, step=elapsed.steps)
