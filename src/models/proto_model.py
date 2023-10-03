@@ -1,5 +1,5 @@
 import functools
-from typing import Callable, Optional, Sequence, Union
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 import jax
@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jax.random as random
 from jax import lax
 from jax.scipy import linalg
-from chex import Array, PRNGKey
+from chex import PRNGKey
 import flax
 import flax.linen as nn
 from flax.linen import initializers as init
