@@ -44,6 +44,8 @@ def get_data(
         ),
     )
 
+    batch_size_eval = config.get("batch_size_eval", config.batch_size)
+
     if config.dataset == "aug_dsprites":
         dataset = construct_augmented_dsprites(
             aug_dsprites_config=config.aug_dsprites,
@@ -58,13 +60,15 @@ def get_data(
         num_val_examples = dataset_builder.info.splits[config.val_split].num_examples
         cardinality = None
     # Compute how many batches we need to contain the entire val set.
-    pad_up_to_batches = int(jnp.ceil(num_val_examples / config.batch_size))
+    pad_up_to_batches = int(jnp.ceil(num_val_examples / batch_size_eval))
+
+    local_batch_size_eval = batch_size_eval // jax.device_count()
 
     val_ds = deterministic_data.create_dataset(
         dataset_or_builder,
         split=tfds.split_for_jax_process(config.val_split),
         rng=val_rng,
-        batch_dims=[jax.local_device_count(), local_batch_size],
+        batch_dims=[jax.local_device_count(), local_batch_size_eval],
         num_epochs=1,
         preprocess_fn=preprocess_spec.parse(
             spec=config.pp_eval,
@@ -88,7 +92,7 @@ def get_data(
         dataset_builder,
         split=tfds.split_for_jax_process(test_split),
         rng=test_rng,
-        batch_dims=[jax.local_device_count(), local_batch_size],
+        batch_dims=[jax.local_device_count(), local_batch_size_eval],
         num_epochs=1,
         preprocess_fn=preprocess_spec.parse(
             spec=config.pp_eval,
