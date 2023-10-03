@@ -8,12 +8,12 @@ import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data, parameter_overview
 from jax.config import config
 from ml_collections import config_flags
 
-import wandb
 from src.models.proto_gen_model import (
     PrototypicalGenerativeModel,
     create_pgm_state,
@@ -70,7 +70,7 @@ def main(_):
 
         state = create_pgm_state(params, state_rng, FLAGS.config)
 
-        train_step, eval_step = make_pgm_train_and_eval(FLAGS.config, model)
+        train_step, eval_step = make_pgm_train_and_eval(model, FLAGS.config)
 
         total_steps = FLAGS.config.gen_steps + FLAGS.config.inf_steps
         _, _, _ = ciclo.train_loop(
