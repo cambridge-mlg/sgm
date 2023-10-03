@@ -1,7 +1,9 @@
 """Affine transformations of images."""
-from chex import Array, assert_rank, assert_shape
+import functools
 from jax import numpy as jnp
+import jax
 from jax.scipy.linalg import expm
+from chex import Array, assert_shape, assert_rank
 
 from src.transformations.map_coords import map_coordinates
 
@@ -28,7 +30,7 @@ def create_generator_matrices() -> Array:
     return Gs
 
 
-def gen_transform_mat(
+def gen_affine_matrix(
     η: Array,
 ) -> Array:
     """Generates an affine transformation matrix which can be used to translate,
@@ -53,19 +55,43 @@ def gen_transform_mat(
 
     Gs = create_generator_matrices()
 
-    assert_rank(Gs, 3)
-    assert_shape(Gs, (6, 3, 3))
-
     T = expm((η[:, jnp.newaxis, jnp.newaxis] * Gs).sum(axis=0))
 
     return T
 
 
-def _transform_image(
+def gen_affine_matrix_no_shear(
+    η: Array,
+) -> Array:
+    """Generates an affine transformation matrix which can be used to translate,
+    rotate and scale a 2D image.
+
+    See App. E of "Learning Invariant Weights in Neural Networks" by van der
+    Ouderaa and van der Wilk.
+
+    Args:
+        η: an Array with 5 entries:
+        * η_0 controls translation in x.
+        * η_1 controls translation in y.
+        * η_2 is the angle of rotation.
+        * η_3 is the scaling factor in x.
+        * η_4 is the scaling factor in y.
+
+    Returns:
+        A 3x3 affine transformation array.
+    """
+    assert_shape(η, (5,))
+    return gen_affine_matrix(
+        jnp.concatenate((η, jnp.zeros(1, dtype=η.dtype)))
+    )
+
+
+def transform_image_with_affine_matrix(
     image: Array,
     T: Array,
-    fill_mode: str = "nearest",
-    fill_value: float = 0.0,
+    fill_mode: str = "constant",
+    fill_value: float = -1.0,
+    order: int = 3,
 ) -> Array:
     """Applies an affine transformation to an image.
 
@@ -93,7 +119,7 @@ def _transform_image(
     # (x_s, y_s) = A x (x_t, y_t, 1)^T
     transformed_pts = A @ input_pts
     transformed_pts = (transformed_pts + 1) / 2
-    transformed_pts = transformed_pts * jnp.array([[width], [height]])
+    transformed_pts = transformed_pts * jnp.array([[width - 1], [height - 1]])
 
     # Transform the image by moving the pixels to their new locations
     output = jnp.stack(
@@ -101,7 +127,7 @@ def _transform_image(
             map_coordinates(
                 image[:, :, i],
                 transformed_pts[::-1],
-                order=3,
+                order=order,
                 mode=fill_mode,
                 cval=fill_value,
             )
@@ -109,6 +135,19 @@ def _transform_image(
         ],
         axis=-1,
     )
+    output = jax.vmap(
+        functools.partial(
+            map_coordinates,
+            order=order,
+            mode=fill_mode,
+            cval=fill_value,
+        ),
+        in_axes=(2, None),
+        out_axes=(1,)
+    )(
+        image,
+        transformed_pts[::-1],
+    )  # shape [height * width, num_channels]
     output = jnp.reshape(output, image.shape)
 
     return output
@@ -119,6 +158,7 @@ def affine_transform_image(
     η: Array,
     fill_mode: str = "constant",
     fill_value: float = -1.0,
+    order: int = 3,
 ) -> Array:
     """Applies an affine transformation to an image.
 
@@ -143,8 +183,8 @@ def affine_transform_image(
     assert_rank(image, 3)
     assert_shape(η, (6,))
 
-    T = gen_transform_mat(η)
-    return _transform_image(image, T, fill_mode=fill_mode, fill_value=fill_value)
+    T = gen_affine_matrix(η)
+    return transform_image_with_affine_matrix(image, T, fill_mode=fill_mode, fill_value=fill_value, order=order)
 
 
 def rotate_image(

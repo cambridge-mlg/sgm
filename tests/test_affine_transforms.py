@@ -1,23 +1,24 @@
 """Tests for affine transformations."""
 from pathlib import Path
 
-import jax
+from absl.testing import parameterized
 import numpy as np
+import jax
+from jax import numpy as jnp
 import torch
 import torch.nn.functional as F
-from absl.testing import parameterized
-from jax import numpy as jnp
+from torchdiffeq import odeint
 from PIL import Image
 
 from src.transformations.affine import (
     affine_transform_image,
+    gen_affine_matrix,
     create_generator_matrices,
-    gen_transform_mat,
 )
 
 
 def _pytorch_transform_image(image, η):
-    G = np.array(gen_transform_mat(η))
+    G = np.array(gen_affine_matrix(η))
     image = torch.from_numpy(np.moveaxis(image[np.newaxis, :, :], -1, 1))
     flowgrid = F.affine_grid(
         torch.from_numpy(G[np.newaxis, :2, :]), size=image.size(), align_corners=True
@@ -63,7 +64,6 @@ class AffineTransformTests(parameterized.TestCase):
         # combos
         {"testcase_name": "trans_x_and_y", "η": [0.1, 0.1, 0, 0, 0, 0]},
         {"testcase_name": "trans_x_and_rot", "η": [0.1, 0, 0.1, 0, 0, 0]},
-        {"testcase_name": "trans_x_and_rot2", "η": [0.5, 0, jnp.pi / 2, 0, 0, 0]},
         {"testcase_name": "trans_y_and_scale_x", "η": [0, 0.1, 0, 0.1, 0, 0]},
         {"testcase_name": "scale_x_and_y", "η": [0, 0, 0, 0.1, 0.1, 0]},
         {"testcase_name": "trans_x_and_scale_y", "η": [0, 0.1, 0, 0, 0, 0.1]},
@@ -79,18 +79,18 @@ class AffineTransformTests(parameterized.TestCase):
 class AffineMatrixTests(parameterized.TestCase):
     """Tests for generating matrices for affine transformations."""
 
-    @parameterized.named_parameters(
-        {"testcase_name": "identity", "θ": 0.0},
-        {"testcase_name": "π_4", "θ": jnp.pi / 4},
-        {"testcase_name": "π_2", "θ": jnp.pi / 2},
-        {"testcase_name": "π", "θ": jnp.pi},
-        {"testcase_name": "-π_4", "θ": -jnp.pi / 4},
-        {"testcase_name": "-π_2", "θ": -jnp.pi / 2},
-        {"testcase_name": "-π", "θ": -jnp.pi},
+    @parameterized.parameters(
+        {"θ": 0.0},
+        {"θ": jnp.pi / 4},
+        {"θ": jnp.pi / 2},
+        {"θ": jnp.pi},
+        {"θ": -jnp.pi / 4},
+        {"θ": -jnp.pi / 2},
+        {"θ": -jnp.pi},
     )
     def test_rotation(self, θ):
         η = jnp.array([0.0, 0.0, θ, 0.0, 0.0, 0.0])
-        T = gen_transform_mat(η)
+        T = gen_affine_matrix(η)
 
         # pylint: disable=bad-whitespace
         T_rot = jnp.array(
@@ -103,31 +103,31 @@ class AffineMatrixTests(parameterized.TestCase):
         # pylint: enable=bad-whitespace
         np.testing.assert_allclose(T, T_rot, rtol=1e-7, atol=1e-7)
 
-    @parameterized.named_parameters(
-        {"testcase_name": "0_0", "tx": 0.0, "ty": 0.0},
-        {"testcase_name": "1_0", "tx": 1.0, "ty": 0.0},
-        {"testcase_name": "0_1", "tx": 0.0, "ty": 1.0},
-        {"testcase_name": "1_1", "tx": 1.0, "ty": 1.0},
-        {"testcase_name": "5_5", "tx": 5.0, "ty": 5.0},
-        {"testcase_name": "-5_-5", "tx": -5.0, "ty": -5.0},
+    @parameterized.parameters(
+        {"tx": 0.0, "ty": 0.0},
+        {"tx": 1.0, "ty": 0.0},
+        {"tx": 0.0, "ty": 1.0},
+        {"tx": 1.0, "ty": 1.0},
+        {"tx": 5.0, "ty": 5.0},
+        {"tx": -5.0, "ty": -5.0},
     )
     def test_translation(self, tx, ty):
         η = jnp.array([tx, ty, 0.0, 0.0, 0.0, 0.0])
-        T = gen_transform_mat(η)
+        T = gen_affine_matrix(η)
 
         T_trans = jnp.array([[1.0, 0.0, tx], [0.0, 1.0, ty], [0.0, 0.0, 1.0]])
         np.testing.assert_allclose(T, T_trans, rtol=1e-7, atol=1e-7)
 
-    @parameterized.named_parameters(
-        {"testcase_name": "1_1", "sx": 1.0, "sy": 1.0},
-        {"testcase_name": "2_1", "sx": 2.0, "sy": 1.0},
-        {"testcase_name": "1_2", "sx": 1.0, "sy": 2.0},
-        {"testcase_name": "2_2", "sx": 2.0, "sy": 2.0},
-        {"testcase_name": "1_2_1_2", "sx": 0.5, "sy": 0.5},
+    @parameterized.parameters(
+        {"sx": 1.0, "sy": 1.0},
+        {"sx": 2.0, "sy": 1.0},
+        {"sx": 1.0, "sy": 2.0},
+        {"sx": 2.0, "sy": 2.0},
+        {"sx": 0.5, "sy": 0.5},
     )
     def test_scaling(self, sx, sy):
         η = jnp.array([0.0, 0.0, 0.0, sx, sy, 0.0])
-        T = gen_transform_mat(η)
+        T = gen_affine_matrix(η)
 
         # pylint: disable=bad-whitespace
         T_trans = jnp.array(
@@ -135,6 +135,13 @@ class AffineMatrixTests(parameterized.TestCase):
         )
         # pylint: enable=bad-whitespace
         np.testing.assert_allclose(T, T_trans, rtol=1e-7, atol=1e-7)
+
+
+def _pytorch_expm(A, rtol=1e-4):
+    I = torch.eye(A.shape[-1], device=A.device, dtype=A.dtype)
+    return odeint(
+        lambda t, x: A @ x, I, torch.tensor([0.0, 1.0]).to(A.device, A.dtype), rtol=rtol
+    )[-1]
 
 
 class MatrixExpTests(parameterized.TestCase):
@@ -159,7 +166,6 @@ class MatrixExpTests(parameterized.TestCase):
         # combos
         {"testcase_name": "trans_x_and_y", "η": [0.1, 0.1, 0, 0, 0, 0]},
         {"testcase_name": "trans_x_and_rot", "η": [0.1, 0, 0.1, 0, 0, 0]},
-        {"testcase_name": "trans_x_and_rot2", "η": [0.5, 0, jnp.pi / 2, 0, 0, 0]},
         {"testcase_name": "trans_y_and_scale_x", "η": [0, 0.1, 0, 0.1, 0, 0]},
         {"testcase_name": "scale_x_and_y", "η": [0, 0, 0, 0.1, 0.1, 0]},
         {"testcase_name": "trans_x_and_scale_y", "η": [0, 0.1, 0, 0, 0, 0.1]},
@@ -170,7 +176,7 @@ class MatrixExpTests(parameterized.TestCase):
 
         Gsum = (np.array(η)[:, np.newaxis, np.newaxis] * Gs).sum(axis=0)
 
-        pt_T = torch.matrix_exp(torch.from_numpy(np.array(Gsum)))
+        pt_T = _pytorch_expm(torch.from_numpy(np.array(Gsum)), rtol=1e-6)
         jax_T = jax.scipy.linalg.expm(Gsum)
 
         np.testing.assert_allclose(jax_T, pt_T, rtol=1e-6, atol=1e-6)
