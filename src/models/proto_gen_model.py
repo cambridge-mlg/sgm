@@ -211,7 +211,7 @@ class PrototypicalGenerativeModel(nn.Module):
         return p_H_x_hat.log_prob(η)
 
 
-def make_pgm_train_and_eval(config, model):
+def make_pgm_train_and_eval(model, config):
     def loss_fn(
         x,
         params,
