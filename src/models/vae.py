@@ -438,59 +438,70 @@ def create_vae_state(params, rng, config):
     )
 
 
-# def make_vae_reconstruction_plot(
-#     x, n_visualize, model, state, visualisation_rng, train=False
-# ):
-#     def reconstruct(x, sample_z=False, sample_xrecon=False):
-#         rng = random.fold_in(visualisation_rng, jax.lax.axis_index("image"))  # type: ignore
-#         rng_dropout, rng_apply = random.split(rng)
-#         return model.apply(
-#             {"params": state.params},
-#             x,
-#             rng_apply,
-#             sample_z=sample_z,
-#             sample_xrecon=sample_xrecon,
-#             train=train,
-#             method=model.reconstruct,
-#             rngs={"dropout": rng_dropout},
-#         )
+def make_vae_plotting_fns(config, model, x):
+    n_visualize = config.get("n_visualize", 20)
 
-#     x_recon_modes = jax.vmap(
-#         reconstruct, axis_name="image", in_axes=(0, None, None)  # type: ignore
-#     )(x, False, False)
+    x = x[:n_visualize]
 
-#     recon_fig = plot_utils.plot_img_array(
-#         jnp.concatenate((x, x_recon_modes), axis=0),
-#         ncol=n_visualize,  # type: ignore
-#         pad_value=1,
-#         padding=1,
-#         title="Original | Reconstruction",
-#     )
+    def reconstruction_plot(state):
+        @partial(jax.jit, static_argnums=(1, 2))
+        def reconstruct(x, sample_z=False, sample_xrecon=False):
+            rng = random.fold_in(state.rng, jax.lax.axis_index("image"))
+            rng_dropout, rng_sample = random.split(rng)
+            return model.apply(
+                {"params": state.params},
+                x,
+                sample_z=sample_z,
+                sample_xrecon=sample_xrecon,
+                train=False,
+                method=model.reconstruct,
+                rngs={"dropout": rng_dropout, "sample": rng_sample},
+            )
 
-#     return recon_fig
+        x_recon_modes = jax.vmap(
+            reconstruct, axis_name="image", in_axes=(0, None, None)
+        )(x, False, False)
 
+        recon_fig = plot_utils.plot_img_array(
+            jnp.concatenate((x, x_recon_modes), axis=0),
+            ncol=n_visualize,
+            pad_value=1,
+            padding=1,
+            title="Original | Reconstruction",
+        )
 
-# def make_vae_sampling_plot(n_visualize, model, state, visualisation_rng, train=False):
-#     def sample(rng, sample_x=False):
-#         rng_dropout, rng_apply = random.split(rng)
-#         return model.apply(
-#             {"params": state.params},
-#             rng_apply,
-#             sample_x=sample_x,
-#             train=train,
-#             method=model.sample,
-#             rngs={"dropout": rng_dropout},
-#         )
+        logs = ciclo.logs()
+        logs.add_entry("images", "recon", recon_fig)
 
-#     sampled_data = jax.vmap(sample, in_axes=(0, None))(  # type: ignore
-#         jax.random.split(visualisation_rng, n_visualize), True  # type: ignore
-#     )
+        return logs, state
 
-#     sample_fig = plot_utils.plot_img_array(
-#         sampled_data,
-#         ncol=n_visualize,  # type: ignore
-#         pad_value=1,
-#         padding=1,
-#         title="Sampled data",
-#     )
-#     return sample_fig
+    def sampling_plot(state):
+        @partial(jax.jit, static_argnums=(1,))
+        def sample(rng, sample_x=False):
+            rng_dropout, rng_sample = random.split(rng)
+            return model.apply(
+                {"params": state.params},
+                sample_x=sample_x,
+                train=False,
+                method=model.sample,
+                rngs={"dropout": rng_dropout, "sample": rng_sample},
+            )
+
+        sampled_data = jax.vmap(sample, in_axes=(0, None))(
+            jax.random.split(state.rng, n_visualize), True
+        )
+
+        sample_fig = plot_utils.plot_img_array(
+            sampled_data,
+            ncol=n_visualize,
+            pad_value=1,
+            padding=1,
+            title="Sampled data",
+        )
+
+        logs = ciclo.logs()
+        logs.add_entry("images", "sample", sample_fig)
+
+        return logs, state
+
+    return reconstruction_plot, sampling_plot
