@@ -1,16 +1,16 @@
-from ml_collections import config_dict
 from jax import numpy as jnp
+from ml_collections import config_dict
 
 
 def get_config(params) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
 
     params = params.split(",")
-    angle = int(params[0])
-    num_val = 10000
+    config.angle = int(params[0])
+    config.num_val = 10000
     if len(params) > 1:
-        num_trn = params[1]
-        end_index = num_trn + num_val
+        config.num_trn = int(params[1])
+        end_index = config.num_trn + config.num_val
     else:
         end_index = ""
 
@@ -19,6 +19,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.batch_size = 512
     config.dataset = "MNIST"
     config.shuffle_buffer_size = 50_000
+    config.shuffle = "preprocessed"
     config.repeat_after_batching = (
         True  # NOTE: ordering of PP, shuffle, and repeat is important!
     )
@@ -43,10 +44,10 @@ def get_config(params) -> config_dict.ConfigDict:
     config.β_schedule_pct = 1.0
     config.β_schedule_final_value = 0.99
 
-    config.train_split = f"train[{num_val}:{end_index}]"
-    config.pp_train = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image"])'
-    config.val_split = f"train[:{num_val}]"
-    config.pp_eval = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image", "label"])'
+    config.train_split = f"train[{config.num_val}:{end_index}]"
+    config.pp_train = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image"])'
+    config.val_split = f"train[:{config.num_val}]"
+    config.pp_eval = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'
 
     config.model = config_dict.ConfigDict()
     config.model.bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
