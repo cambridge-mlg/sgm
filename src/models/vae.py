@@ -8,7 +8,7 @@ that X=x|Z=z a.k.k `p_x_given_z`.
 """
 
 from functools import partial
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Optional, Sequence, Tuple
 
 import ciclo
 import distrax
@@ -184,9 +184,7 @@ class VAE(nn.Module):
                         init.constant(INV_SOFTPLUS_1),
                         (self.latent_dim,),
                     )
-                ).clip(
-                    min=self.σ_min
-                ),
+                ).clip(min=self.σ_min),
             ),
             reinterpreted_batch_ndims=1,
         )
@@ -257,7 +255,7 @@ class VAE(nn.Module):
         ll = p_X_given_z.log_prob(x) / x.shape[-1]
         z_kld = q_Z_given_x.kl_divergence(p_Z)
 
-        return ll - β*z_kld, ll, kld
+        return ll - β * z_kld, ll, z_kld
 
     def importance_weighted_lower_bound(
         self,
@@ -282,7 +280,7 @@ class VAE(nn.Module):
         return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
 
 
-def make_vae_train_and_eval(config, model):
+def make_vae_train_and_eval(model):
     def loss_fn(
         x,
         params,
@@ -364,7 +362,7 @@ def create_vae_optimizer(config):
             config.init_lr,
             config.init_lr * config.peak_lr_mult,
             config.warmup_steps,
-            config.total_steps,
+            config.steps,
             config.init_lr * config.final_lr_mult,
         )
     )
@@ -435,7 +433,7 @@ def create_vae_state(params, rng, config):
         β_schedule=optax.cosine_decay_schedule(
             config.β_schedule_init_value,
             config.steps,
-            config.β_schedule_final_value,
+            config.β_schedule_final_value / config.β_schedule_init_value,
         ),
     )
 
