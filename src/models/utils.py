@@ -5,6 +5,7 @@ from jax import numpy as jnp
 from jax import random
 from chex import Array, PRNGKey, assert_rank, assert_equal_shape
 import distrax
+import optax
 
 from src.transformations import transform_image
 
@@ -85,3 +86,37 @@ def make_approx_invariant(
     params = jax.tree_map(lambda x: jnp.mean(x, axis=0), params)
 
     return distrax.Normal(*params)
+
+
+def clipped_adamw(learning_rate, norm, weight_decay: float = 1e-4):
+    return optax.MultiSteps(
+        optax.chain(
+            optax.clip_by_global_norm(norm),
+            optax.adamw(learning_rate=learning_rate, weight_decay=weight_decay),
+        ),
+        1,
+    )
+
+
+def huber_loss(target: float, pred: float, slope: float = 1.0, radius: float = 1.0) -> float:
+    """Huber loss. Separate out delta (which normally controls both the slope of the linear behaviour, 
+    and the radius of the quadratic behaviour) into 2 separate terms.
+
+    Args:
+        target: ground truth
+        pred: predictions
+        slope: slope of linear behaviour
+        radius: radius of quadratic behaviour
+
+    Returns:
+        loss value
+
+    References:
+        https://en.wikipedia.org/wiki/Huber_loss
+    """
+    abs_diff = jnp.abs(target - pred)
+    return jnp.where(
+        abs_diff > radius,
+        slope * abs_diff - 0.5 * slope * radius,
+        (0.5 * slope / radius) * abs_diff ** 2,
+    )
