@@ -193,15 +193,17 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
             η_x_rand1 = q_H_x_rand1.sample(seed=rng_sample1)
             η_x = q_H_x.sample(seed=rng_sample2)
             # Get the affine matrices
+            η_rand1_aff_mat = gen_affine(η_rand1)
             η_x_rand1_aff_mat = gen_affine(η_x_rand1)
             η_x_rand1_inv_aff_mat = linalg.inv(η_x_rand1_aff_mat)  # Inv. faster than matrix exponential
             η_x_aff_mat = gen_affine(η_x)
+            η_x_inv_aff_mat = linalg.inv(η_x_aff_mat)
 
             x_mse = optax.squared_error(
                 x,
                 transform_image_fn(
                     x,
-                    η_x_aff_mat @ η_x_rand1_inv_aff_mat @ gen_affine(η_rand1),
+                    η_x_aff_mat @ η_x_rand1_inv_aff_mat @ η_rand1_aff_mat,
                 ),
             ).mean()
 
@@ -217,15 +219,15 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
             # the modes (at the mean of the modes)
             η_recon_loss = huber_loss(
                 # Measure how close the transformation is to identity
-                (gen_affine(η_x) @ gen_affine(-η_x_rand1) @ gen_affine(η_rand1)),
-                gen_affine(jnp.zeros_like(η_rand1)).ravel(),
+                (η_x_aff_mat @ η_x_rand1_inv_aff_mat @ η_rand1_aff_mat)[:2, :].ravel(),
+                jnp.eye(3, dtype=η_rand1_aff_mat.dtype)[:2, :].ravel(),
                 slope=1,
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
 
             invertibility_loss = invertibility_loss_fn(x_rand1, η_affine_mat=η_x_rand1_inv_aff_mat, η_inv_affine_mat=η_x_rand1_aff_mat)
 
-            return x_mse, η_recon_loss, difficulty
+            return x_mse, η_recon_loss, invertibility_loss, difficulty
 
         def symmetrised_per_sample_loss(rng):
             """
@@ -520,7 +522,8 @@ def create_canonicalizer_optimizer(params, config):
                 config.inf_lr * config.inf_final_lr_mult,
             ),
             2.0,
-            config.inf_weight_decay,
+            # Optax WD default: 0.0001 https://optax.readthedocs.io/en/latest/api.html#optax.adamw
+            config.get("inf_weight_decay", 0.0001),  
         ),
         "σ": optax.inject_hyperparams(optax.adam)(
             optax.warmup_cosine_decay_schedule(
