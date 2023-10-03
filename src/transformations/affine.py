@@ -143,7 +143,7 @@ def transform_image_with_affine_matrix(
             cval=fill_value,
         ),
         in_axes=(2, None),
-        out_axes=(1,)
+        out_axes=1,
     )(
         image,
         transformed_pts[::-1],
