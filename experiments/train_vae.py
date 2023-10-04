@@ -8,18 +8,19 @@ import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data, parameter_overview
-from jax.config import config
+from jax.config import config as jax_config
 from ml_collections import config_flags
 
-import wandb
+from src.models.utils import reset_metrics
 from src.models.vae import (
     VAE,
     create_vae_state,
+    make_vae_plotting_fns,
     make_vae_train_and_eval,
 )
-from src.models.utils import reset_metrics
 from src.utils.input import get_data
 from src.utils.training import custom_wandb_logger
 
@@ -47,15 +48,17 @@ def main(_):
         notes=FLAGS.wandb_notes,
         project=FLAGS.wandb_project,
         entity=FLAGS.wandb_entity,
-        name=FLAGS.config.name,
+        name=FLAGS.wandb_name,
         settings=wandb.Settings(code_dir="../"),
     ) as run:
-        rng = random.PRNGKey(FLAGS.config.seed)
+        config = FLAGS.config
+
+        rng = random.PRNGKey(config.seed)
         data_rng, init_rng, state_rng = random.split(rng, 3)
 
-        train_ds, val_ds, _ = get_data(FLAGS.config, data_rng)
+        train_ds, val_ds, _ = get_data(config, data_rng)
 
-        model = VAE(**FLAGS.config.model.to_dict())
+        model = VAE(**config.model.to_dict())
 
         variables = model.init(
             {"params": init_rng, "sample": init_rng},
@@ -68,29 +71,36 @@ def main(_):
         params = flax.core.freeze(variables["params"])
         del variables
 
-        state = create_vae_state(params, state_rng, FLAGS.config)
+        state = create_vae_state(params, state_rng, config)
 
-        train_step, eval_step = make_vae_train_and_eval(FLAGS.config, model)
+        train_step, eval_step = make_vae_train_and_eval(model, config)
+        x = next(deterministic_data.start_input_pipeline(val_ds))["image"][0]
+        reconstruction_plot, sampling_plot = make_vae_plotting_fns(config, model, x)
 
-        total_steps = FLAGS.config.gen_steps + FLAGS.config.inf_steps
         _, _, _ = ciclo.train_loop(
             state,
             deterministic_data.start_input_pipeline(train_ds),
             {
                 ciclo.on_train_step: [train_step],
+                ciclo.every(int(config.steps * config.plot_freq)): [
+                    sampling_plot,
+                    reconstruction_plot,
+                ],
                 ciclo.on_reset_step: reset_metrics,
-                ciclo.on_test_step: eval_step,
+                ciclo.on_test_step: [
+                    eval_step,
+                ],
                 ciclo.every(1): custom_wandb_logger(run=run),
             },
             test_dataset=lambda: deterministic_data.start_input_pipeline(val_ds),
-            epoch_duration=int(total_steps * FLAGS.config.eval_freq),
+            epoch_duration=int(config.steps * config.eval_freq),
             callbacks=[
-                ciclo.keras_bar(total=total_steps),
+                ciclo.keras_bar(total=config.steps),
             ],
-            stop=total_steps + 1,
+            stop=config.steps + 1,
         )
 
 
 if __name__ == "__main__":
-    config.config_with_absl()
+    jax_config.config_with_absl()
     app.run(main)
