@@ -23,7 +23,7 @@ from src.transformations import transform_image
 from src.models.utils import clipped_adamw, huber_loss
 from src.utils.types import KwArgs
 from src.transformations.affine import transform_image_with_affine_matrix
-from src.transformations.affine import gen_affine_matrix_no_shear as gen_affine
+from src.transformations.affine import gen_affine_matrix_no_shear
 
 
 class TransformationInferenceNet(nn.Module):
@@ -102,6 +102,7 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
     transform_image_fn = jax.jit(
         functools.partial(transform_image_with_affine_matrix, order=config.interpolation_order, fill_value=-1., fill_mode="constant")
     )
+    gen_affine = functools.partial(gen_affine_matrix_no_shear, translate_last=config.translate_last)
 
     def invertibility_loss_fn(x_, η_affine_mat, η_inv_affine_mat):
         transformed_x = transform_image_fn(
@@ -110,10 +111,8 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
         )
         untransformed_x = transform_image_fn(
             transformed_x,
-            # linalg.inv(η_affine_mat),
             η_inv_affine_mat,
         )
-        # mse = (transformed_x - untransformed_x)**2
         mse = optax.squared_error(
             untransformed_x,
             x_,
@@ -186,7 +185,7 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
             )
             η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
 
-            x_rand1 = transform_image(x, η_rand1, order=config.interpolation_order)
+            x_rand1 = transform_image(x, η_rand1, order=config.interpolation_order, translate_last=config.translate_last)
             q_H_x_rand1 = model.apply({"params": params}, x_rand1, train)
             q_H_x = model.apply({"params": params}, x, train)
 
@@ -484,7 +483,7 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
                 η1 = p_η_x1.sample(seed=rng_sample1)
                 p_η_x2 = model.apply({"params": state.params}, x2, False)
                 η2 = p_η_x2.sample(seed=rng_sample2)
-                x1_hat = transform_image(x1, -η1, order=config.interpolation_order)
+                x1_hat = transform_image(x1, -η1, order=config.interpolation_order, translate_last=config.translate_last)
                 x2_recon = transform_image(x1_hat, η2, order=config.interpolation_order)
                 return optax.squared_error(x2, x2_recon).mean()
             

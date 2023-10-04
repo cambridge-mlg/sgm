@@ -24,11 +24,12 @@ def get_config(params) -> config_dict.ConfigDict:
     )
     config.n_samples = 5
     config.eval_freq = 0.01
-    config.difficulty_weighted_inf_loss = True
-    config.interpolation_order = 1
+    config.difficulty_weighted_inf_loss = False
+    config.interpolation_order = 3
+    config.translate_last = True
     config.symmetrised_samples_in_loss = False
     config.x_mse_loss_mult = 1.0
-    config.invertibility_loss_mult = 0.0
+    config.invertibility_loss_mult = 1.e-2
 
     config.inf_steps = 10_000
     config.inf_lr = 3e-4

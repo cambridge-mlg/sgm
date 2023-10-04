@@ -79,6 +79,7 @@ def get_config() -> config_dict.ConfigDict:
     config.difficulty_weighted_inf_loss = False
     config.symmetrised_samples_in_loss = True
     config.interpolation_order = 1
+    config.translate_last = True
 
     config.gen_steps = 10_000
     config.gen_init_lr = 1e-4

@@ -60,8 +60,44 @@ def gen_affine_matrix(
     return T
 
 
+def gen_affine_matrix_translate_last(
+    η: Array,
+) -> Array:
+    """Generates an affine transformation matrix which can be used to translate,
+    rotate, scale, and shear a 2D image.
+
+    See App. E of "Learning Invariant Weights in Neural Networks" by van der
+    Ouderaa and van der Wilk.
+
+    The transformation is parameterised slightly differently, in that the transformations
+    other than translation are applied first, and then the translation is applied at the end.
+
+    Args:
+        η: an Array with 6 entries:
+        * η_0 controls translation in x.
+        * η_1 controls translation in y.
+        * η_2 is the angle of rotation.
+        * η_3 is the scaling factor in x.
+        * η_4 is the scaling factor in y.
+        * η_5 controls shearing in x and y.
+
+    Returns:
+        A 3x3 affine transformation array.
+    """
+    assert_shape(η, (6,))
+
+    Gs = create_generator_matrices()[2:] # Remove the translation matrices
+
+    T = expm((η[2:, jnp.newaxis, jnp.newaxis] * Gs).sum(axis=0))
+
+    T = T.at[[0, 1], 2].set(T[:2, :2] @ η[:2])
+
+    return T
+
+
 def gen_affine_matrix_no_shear(
     η: Array,
+    translate_last: bool = True
 ) -> Array:
     """Generates an affine transformation matrix which can be used to translate,
     rotate and scale a 2D image.
@@ -81,9 +117,9 @@ def gen_affine_matrix_no_shear(
         A 3x3 affine transformation array.
     """
     assert_shape(η, (5,))
-    return gen_affine_matrix(
-        jnp.concatenate((η, jnp.zeros(1, dtype=η.dtype)))
-    )
+    η_with_shear = jnp.concatenate((η, jnp.zeros(1, dtype=η.dtype)))
+
+    return gen_affine_matrix_translate_last(η_with_shear) if translate_last else gen_affine_matrix(η_with_shear)
 
 
 def transform_image_with_affine_matrix(
@@ -159,6 +195,7 @@ def affine_transform_image(
     fill_mode: str = "constant",
     fill_value: float = -1.0,
     order: int = 3,
+    translate_last: bool = False,
 ) -> Array:
     """Applies an affine transformation to an image.
 
@@ -183,7 +220,7 @@ def affine_transform_image(
     assert_rank(image, 3)
     assert_shape(η, (6,))
 
-    T = gen_affine_matrix(η)
+    T = gen_affine_matrix(η) if not translate_last else gen_affine_matrix_translate_last(η)
     return transform_image_with_affine_matrix(image, T, fill_mode=fill_mode, fill_value=fill_value, order=order)
 
 
