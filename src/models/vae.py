@@ -265,7 +265,12 @@ class VAE(nn.Module):
     ):
         def single_sample_w(i):
             q_Z_given_x = self.q_Z_given_X(x, train=train)
-            z = q_Z_given_x.sample(seed=self.make_rng("sample"), sample_shape=())
+            z = q_Z_given_x.sample(
+                seed=random.fold_in(self.make_rng("sample"), i), sample_shape=()
+            )
+            # NOTE: although make_rng returns a different rng each time it is called,
+            # because of how vmap interacts (I think) with stateful objects, make_rng
+            # will only be called once, thus we fold in the sample index.
             logq_z_given_x = q_Z_given_x.log_prob(z)
 
             p_X_given_z = self.p_X_given_Z(z, train=train)
@@ -280,7 +285,7 @@ class VAE(nn.Module):
         return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
 
 
-def make_vae_train_and_eval(model):
+def make_vae_train_and_eval(model, config):
     def loss_fn(
         x,
         params,
@@ -298,7 +303,26 @@ def make_vae_train_and_eval(model):
         z_kld = q_Z_given_x.kl_divergence(p_Z)
 
         elbo = ll - state.β * z_kld
-        return -elbo, {"loss": -elbo, "elbo": elbo, "ll": ll, "z_kld": z_kld}
+
+        if not train and config.get("run_iwlb", False):
+            iwlb = model.apply(
+                {"params": params},
+                x,
+                num_samples=config.get("iwlb_num_samples", 50),
+                train=train,
+                method=model.importance_weighted_lower_bound,
+                rngs={"sample": rng_local},
+            )
+        else:
+            iwlb = jnp.nan
+
+        return -elbo, {
+            "loss": -elbo,
+            "elbo": elbo,
+            "ll": ll,
+            "z_kld": z_kld,
+            "iwlb": iwlb,
+        }
 
     @jax.jit
     def train_step(state, batch):
@@ -374,6 +398,7 @@ class VaeMetrics(metrics.Collection):
     elbo: metrics.Average.from_output("elbo")
     ll: metrics.Average.from_output("ll")
     z_kld: metrics.Average.from_output("z_kld")
+    iwlb: metrics.Average.from_output("iwlb")
 
     def update(self, **kwargs) -> "VaeMetrics":
         updates = self.single_from_model_output(**kwargs)
