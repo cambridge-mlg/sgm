@@ -38,15 +38,16 @@ for config_name in CONFIG_NAMES:
     jobsfile.touch()
 
     with open(jobsfile, "w") as f:
-        for angle, random_seed in product(ANGLES, RANDOM_SEEDS):
-            for flags_to_add in FLAGS_TO_ADD:
-                # unique_hash = md5("".join(sorted(flags_to_add)).strip().encode()).hexdigest()
+        for angle, random_seed, flags_to_add in product(
+            ANGLES, RANDOM_SEEDS, FLAGS_TO_ADD
+        ):
+            # unique_hash = md5("".join(sorted(flags_to_add)).strip().encode()).hexdigest()
 
-                line = (
-                    f"{SCRIPT} "
-                    f"--config configs/{config_name}.py:{angle} "
-                    f"--config.seed {random_seed} "
-                    # f'--config.results_folder {RESULTS_FOLDER}/{unique_hash} '
-                    f" {flags_to_add}"
-                )
-                f.write(line + "\n")
+            line = (
+                f"{SCRIPT} "
+                f"--config configs/{config_name}.py:{angle} "
+                f"--config.seed {random_seed} "
+                # f'--config.results_folder {RESULTS_FOLDER}/{unique_hash} '
+                f" {flags_to_add}"
+            )
+            f.write(line + "\n")

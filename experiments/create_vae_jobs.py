@@ -39,17 +39,16 @@ for config_name in CONFIG_NAMES:
     jobsfile.touch()
 
     with open(jobsfile, "w") as f:
-        for angle, random_seed, num_trn, init_lr, steps in product(
-            ANGLES, RANDOM_SEEDS, NUM_TRNS, INIT_LRS, STEPS
+        for angle, random_seed, num_trn, init_lr, steps, flags_to_add in product(
+            ANGLES, RANDOM_SEEDS, NUM_TRNS, INIT_LRS, STEPS, FLAGS_TO_ADD
         ):
-            for flags_to_add in FLAGS_TO_ADD:
-                line = (
-                    f"{SCRIPT} "
-                    f"--config configs/{config_name}.py:{angle},{num_trn} "
-                    f"--config.seed {random_seed} "
-                    f"--config.init_lr {init_lr} "
-                    f"--config.steps {steps} "
-                    f"--config.warmup_steps {steps // 10}"
-                    f" {flags_to_add}"
-                )
-                f.write(line + "\n")
+            line = (
+                f"{SCRIPT} "
+                f"--config configs/{config_name}.py:{angle},{num_trn} "
+                f"--config.seed {random_seed} "
+                f"--config.init_lr {init_lr} "
+                f"--config.steps {steps} "
+                f"--config.warmup_steps {steps // 10}"
+                f" {flags_to_add}"
+            )
+            f.write(line + "\n")
