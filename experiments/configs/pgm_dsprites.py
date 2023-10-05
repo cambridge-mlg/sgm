@@ -1,6 +1,7 @@
-from ml_collections import config_dict
-from jax import numpy as jnp
 import math
+
+from jax import numpy as jnp
+from ml_collections import config_dict
 
 from src.utils.datasets.augmented_dsprites import DistributionConfig
 
@@ -113,6 +114,7 @@ def get_config() -> config_dict.ConfigDict:
     config.augment_bounds = (.5, .5, jnp.pi, .5, .5)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
 
+    config.model_name = "PGM"
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
     config.model.inference.model_type = "mlp"
