@@ -185,9 +185,6 @@ def make_augment_generative_train_and_eval(
 
             η_x = canon_function(x, η_rng)
 
-            # η_x_aff_mat = gen_affine_matrix_no_shear(η_x)
-            # η_x_aff_mat_inv = jnp.linalg.inv(η_x_aff_mat)
-
             x_hat = get_xhat_on_random_augmentation(x, x_hat_rng)
 
             p_Η_x_hat = model.apply({"params": params}, x_hat, train=train)
