@@ -5,19 +5,23 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 from jax import lax
-from chex import Array
+from chex import Array, PRNGKey
 import flax
 import flax.linen as nn
 from flax.linen import initializers as init
+from flax.training import train_state
 from flax import traverse_util
+from clu import metrics
 import distrax
 import optax
 import ciclo
 
-from src.transformations import transform_image
 from src.models.utils import clipped_adamw
 from src.utils.types import KwArgs
-from src.models.proto_model import AugmentGenerativeMetrics, TrainStateWithMetrics
+from src.transformations.affine import (
+    gen_affine_matrix_no_shear,
+    transform_image_with_affine_matrix,
+)
 
 
 class Conditioner(nn.Module):
@@ -118,8 +122,14 @@ class TransformationGenerativeNet(nn.Module):
                         shift=self.offset_array, scale=self.bounds_array + self.ε
                     ),
                     len(self.event_shape),
-                ),
-                # distrax.Block(distrax.Tanh(), len(self.event_shape)),
+                )
+            ]
+            + (
+                [distrax.Block(distrax.Tanh(), len(self.event_shape))]
+                if self.squash_to_bounds
+                else []
+            )
+            + [
                 # We invert the flow so that the `forward` method is called with `log_prob`.
                 distrax.Inverse(distrax.Chain(layers)),
             ]
@@ -133,6 +143,7 @@ def make_augment_generative_train_and_eval(
     model: TransformationGenerativeNet,
     canon_function: Callable[[Array, Array], Array],
 ):
+
     def loss_fn(
         x,
         params,
@@ -142,20 +153,66 @@ def make_augment_generative_train_and_eval(
     ):
         rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
 
-        η_x = canon_function(x, rng_local)
+        # TODO: is the MAE loss (and hence the below fn and a per-sample loss) strictly necessary?
+        def get_xhat_on_random_augmentation(x, rng):
+            """
+            Rather than obtaining the prototype of `x` directly by passing it into the canonicalization
+            function, augment it randomly and then pass it through to get the prototype.
 
-        x_hat = transform_image(x, -η_x, order=config.interpolation_order)
+            This is useful for training the generative model to be robust to imperfections in the 
+            canonicalization function.
+            """
+            sample_rng, canon_fn_rng = random.split(rng)
+            Η_rand = distrax.Uniform(
+                # Separate model bounds and augment bounds
+                low=-jnp.array(config.augment_bounds) + jnp.array(config.augment_offset),
+                high=jnp.array(config.augment_bounds) + jnp.array(config.augment_offset),
+            )
+            η_rand = Η_rand.sample(seed=sample_rng, sample_shape=())
+            η_rand_aff_mat = gen_affine_matrix_no_shear(η_rand)
 
-        p_Η_x_hat = model.apply({"params": params}, x_hat, train=train)
-        log_p_η_x_hat = p_Η_x_hat.log_prob(η_x)
+            x_rand = transform_image_with_affine_matrix(x, η_rand_aff_mat)
+            
+            η_rand_canon = canon_function(x_rand, canon_fn_rng)
+            η_rand_canon_aff_mat = gen_affine_matrix_no_shear(η_rand_canon)
+            η_rand_canon_aff_mat_inv = jnp.linalg.inv(η_rand_canon_aff_mat)
+            return transform_image_with_affine_matrix(
+                x_rand, η_rand_canon_aff_mat_inv, order=config.interpolation_order
+            )
 
-        # --- TODO: smoothness loss? Bruno: Need to think about it, cause the l2 of grad. doesn't necessarily
-        # make sense
+        def per_sample_loss_fn(rng):
+            η_rng, x_hat_rng = random.split(rng)
 
-        loss = -log_p_η_x_hat
+            η_x = canon_function(x, η_rng)
+
+            # η_x_aff_mat = gen_affine_matrix_no_shear(η_x)
+            # η_x_aff_mat_inv = jnp.linalg.inv(η_x_aff_mat)
+
+            x_hat = get_xhat_on_random_augmentation(x, x_hat_rng)
+
+            p_Η_x_hat = model.apply({"params": params}, x_hat, train=train)
+            log_p_η_x_hat = p_Η_x_hat.log_prob(η_x)
+            return log_p_η_x_hat
+
+        log_p_η_x_hat = jax.vmap(per_sample_loss_fn)(
+            random.split(rng_local, config.num_samples)
+        )  # (num_samples,)
+
+        # Regularise p(η|x_hat) densities against small pertubations on x_hat,
+        # by minimizing the difference between desitities for slighty different
+        # x_hat's, that result from an imperfect inference net.
+        pairwise_diffs = jax.vmap(
+            jax.vmap(lambda x, y: x - y, in_axes=(0, None)), in_axes=(None, 0)
+        )(log_p_η_x_hat, log_p_η_x_hat)
+        mae = jnp.abs(pairwise_diffs).mean()
+
+        # --- TODO: smoothness loss? Need to think about it, cause the l2 of grad. doesn't necessarily make sense
+
+        loss = -log_p_η_x_hat.mean() + state.mae_loss_mult * mae
 
         return loss, {
             "loss": loss,
+            "mae": mae,
             "log_p_η_x_hat": log_p_η_x_hat,
         }
 
@@ -216,6 +273,50 @@ def make_augment_generative_train_and_eval(
     return train_step, eval_step
 
 
+@flax.struct.dataclass
+class AugmentGenerativeMetrics(metrics.Collection):
+    loss: metrics.Average.from_output("loss")
+    mae: metrics.Average.from_output("mae")
+    p_η_x_hat: metrics.Average.from_output("p_η_x_hat")
+
+    def update(self, **kwargs) -> "AugmentGenerativeMetrics":
+        updates = self.single_from_model_output(**kwargs)
+        return self.merge(updates)
+
+
+class AugmentGenerativeTrainState(train_state.TrainState):
+    metrics: AugmentGenerativeMetrics
+    mae_loss_mult: float
+    mae_loss_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
+    rng: PRNGKey
+
+    def apply_gradients(self, *, grads, **kwargs):
+        updates, new_opt_state = self.tx.update(grads, self.opt_state, self.params)
+        new_params = optax.apply_updates(self.params, updates)
+
+        return self.replace(
+            step=self.step + 1,
+            params=new_params,
+            opt_state=new_opt_state,
+            mae_loss_mult=self.mae_loss_mult_schedule(self.step),
+            **kwargs,
+        )
+
+    @classmethod
+    def create(cls, *, apply_fn, params, tx, mae_loss_mult_schedule, **kwargs):
+        opt_state = tx.init(params)
+        return cls(
+            step=0,
+            apply_fn=apply_fn,
+            params=params,
+            tx=tx,
+            opt_state=opt_state,
+            mae_loss_mult_schedule=mae_loss_mult_schedule,
+            mae_loss_mult=mae_loss_mult_schedule(0),
+            **kwargs,
+        )
+
+
 def create_augment_generative_optimizer(params, config):
     partition_optimizers = {
         "generative": optax.inject_hyperparams(clipped_adamw)(
@@ -224,7 +325,7 @@ def create_augment_generative_optimizer(params, config):
                 config.gen_lr,
                 config.gen_warmup_steps,
                 config.gen_steps,
-                config.init_lr * config.gen_final_lr_mult,
+                config.gen_lr * config.gen_final_lr_mult,
             ),
             2.0,
         ),
@@ -241,10 +342,15 @@ def create_augment_generative_optimizer(params, config):
 
 def create_augment_generative_state(params, rng, config):
     opt = create_augment_generative_optimizer(params, config)
-    return TrainStateWithMetrics.create(
+    return AugmentGenerativeTrainState.create(
         apply_fn=TransformationGenerativeNet.apply,
         params=params,
         tx=opt,
         metrics=AugmentGenerativeMetrics.empty(),
+        mae_loss_mult_schedule=optax.linear_schedule(
+            init_value=config.mae_loss_mult_initial,
+            end_value=config.mae_loss_mult_final,
+            transition_steps=config.gen_steps,
+        ),
         rng=rng,
     )
