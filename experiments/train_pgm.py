@@ -7,12 +7,11 @@ import flax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
-import numpy as np
 import wandb
 from absl import app, flags, logging
 from clu import deterministic_data, parameter_overview
 from jax.config import config as jax_config
-from ml_collections import config_flags
+from ml_collections import config_dict, config_flags
 
 from src.models.proto_gen_model import (
     PrototypicalGenerativeModel,
@@ -35,12 +34,40 @@ flags.DEFINE_enum(
 )
 flags.DEFINE_list("wandb_tags", [], "Tags for wandb.run.")
 flags.DEFINE_string("wandb_notes", "", "Notes for wandb.run.")
-flags.DEFINE_string("wandb_project", "iclr2024experiments", "Project for wandb.run.")
+flags.DEFINE_string("wandb_project", "aistats2024", "Project for wandb.run.")
 flags.DEFINE_string("wandb_entity", "invariance-learners", "Entity for wandb.run.")
 flags.DEFINE_string("wandb_name", None, "Name for wandb.run.")
+flags.DEFINE_bool(
+    "rerun", False, "Rerun the experiment even if the config already appears in wandb."
+)
 
 
 def main(_):
+    config = FLAGS.config
+
+    if not FLAGS.rerun:
+        fake_run = wandb.init(
+            mode="disabled",
+            config=config.to_dict(),
+        )
+        # ^ we create this fake run to get the config dict in the same format as the existing runs in wandb
+
+        logging.info("Checking if config already exists in wandb.")
+        runs = wandb.Api().runs(f"{FLAGS.wandb_entity}/{FLAGS.wandb_project}")
+        finished_runs = [run for run in runs if run.state == "finished"]
+        frozen_config = config_dict.FrozenConfigDict(fake_run.config)
+        logging.info(f"checking {len(finished_runs)} runs")
+
+        for run in finished_runs:
+            run_config = config_dict.FrozenConfigDict(run.config)
+            if frozen_config == run_config:
+                logging.info(
+                    f"Found matching config in run with id {run.id} and name {run.name}."
+                    "Skipping training. Use --rerun to rerun the experiment. Config was: \n"
+                    f"{frozen_config}"
+                )
+                return 0
+
     with wandb.init(
         mode=FLAGS.wandb_mode,
         tags=FLAGS.wandb_tags,
@@ -48,10 +75,9 @@ def main(_):
         project=FLAGS.wandb_project,
         entity=FLAGS.wandb_entity,
         name=FLAGS.wandb_name,
+        config=config.to_dict(),
         settings=wandb.Settings(code_dir="../"),
     ) as run:
-        config = FLAGS.config
-
         rng = random.PRNGKey(config.seed)
         data_rng, init_rng, state_rng = random.split(rng, 3)
 
