@@ -19,11 +19,9 @@ import optax
 import ciclo
 from src.models.convnext import ConvNeXt, get_convnext_constructor
 
-from src.transformations import transform_image
 from src.models.utils import clipped_adamw, huber_loss
 from src.utils.types import KwArgs
-from src.transformations.affine import transform_image_with_affine_matrix
-from src.transformations.affine import gen_affine_matrix_no_shear
+from src.transformations.affine import transform_image_with_affine_matrix, gen_affine_matrix
 
 
 class TransformationInferenceNet(nn.Module):
@@ -102,16 +100,17 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
     transform_image_fn = jax.jit(
         functools.partial(transform_image_with_affine_matrix, order=config.interpolation_order, fill_value=-1., fill_mode="constant")
     )
-    gen_affine = functools.partial(gen_affine_matrix_no_shear, translate_last=config.translate_last)
+    gen_affine_augment = gen_affine_matrix
+    gen_affine_model = gen_affine_matrix
 
-    def invertibility_loss_fn(x_, η_affine_mat, η_inv_affine_mat):
+    def invertibility_loss_fn(x_, affine_mat, affine_mat_inv):
         transformed_x = transform_image_fn(
             x_,
-            η_affine_mat,
+            affine_mat,
         )
         untransformed_x = transform_image_fn(
             transformed_x,
-            η_inv_affine_mat,
+            affine_mat_inv,
         )
         mse = optax.squared_error(
             untransformed_x,
@@ -129,7 +128,6 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
         rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
 
         def nonsymmetrised_per_sample_loss(rng):
-            """TODO: Old loss: delete? Keep under a flag for comparison?"""
             """
             The self-supervised loss for the generative network can be summarised with the following diagram
 
@@ -184,18 +182,18 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
                 + jnp.array(config.augment_offset),
             )
             η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
+            η_rand1_aff_mat = gen_affine_augment(η_rand1)
 
-            x_rand1 = transform_image(x, η_rand1, order=config.interpolation_order, translate_last=config.translate_last)
+            x_rand1 = transform_image_fn(x, η_rand1_aff_mat)
             q_H_x_rand1 = model.apply({"params": params}, x_rand1, train)
             q_H_x = model.apply({"params": params}, x, train)
 
             η_x_rand1 = q_H_x_rand1.sample(seed=rng_sample1)
             η_x = q_H_x.sample(seed=rng_sample2)
             # Get the affine matrices
-            η_rand1_aff_mat = gen_affine(η_rand1)
-            η_x_rand1_aff_mat = gen_affine(η_x_rand1)
+            η_x_rand1_aff_mat = gen_affine_model(η_x_rand1)
             η_x_rand1_inv_aff_mat = linalg.inv(η_x_rand1_aff_mat)  # Inv. faster than matrix exponential
-            η_x_aff_mat = gen_affine(η_x)
+            η_x_aff_mat = gen_affine_model(η_x)
             η_x_inv_aff_mat = linalg.inv(η_x_aff_mat)
 
             x_mse = optax.squared_error(
@@ -208,7 +206,8 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
 
             difficulty = optax.squared_error(x_rand1, x).mean()
 
-            # This loss is a useful proxy and can provide a helpful learning signal.
+            # This loss regularises for the applied sequence of transformations to be identity, but directly in η space
+            # This is a useful proxy and can provide a helpful learning signal.
             # However, it is possible for it to be non-0 while the MSE is perfect due to 
             # self-symmetric objects (multiple orbit stabilizers). Ultimately, we care about
             # low MSE.
@@ -224,7 +223,7 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
 
-            invertibility_loss = invertibility_loss_fn(x_rand1, η_affine_mat=η_x_rand1_inv_aff_mat, η_inv_affine_mat=η_x_rand1_aff_mat)
+            invertibility_loss = invertibility_loss_fn(x_rand1, affine_mat=η_x_rand1_inv_aff_mat, affine_mat_inv=η_x_rand1_aff_mat)
 
             return x_mse, η_recon_loss, invertibility_loss, difficulty
 
@@ -232,41 +231,41 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
             """
             The self-supervised loss for the generative network can be summarised with the following diagram:
 
-                      ┌───────┐            ┌────────────┐
-                ┌─────┤n_rand1├──►x_rand1──┤(-n_x_rand1)├───┐
-                │     └───────┘            └────────────┘   │
-                │                                           ▼
-                x                                         x_hat
-                │                                           ▲
-                │     ┌───────┐            ┌────────────┐   │
-                └─────┤n_rand2├──►x_rand2──┤(-n_x_rand2)├───┘
-                      └───────┘            └────────────┘
+                      ┌───────┐            ┌─────────────┐
+                ┌─────┤n_rand1├──►x_rand1──┤n_x_rand1.inv├───┐
+                │     └───────┘            └─────────────┘   │
+                │                                            ▼
+                x                                          x_hat
+                │                                            ▲
+                │     ┌───────┐            ┌─────────────┐   │
+                └─────┤n_rand2├──►x_rand2──┤n_x_rand2.inv├───┘
+                      └───────┘            └─────────────┘
 
             Instead of computing the MSE loss between two different reconstruction of x_hat, we instead
             compute the MSE loss between x and the re-reconstruction of x as shown below:
 
 
-                      ┌───────┐            ┌────────────┐   
-                x─────┤n_rand1├──►x_rand1──┤(-n_x_rand1)├───┐
-                │     └───────┘            └────────────┘   │
-                ▼                                           ▼                                                                                      
-               mse                                        x_hat
-                ▲                                           │
-                │   ┌──────────┐             ┌─────────┐    │
-                x'◄─┤(-n_rand2)├──x_rand2◄───┤n_x_rand2├────┘
-                    └──────────┘             └─────────┘    
+                      ┌───────┐             ┌─────────────┐   
+                x─────┤n_rand1├───►x_rand1──┤n_x_rand1.inv├───┐
+                │     └───────┘             └─────────────┘   │
+                ▼                                             ▼                                                                                      
+               mse                                           x_hat
+                ▲                                             │
+                │   ┌───────────┐              ┌─────────┐    │
+                x'◄─┤n_rand2.inv├──x_rand2◄────┤n_x_rand2├────┘
+                    └───────────┘              └─────────┘    
 
             However, implementing this directly requires doing 3 affine transformations, which adds 'blur' to the image.
             So instead we note that the diagram above is equivalent to (assuming invertible group actions):
 
 
-                x'◄───────────────────────────┐
-                │                             │
-                ▼     ┌───────────────────────┴───────────────────────┐
-               mse    │(-n_rand2) @ n_x_rand2 @ (-n_x_rand1) @ n_rand1│
-                ▲     └───────────────────────┬───────────────────────┘
-                │                             │
-                x─────────────────────────────┘
+                x'◄────────────────────────────┐
+                │                              │
+                ▼     ┌────────────────────────┴────────────────────────┐
+               mse    │n_rand2.inv @ n_x_rand2 @ n_x_rand1.inv @ n_rand1│
+                ▲     └────────────────────────┬────────────────────────┘
+                │                              │
+                x──────────────────────────────┘
 
             Where @ denotes composition of group actions. In all of the above, we assume we have group action representations
             for which negation yields the inverse.
@@ -289,9 +288,9 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
             η_rand2 = Η_rand.sample(seed=rng_η_rand2, sample_shape=())
 
             # Get the affine matrices
-            η_rand1_aff_mat = gen_affine(η_rand1)
+            η_rand1_aff_mat = gen_affine_augment(η_rand1)
             η_rand1_inv_aff_mat = linalg.inv(η_rand1_aff_mat)
-            η_rand2_aff_mat = gen_affine(η_rand2)
+            η_rand2_aff_mat = gen_affine_augment(η_rand2)
             η_rand2_inv_aff_mat = linalg.inv(η_rand2_aff_mat)
 
             x_rand1 = transform_image_fn(x, η_rand1_aff_mat)
@@ -304,9 +303,9 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
             η_x_rand2 = q_H_x_rand2.sample(seed=rng_sample2)
 
             # Get the affine matrices
-            η_x_rand1_aff_mat = gen_affine(η_x_rand1)
+            η_x_rand1_aff_mat = gen_affine_model(η_x_rand1)
             η_x_rand1_inv_aff_mat = linalg.inv(η_x_rand1_aff_mat)  # Inv. faster than matrix exponential
-            η_x_rand2_aff_mat = gen_affine(η_x_rand2)
+            η_x_rand2_aff_mat = gen_affine_model(η_x_rand2)
             η_x_rand2_inv_aff_mat = linalg.inv(η_x_rand2_aff_mat)
 
             # Consider transforming x twice (first into latent space, and then untransforming) as a
@@ -321,7 +320,8 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
 
             difficulty = optax.squared_error(x_rand1, x_rand2).mean()
 
-            # This loss is a useful proxy and can provide a helpful learning signal.
+            # This loss regularises for the applied sequence of transformations to be identity, but directly in η space.
+            # It can be a useful proxy provides a helpful learning signal.
             # However, it is possible for it to be non-0 while the MSE is perfect due to 
             # self-symmetric objects (multiple orbit stabilizers). Ultimately, we care about
             # low MSE.
@@ -337,24 +337,7 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
 
-            def invertibility_loss_fn(x_, η_affine_mat, η_inv_affine_mat):
-                transformed_x = transform_image_fn(
-                    x_,
-                    η_affine_mat,
-                )
-                untransformed_x = transform_image_fn(
-                    transformed_x,
-                    # linalg.inv(η_affine_mat),
-                    η_inv_affine_mat,
-                )
-                # mse = (transformed_x - untransformed_x)**2
-                mse = optax.squared_error(
-                    untransformed_x,
-                    x_,
-                )
-                return mse.mean()
-
-            invertibility_loss = invertibility_loss_fn(x_rand1, η_affine_mat=η_x_rand1_inv_aff_mat, η_inv_affine_mat=η_x_rand1_aff_mat)
+            invertibility_loss = invertibility_loss_fn(x_rand1, affine_mat=η_x_rand1_inv_aff_mat, inv_affine_mat=η_x_rand1_aff_mat)
 
             return x_mse, η_recon_loss, invertibility_loss, difficulty
 
@@ -483,8 +466,14 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
                 η1 = p_η_x1.sample(seed=rng_sample1)
                 p_η_x2 = model.apply({"params": state.params}, x2, False)
                 η2 = p_η_x2.sample(seed=rng_sample2)
-                x1_hat = transform_image(x1, -η1, order=config.interpolation_order, translate_last=config.translate_last)
-                x2_recon = transform_image(x1_hat, η2, order=config.interpolation_order)
+
+                η1_aff_mat = gen_affine_model(η1)
+                η1_inv_aff_mat = linalg.inv(η1_aff_mat)
+                η2_aff_mat = gen_affine_model(η2)
+                η2_inv_aff_mat = linalg.inv(η2_aff_mat)
+
+                x1_hat = transform_image_fn(x1, η1_inv_aff_mat)
+                x2_recon = transform_image_fn(x1_hat, η2_aff_mat)
                 return optax.squared_error(x2, x2_recon).mean()
             
             # Return MSE of 0 if there is no label match
