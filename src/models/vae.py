@@ -4,7 +4,7 @@ A note on notation. In order to distinguish between random variables and their v
 and lower case variable names. I.e., p(Z) or `p_Z` is the distribution over the r.v. Z, and is a
 function, while p(z) or `p_z` is the probability that Z=z. Similarly, p(X|Z) or `p_X_given_Z` is a
 a function which returns another function p(X|z) or `p_X_given_z`, which would return the proability
-that X=x|Z=z a.k.k `p_x_given_z`.
+that X=x|Z=z a.k.a `p_x_given_z`.
 """
 
 from functools import partial
