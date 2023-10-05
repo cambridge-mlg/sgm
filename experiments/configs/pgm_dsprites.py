@@ -1,6 +1,7 @@
-from ml_collections import config_dict
-from jax import numpy as jnp
 import math
+
+from jax import numpy as jnp
+from ml_collections import config_dict
 
 from src.utils.datasets.augmented_dsprites import DistributionConfig
 
@@ -91,6 +92,7 @@ def get_config() -> config_dict.ConfigDict:
     config.β_schedule_pct = 1.0
     config.β_schedule_final_value = 0.99
 
+    config.model_name = "PGM"
     config.model = config_dict.ConfigDict()
     config.model.bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
     config.model.offset = (0.0, 0.0, 0.0, 0.0, 0.0)

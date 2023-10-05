@@ -49,6 +49,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.val_split = f"train[:{config.num_val}]"
     config.pp_eval = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'
 
+    config.model_name = "PGM"
     config.model = config_dict.ConfigDict()
     config.model.bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
     config.model.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
