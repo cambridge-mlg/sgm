@@ -25,20 +25,21 @@ from flax.training import checkpoints
 from ml_collections import config_flags
 
 import wandb
-from src.utils.input import get_data
 
-# from src.models.proto_gen_model import PrototypicalGenerativeModel, create_pgm_state, make_pgm_train_and_eval
+from src.utils.input import get_data
 from src.models.proto_gen_model_separated import (
     TransformationInferenceNet,
     make_canonicalizer_train_and_eval,
     create_canonicalizer_state,
 )
 from src.utils.datasets.augmented_dsprites import (
+    plot_prototypes_by_shape,
     visualise_latent_distribution_from_config,
 )
 from src.models.utils import reset_metrics
 from src.transformations import transform_image
 from src.utils.training import custom_wandb_logger
+from src.utils.proto_plots import plot_proto_model_training_metrics
 
 flax.config.update("flax_use_orbax_checkpointing", True)
 logging.set_verbosity(logging.INFO)
@@ -137,9 +138,7 @@ def main(_):
             plt.close(fig)
 
         # --- Training ---
-
         total_steps = config.inf_steps
-        # total_steps = config.inf_steps
         canon_final_state, history, _ = ciclo.train_loop(
             canon_state,
             deterministic_data.start_input_pipeline(train_ds),
@@ -166,148 +165,20 @@ def main(_):
         )
 
         # --- Log reconstructions for eval: ---
+        def canon_function(x, rng):
+            η = canon_model.apply({"params": canon_final_state.params}, x, train=False).sample(seed=rng)
+            return η
+        
         if config.dataset == "aug_dsprites":
-
-            def get_proto(x):
-                p_η = canon_model.apply(
-                    {"params": canon_final_state.params}, x, train=False
-                )
-                η = p_η.sample(seed=rng)
-                xhat = transform_image(x, -η, order=3)
-                return xhat, η
-
             it = deterministic_data.start_input_pipeline(val_ds)
             batch = next(it)
-            # print(batch["image"].shape)
-            square_images = batch["image"][batch["label"] == 0]
-            square_prototypes, _ = jax.vmap(get_proto)(square_images)
-            ellipse_images = batch["image"][batch["label"] == 1]
-            ellipse_prototypes, _ = jax.vmap(get_proto)(ellipse_images)
-            heart_images = batch["image"][batch["label"] == 2]
-            heart_prototypes, _ = jax.vmap(get_proto)(heart_images)
 
-            vmin = min(
-                map(
-                    lambda ims: ims.min() if len(ims) else np.inf,
-                    [
-                        square_images,
-                        ellipse_images,
-                        heart_images,
-                        square_prototypes,
-                        ellipse_prototypes,
-                        heart_prototypes,
-                    ],
-                )
-            )
-            vmax = max(
-                map(
-                    lambda ims: ims.max() if len(ims) else -np.inf,
-                    [
-                        square_images,
-                        ellipse_images,
-                        heart_images,
-                        square_prototypes,
-                        ellipse_prototypes,
-                        heart_prototypes,
-                    ],
-                )
-            )
-            ncols = 10
-            imshow_kwargs = dict(cmap="gray", vmin=vmin, vmax=vmax)
-            fig, axes = plt.subplots(
-                ncols=ncols, nrows=6, figsize=(ncols * 1.5, 1.5 * 6)
-            )
-            for ax in axes.ravel():
-                ax.axis("off")
-            for i in range(ncols):
-                for j, shape_images, shape_prototypes in zip(
-                    range(3),
-                    [square_images, ellipse_images, heart_images],
-                    [square_prototypes, ellipse_prototypes, heart_prototypes],
-                ):
-                    if i >= len(shape_images):
-                        continue
-                    axes[2 * j, i].imshow(shape_images[i], **imshow_kwargs)
-                    axes[2 * j, i].set_title(
-                        f"mse:{((shape_images[i] - shape_prototypes[i])**2).mean():.4f}",
-                        fontsize=9,
-                    )
-                    axes[2 * j + 1, i].imshow(shape_prototypes[i], **imshow_kwargs)
-                    axes[2 * j + 1, i].set_title(
-                        "$ _{mse\_proto}$"
-                        + f":{((shape_prototypes[0] - shape_prototypes[i])**2).mean():.4f}",
-                        fontsize=9,
-                    )
-
-            axes[0, 0].set_ylabel("Original Square")
-            axes[1, 0].set_ylabel("Proto Square")
-            axes[2, 0].set_ylabel("Original Ellipse")
-            axes[3, 0].set_ylabel("Proto Ellipse")
-            axes[4, 0].set_ylabel("Original Heart")
-            axes[5, 0].set_ylabel("Proto Heart")
-
+            fig = plot_prototypes_by_shape(canon_function=canon_function, batch=batch)
             run.log({"dsprites_by_elem_final_prototypes": wandb.Image(fig)})
 
         # --- Log final metrics as an image: ---
-        with sns.axes_style("whitegrid"):
-            # plot the training history
-            steps, loss, x_mse, lr_inf, lr_σ = history.collect(
-                "steps",
-                "loss",
-                "x_mse",
-                "lr_inf",
-                "lr_σ",
-            )
-            sigma = history.collect("σ")
-            augment_bounds_mult = history.collect("augment_bounds_mult")
-            steps_test, loss_test, x_mse_test = history.collect(
-                "steps", "loss_test", "x_mse_test"
-            )
-
-            label_paired_image_mse = history.collect("label_paired_image_mse_test")
-
-            n_plots = 5
-            fig, axs = plt.subplots(
-                n_plots, 1, figsize=(15, n_plots * 3.0), dpi=300, sharex=True
-            )
-
-            axs[0].plot(steps, loss, label=f"train {loss[-1]:.4f}")
-            axs[0].plot(steps_test, loss_test, label=f"test  {loss_test[-1]:.4f}")
-            axs[0].legend()
-            # axs[0].set_yscale("log")
-            axs[0].set_title("Loss")
-
-            axs[1].plot(steps, x_mse, label=f"train {x_mse[-1]:.4f}")
-            axs[1].plot(steps_test, x_mse_test, label=f"test  {x_mse_test[-1]:.4f}")
-            axs[1].legend()
-            axs[1].set_title("x_mse")
-
-            axs[2].plot(
-                steps_test,
-                label_paired_image_mse,
-                label=f"test {label_paired_image_mse[-1]:.4f}",
-                color="red",
-            )
-            axs[2].legend()
-            axs[2].set_title("label_paired_image_mse")
-
-            axs[3].plot(steps, sigma, color="red")
-            axs[3].set_yscale("log")
-            axs[3].set_title("σ")
-
-            axs[-1].plot(steps, lr_inf, "--", label=f"inf   {lr_inf[-1]:.4f}")
-            axs[-1].plot(steps, lr_σ, "--", label=f"σ    {lr_σ[-1]:.4f}")
-            axs[-1].plot(
-                steps,
-                augment_bounds_mult,
-                label=f"augment_bounds_mult {augment_bounds_mult[-1]:.4f}",
-            )
-            axs[-1].legend(loc="lower right")
-            axs[-1].set_yscale("log")
-
-            axs[-1].set_xlim(min(steps), max(steps))
-            axs[-1].set_xlabel("Steps")
-            run.log({"run_metrics_summary": wandb.Image(fig)})
+        fig = plot_proto_model_training_metrics(history)
+        run.log({"run_metrics_summary": wandb.Image(fig)})
 
 
 if __name__ == "__main__":

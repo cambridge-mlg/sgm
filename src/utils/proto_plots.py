@@ -11,6 +11,7 @@ import math
 
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 from transformations import transform_image
 
@@ -228,3 +229,92 @@ def plot_training_samples(state, batch):
                 axes[i, j].imshow(images_np[i * ncols + j], cmap="gray")
     fig.tight_layout(pad=0.0)
     return fig
+
+
+def plot_proto_model_training_metrics(history):
+    # Plot the training history
+    colors = sns.color_palette("husl", 3)
+    steps, loss, x_mse, lr_inf, lr_σ = history.collect(
+        "steps",
+        "loss",
+        "x_mse",
+        "lr_inf",
+        "lr_σ",
+    )
+    sigma = history.collect("σ")
+    augment_bounds_mult = history.collect("augment_bounds_mult")
+    steps_test, loss_test, x_mse_test = history.collect(
+        "steps", "loss_test", "x_mse_test"
+    )
+
+    label_paired_image_mse = history.collect("label_paired_image_mse_test")
+
+    n_plots = 5
+    fig, axs = plt.subplots(
+        n_plots, 1, figsize=(15, n_plots * 3.0), dpi=300, sharex=True
+    )
+
+    axs[0].plot(steps, loss, label=f"train {loss[-1]:.4f}", color=colors[0])
+    axs[0].plot(steps_test, loss_test, label=f"test  {loss_test[-1]:.4f}", color=colors[1])
+    axs[0].legend()
+    # axs[0].set_yscale("log")
+    axs[0].set_title("Loss")
+
+    axs[1].plot(steps, x_mse, label=f"train {x_mse[-1]:.4f}", color=colors[0])
+    axs[1].plot(steps_test, x_mse_test, label=f"test  {x_mse_test[-1]:.4f}", color=colors[1])
+    axs[1].legend()
+    axs[1].set_title("x_mse")
+
+    axs[2].plot(
+        steps_test,
+        label_paired_image_mse,
+        label=f"test {label_paired_image_mse[-1]:.4f}",
+        color=colors[0],
+    )
+    axs[2].legend()
+    axs[2].set_title("label_paired_image_mse")
+
+    axs[3].plot(steps, sigma, color=colors[1])
+    axs[3].set_yscale("log")
+    axs[3].set_title("σ")
+
+    # Schedule axis:
+    host = axs[-1]
+    par1 = host.twinx()
+    # par2 = host.twinx()
+
+    p1, = host.plot(steps, lr_inf, "--", label=f"inf   {lr_inf[-1]:.4f}", color=colors[0])
+    p2, = host.plot(steps, lr_σ, "--", label=f"σ    {lr_σ[-1]:.4f}", color=colors[1])
+    p3, = par1.plot(
+        steps,
+        augment_bounds_mult,
+        label=f"augment_bounds_mult {augment_bounds_mult[-1]:.4f}",
+        color=colors[2]
+    )
+    lines = [p1, p2, p3]
+    host.legend(lines, [l.get_label() for l in lines])
+
+    host.set_yscale("log")
+    par1.set_yscale("log")
+    # par2.set_yscale("log")
+
+    host.set_ylabel(f"LR")
+    # par1.set_ylabel("σ LR")
+    par1.set_ylabel("Multipliers")
+
+    host.yaxis.label.set_color(p1.get_color())
+    par1.yaxis.label.set_color(p3.get_color())
+    # par2.yaxis.label.set_color(p3.get_color())
+
+    tkw = dict(size=4, width=1.5)
+    host.tick_params(axis='y', colors=p1.get_color(), **tkw)
+    par1.tick_params(axis='y', colors=p3.get_color(), **tkw)
+    # par2.tick_params(axis='y', colors=p3.get_color(), **tkw)
+
+    axs[-1].set_xlim(min(steps), max(steps))
+    axs[-1].set_xlabel("Steps")
+
+    for ax in axs:
+        ax.grid(color=(0.9, 0.9, 0.9))
+    return fig
+

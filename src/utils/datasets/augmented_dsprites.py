@@ -13,6 +13,8 @@ import scipy.stats
 import tensorflow as tf
 from jax import random
 
+from transformations.affine import gen_affine_matrix_no_shear, transform_image_with_affine_matrix
+
 
 # --- Schema classes for the configuration of the augmented DSprites dataset:
 class DistributionType(StrEnum):
@@ -471,3 +473,83 @@ def visualise_latent_distribution_from_config(aug_dsprites_config: AugDspritesCo
             axes[row_idx, col_idx].set_xlabel(latent_name.capitalize())
         axes[row_idx, 0].set_ylabel(shape.capitalize() + " Distribution")
     return fig, axes
+
+
+def plot_prototypes_by_shape(canon_function, batch):
+    import matplotlib.pyplot as plt
+
+    rng = random.PRNGKey(0)
+    def get_proto(x):
+        η = canon_function(x, rng)
+        xhat = transform_image_with_affine_matrix(
+            x, jnp.linalg.inv(gen_affine_matrix_no_shear(η)), order=3
+        )
+        return xhat
+
+    square_images = batch["image"][batch["label"] == 0]
+    square_prototypes = jax.vmap(get_proto)(square_images)
+    ellipse_images = batch["image"][batch["label"] == 1]
+    ellipse_prototypes = jax.vmap(get_proto)(ellipse_images)
+    heart_images = batch["image"][batch["label"] == 2]
+    heart_prototypes = jax.vmap(get_proto)(heart_images)
+
+    vmin = min(
+        map(
+            lambda ims: ims.min() if len(ims) else np.inf,
+            [
+                square_images,
+                ellipse_images,
+                heart_images,
+                square_prototypes,
+                ellipse_prototypes,
+                heart_prototypes,
+            ],
+        )
+    )
+    vmax = max(
+        map(
+            lambda ims: ims.max() if len(ims) else -np.inf,
+            [
+                square_images,
+                ellipse_images,
+                heart_images,
+                square_prototypes,
+                ellipse_prototypes,
+                heart_prototypes,
+            ],
+        )
+    )
+    ncols = 10
+    imshow_kwargs = dict(cmap="gray", vmin=vmin, vmax=vmax)
+    fig, axes = plt.subplots(
+        ncols=ncols, nrows=6, figsize=(ncols * 1.5, 1.5 * 6)
+    )
+    for ax in axes.ravel():
+        ax.axis("off")
+    for i in range(ncols):
+        for j, shape_images, shape_prototypes in zip(
+            range(3),
+            [square_images, ellipse_images, heart_images],
+            [square_prototypes, ellipse_prototypes, heart_prototypes],
+        ):
+            if i >= len(shape_images):
+                continue
+            axes[2 * j, i].imshow(shape_images[i], **imshow_kwargs)
+            axes[2 * j, i].set_title(
+                f"mse:{((shape_images[i] - shape_prototypes[i])**2).mean():.4f}",
+                fontsize=9,
+            )
+            axes[2 * j + 1, i].imshow(shape_prototypes[i], **imshow_kwargs)
+            axes[2 * j + 1, i].set_title(
+                "$ _{mse\_proto}$"
+                + f":{((shape_prototypes[0] - shape_prototypes[i])**2).mean():.4f}",
+                fontsize=9,
+            )
+
+    axes[0, 0].set_ylabel("Original Square")
+    axes[1, 0].set_ylabel("Proto Square")
+    axes[2, 0].set_ylabel("Original Ellipse")
+    axes[3, 0].set_ylabel("Proto Ellipse")
+    axes[4, 0].set_ylabel("Original Heart")
+    axes[5, 0].set_ylabel("Proto Heart")
+    return fig
