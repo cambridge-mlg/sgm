@@ -1,45 +1,49 @@
-import functools
-import math
 import os
-import distrax
 
-from utils.proto_plots import construct_plot_augmented_data_samples_canonicalizations, construct_plot_data_samples_canonicalizations, construct_plot_training_augmented_samples, plot_training_samples
 
 # os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.45"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.2"
 
 
-import jax.numpy as jnp
-import jax.random as random
-import numpy as np
-from jax.config import config
-
 import ciclo
 import flax
 import jax
+import jax.numpy as jnp
+import jax.random as random
 import matplotlib.pyplot as plt
-import seaborn as sns
 from absl import app, flags, logging
 from clu import deterministic_data, parameter_overview
-from flax.training import checkpoints
+from jax.config import config
 from ml_collections import config_flags
+from orbax.checkpoint import (
+    Checkpointer,
+    CheckpointManager,
+    JsonCheckpointHandler,
+    PyTreeCheckpointHandler,
+)
 
 import wandb
-
-from src.utils.input import get_data
 from src.models.proto_gen_model_separated import (
     TransformationInferenceNet,
-    make_canonicalizer_train_and_eval,
     create_canonicalizer_state,
+    make_canonicalizer_train_and_eval,
 )
+from src.models.utils import reset_metrics
+from src.transformations import transform_image
 from src.utils.datasets.augmented_dsprites import (
     plot_prototypes_by_shape,
     visualise_latent_distribution_from_config,
 )
-from src.models.utils import reset_metrics
-from src.transformations import transform_image
+from src.utils.input import get_data
+from src.utils.logging import get_and_make_datebased_output_directory
+from src.utils.proto_plots import (
+    construct_plot_augmented_data_samples_canonicalizations,
+    construct_plot_data_samples_canonicalizations,
+    construct_plot_training_augmented_samples,
+    plot_proto_model_training_metrics,
+    plot_training_samples,
+)
 from src.utils.training import custom_wandb_logger
-from src.utils.proto_plots import plot_proto_model_training_metrics
 
 flax.config.update("flax_use_orbax_checkpointing", True)
 logging.set_verbosity(logging.INFO)
@@ -69,6 +73,14 @@ def main(_):
         group="train-canonicalizer",
     ) as run:
         config = FLAGS.config
+        # --- Make directories for saving ckeckpoints/logs ---
+        output_dir = config.get(
+            "output_dir",
+            get_and_make_datebased_output_directory(),
+        )
+        checkpoint_dir = output_dir / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
         # Log the config:
         run.config.update(config.to_dict())
         rng = random.PRNGKey(config.seed)
@@ -91,7 +103,9 @@ def main(_):
         logging.info("Initialise the model")
         variables = canon_model.init(
             {"params": canon_init_rng, "sample": canon_init_rng},
-            jnp.empty((64, 64, 1)) if "dsprites" in config.dataset else jnp.empty((28, 28, 1)),
+            jnp.empty((64, 64, 1))
+            if "dsprites" in config.dataset
+            else jnp.empty((28, 28, 1)),
             train=False,
         )
 
@@ -114,14 +128,22 @@ def main(_):
             xhat = transform_image(x, -η, order=config.interpolation_order)
             return xhat
 
-        plot_data_samples_canonicalizations = construct_plot_data_samples_canonicalizations(get_prototype_fn=get_prototype)
+        plot_data_samples_canonicalizations = (
+            construct_plot_data_samples_canonicalizations(
+                get_prototype_fn=get_prototype
+            )
+        )
 
         def plot_and_log_data_samples_canonicalizations(state, batch):
             fig = plot_data_samples_canonicalizations(state, batch)
             wandb.log({"canonicalizations": wandb.Image(fig)}, step=state.step)
             plt.close(fig)
 
-        plot_augmented_data_samples_canonicalizations = construct_plot_augmented_data_samples_canonicalizations(get_prototype_fn=get_prototype, config=config)
+        plot_augmented_data_samples_canonicalizations = (
+            construct_plot_augmented_data_samples_canonicalizations(
+                get_prototype_fn=get_prototype, config=config
+            )
+        )
 
         def plot_and_log_data_augmented_samples_canonicalizations(state, batch):
             fig = plot_augmented_data_samples_canonicalizations(state, batch)
@@ -130,7 +152,9 @@ def main(_):
             )
             plt.close(fig)
 
-        plot_training_augmented_samples = construct_plot_training_augmented_samples(config=config)
+        plot_training_augmented_samples = construct_plot_training_augmented_samples(
+            config=config
+        )
 
         def plot_and_log_training_augmented_samples(state, batch):
             fig = plot_training_augmented_samples(state, batch)
@@ -163,12 +187,24 @@ def main(_):
             ],
             stop=total_steps + 1,
         )
+        # --- Save the model ---
+        handlers = {
+            "state": Checkpointer(PyTreeCheckpointHandler()),
+            "config": Checkpointer(JsonCheckpointHandler()),
+        }
+        manager = CheckpointManager(checkpoint_dir, checkpointers=handlers)
+        manager.save(
+            canon_final_state.step,
+            {"state": canon_final_state, "config": config.to_dict()},
+        )
 
         # --- Log reconstructions for eval: ---
         def canon_function(x, rng):
-            η = canon_model.apply({"params": canon_final_state.params}, x, train=False).sample(seed=rng)
+            η = canon_model.apply(
+                {"params": canon_final_state.params}, x, train=False
+            ).sample(seed=rng)
             return η
-        
+
         if config.dataset == "aug_dsprites":
             it = deterministic_data.start_input_pipeline(val_ds)
             batch = next(it)
@@ -179,6 +215,7 @@ def main(_):
         # --- Log final metrics as an image: ---
         fig = plot_proto_model_training_metrics(history)
         run.log({"run_metrics_summary": wandb.Image(fig)})
+        fig.savefig(output_dir / "run_metrics_summary.pdf", bbox_inches="tight")
 
 
 if __name__ == "__main__":
