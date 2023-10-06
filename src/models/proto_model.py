@@ -47,7 +47,7 @@ class TransformationInferenceNet(nn.Module):
         self.event_shape = self.bounds_array.shape
 
     @nn.compact
-    def __call__(self, x, train: bool = False):
+    def __call__(self, x, train: bool = False) -> distrax.Transformed:
         match self.model_type:
             case "mlp":
                 h = x.flatten()

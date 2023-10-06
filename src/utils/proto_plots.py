@@ -1,7 +1,7 @@
 """
 Plotting functions and utilities for logging training progress of a canonicalizer (prototype inference) model.
 """
-from typing import Callable, Protocol
+from typing import Protocol
 import distrax
 import jax
 import jax.numpy as jnp
@@ -13,7 +13,7 @@ import math
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from transformations import transform_image
+from src.transformations import transform_image
 
 
 class GetPrototypeFn(Protocol):
@@ -166,7 +166,7 @@ def construct_plot_augmented_data_samples_canonicalizations(get_prototype_fn: Ge
     return plot_augmented_data_samples_canonicalizations
 
 
-def construct_plot_training_augmented_samples(config, n_images: int):
+def construct_plot_training_augmented_samples(config, n_images: int = 49):
     aug_image = get_aug_image_fn(config)
 
     nrows = math.ceil(math.sqrt(n_images))

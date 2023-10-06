@@ -1,6 +1,5 @@
 import os
 
-
 # os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.45"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.2"
 
@@ -23,7 +22,7 @@ from orbax.checkpoint import (
 )
 
 import wandb
-from src.models.proto_gen_model_separated import (
+from src.models.proto_model import (
     TransformationInferenceNet,
     create_canonicalizer_state,
     make_canonicalizer_train_and_eval,
@@ -78,6 +77,7 @@ def main(_):
             "output_dir",
             get_and_make_datebased_output_directory(),
         )
+        logging.info(f"Saving to:\n{output_dir}")
         checkpoint_dir = output_dir / "checkpoints"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
@@ -124,7 +124,7 @@ def main(_):
         @jax.jit
         def get_prototype(x, rng, params):
             p_η = canon_model.apply({"params": params}, x, train=False)
-            η = p_η.sample(seed=rng)
+            η = p_η.sample(seed=rng)  # type: ignore
             xhat = transform_image(x, -η, order=config.interpolation_order)
             return xhat
 
@@ -160,6 +160,11 @@ def main(_):
             fig = plot_training_augmented_samples(state, batch)
             wandb.log({"training_samples_augmented": wandb.Image(fig)}, step=state.step)
             plt.close(fig)
+        
+        def plot_and_log_training_samples(state, batch):
+            fig = plot_training_samples(state, batch)
+            wandb.log({"training_samples": wandb.Image(fig)}, step=state.step)
+            plt.close(fig)
 
         # --- Training ---
         total_steps = config.inf_steps
@@ -170,12 +175,12 @@ def main(_):
                 ciclo.on_train_step: [train_step_canon],
                 ciclo.on_reset_step: reset_metrics,
                 ciclo.on_test_step: eval_step_canon,
-                ciclo.every(1): custom_wandb_logger(run=run),
+                ciclo.every(1): custom_wandb_logger(run=run),  # type:ignore
                 ciclo.every(int(total_steps * config.eval_freq)): [
                     plot_and_log_data_samples_canonicalizations,
                     plot_and_log_data_augmented_samples_canonicalizations,
                     plot_and_log_training_augmented_samples,
-                    plot_training_samples,
+                    plot_and_log_training_samples,
                 ],
             },
             test_dataset=lambda: deterministic_data.start_input_pipeline(val_ds),
@@ -202,7 +207,7 @@ def main(_):
         def canon_function(x, rng):
             η = canon_model.apply(
                 {"params": canon_final_state.params}, x, train=False
-            ).sample(seed=rng)
+            ).sample(seed=rng)  # type: ignore
             return η
 
         if config.dataset == "aug_dsprites":

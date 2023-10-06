@@ -13,7 +13,7 @@ import scipy.stats
 import tensorflow as tf
 from jax import random
 
-from transformations.affine import gen_affine_matrix_no_shear, transform_image_with_affine_matrix
+from src.transformations.affine import gen_affine_matrix_no_shear, transform_image_with_affine_matrix
 
 
 # --- Schema classes for the configuration of the augmented DSprites dataset:

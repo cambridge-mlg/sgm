@@ -55,7 +55,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.gen_warmup_steps = 1_000
 
     config.train_split = f"train[{num_val}:{end_index}]"
-    config.pp_train = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image"])'
+    config.pp_train = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image", "label"])'
     config.val_split = f"train[:{num_val}]"
     config.pp_eval = f'value_range(-1, 1)|random_rotate(-{angle}, {angle}, fill_value=-1)|keep(["image", "label"])'
 
