@@ -210,6 +210,18 @@ class PrototypicalGenerativeModel(nn.Module):
         p_H_x_hat = self.generative_net(x_hat, train=train)
         return p_H_x_hat.log_prob(η)
 
+    def resample(self, x, train: bool = False):
+        q_H_x = self.inference_net(x, train=train)
+        η = q_H_x.sample(seed=self.make_rng("sample"))
+
+        x_hat = transform_image(x, -η)
+
+        p_H_x_hat = self.generative_net(x_hat, train=train)
+        η_new = p_H_x_hat.sample(seed=self.make_rng("sample"))
+
+        x_recon = transform_image(x, -η + η_new)
+        return x_recon
+
 
 def make_pgm_train_and_eval(model, config):
     def loss_fn(
