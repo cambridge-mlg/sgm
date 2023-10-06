@@ -24,12 +24,12 @@ def get_config(params) -> config_dict.ConfigDict:
     )
     config.n_samples = 5
     config.eval_freq = 0.01
-    config.difficulty_weighted_inf_loss = False
+    config.difficulty_weighted_inf_loss = True
     config.interpolation_order = 3
     config.translate_last = True
     config.symmetrised_samples_in_loss = False
     config.x_mse_loss_mult = 1.0
-    config.invertibility_loss_mult = 1.e-2
+    config.invertibility_loss_mult = 0.0
 
     config.inf_steps = 10_000
     config.inf_lr = 3e-4
@@ -42,6 +42,9 @@ def get_config(params) -> config_dict.ConfigDict:
     config.η_loss_decay_end = 0.0
     config.η_loss_decay_start = 0.0
     config.augment_warmup_end = 0.0  # No augmentation warmup
+    # Linearly increase MAE loss mult. from 0 to 1 (pairwise diffs between log-likelihoods for augmented samples)
+    config.mae_loss_mult_initial = 0.0
+    config.mae_loss_mult_final = 1.0
     config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
 
@@ -62,6 +65,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.inference.bounds = config.augment_bounds
     config.model.inference.squash_to_bounds = False
     config.model.inference.hidden_dims = (1024, 512, 256, 128)
+
     config.model.generative = config_dict.ConfigDict()
     config.model.generative.bounds = config.augment_bounds
     config.model.generative.offset = config.augment_offset
@@ -70,5 +74,6 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.generative.num_bins = 4
     config.model.generative.conditioner = config_dict.ConfigDict()
     config.model.generative.conditioner.hidden_dims = (256, 256)
+    config.model.generative.squash_to_bounds = config.model.inference.squash_to_bounds
 
     return config

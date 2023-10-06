@@ -21,7 +21,7 @@ from src.models.convnext import ConvNeXt, get_convnext_constructor
 
 from src.models.utils import clipped_adamw, huber_loss
 from src.utils.types import KwArgs
-from src.transformations.affine import transform_image_with_affine_matrix, gen_affine_matrix
+from src.transformations.affine import transform_image_with_affine_matrix, gen_affine_matrix_no_shear
 
 
 class TransformationInferenceNet(nn.Module):
@@ -88,9 +88,7 @@ class TransformationInferenceNet(nn.Module):
                     len(self.event_shape),
                 ),
             ]
-            + ([
-                distrax.Block(distrax.Tanh(), len(self.event_shape)),
-            ] if self.squash_to_bounds else [])
+            + ([distrax.Block(distrax.Tanh(), len(self.event_shape))] if self.squash_to_bounds else [])
         )
 
         return distrax.Transformed(base, bijector)
@@ -100,8 +98,8 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
     transform_image_fn = jax.jit(
         functools.partial(transform_image_with_affine_matrix, order=config.interpolation_order, fill_value=-1., fill_mode="constant")
     )
-    gen_affine_augment = gen_affine_matrix
-    gen_affine_model = gen_affine_matrix
+    gen_affine_augment = gen_affine_matrix_no_shear
+    gen_affine_model = gen_affine_matrix_no_shear
 
     def invertibility_loss_fn(x_, affine_mat, affine_mat_inv):
         transformed_x = transform_image_fn(
@@ -548,49 +546,13 @@ class CanonincalizerMetrics(metrics.Collection):
         return self.merge(updates)
 
 
-@flax.struct.dataclass
-class AugmentGenerativeMetrics(metrics.Collection):
-    loss: metrics.Average.from_output("loss")
-    p_η_x_hat: metrics.Average.from_output("p_η_x_hat")
-
-    def update(self, **kwargs) -> "AugmentGenerativeMetrics":
-        updates = self.single_from_model_output(**kwargs)
-        return self.merge(updates)
-
-
-class TrainStateWithMetrics(train_state.TrainState):
-    metrics: CanonincalizerMetrics | AugmentGenerativeMetrics
-    rng: PRNGKey
-
-    def apply_gradients(self, *, grads, **kwargs):
-        updates, new_opt_state = self.tx.update(grads, self.opt_state, self.params)
-        new_params = optax.apply_updates(self.params, updates)
-
-        return self.replace(
-            step=self.step + 1,
-            params=new_params,
-            opt_state=new_opt_state,
-            **kwargs,
-        )
-
-    @classmethod
-    def create(cls, *, apply_fn, params, tx, **kwargs):
-        opt_state = tx.init(params)
-        return cls(
-            step=0,
-            apply_fn=apply_fn,
-            params=params,
-            tx=tx,
-            opt_state=opt_state,
-            **kwargs,
-        )
-
-class CanonicalizerTrainState(TrainStateWithMetrics):
+class CanonicalizerTrainState(train_state.TrainState):
     metrics: CanonincalizerMetrics
     augment_bounds_mult: float
     augment_bounds_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     η_loss_mult: float
     η_loss_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
+    rng: PRNGKey
 
     def apply_gradients(self, *, grads, **kwargs):
         updates, new_opt_state = self.tx.update(grads, self.opt_state, self.params)

@@ -61,6 +61,7 @@ class TransformationGenerativeNet(nn.Module):
     offset: Optional[Sequence[int]] = None
     conditioner: Optional[KwArgs] = None
     ε: float = 1e-6
+    squash_to_bounds: bool = False
 
     def setup(self) -> None:
         self.bounds_array = jnp.array(self.bounds)
@@ -192,8 +193,8 @@ def make_augment_generative_train_and_eval(
             return log_p_η_x_hat
 
         log_p_η_x_hat = jax.vmap(per_sample_loss_fn)(
-            random.split(rng_local, config.num_samples)
-        )  # (num_samples,)
+            random.split(rng_local, config.n_samples)
+        )  # (n_samples,)
 
         # Regularise p(η|x_hat) densities against small pertubations on x_hat,
         # by minimizing the difference between desitities for slighty different
@@ -242,6 +243,7 @@ def make_augment_generative_train_and_eval(
             "lr_gen",
             state.opt_state.inner_states["generative"][0].hyperparams["learning_rate"],
         )
+        logs.add_entry("schedules", "mae_loss_mult", state.mae_loss_mult)
         logs.add_entry("gradients", "grad_norm", optax.global_norm(grads))
 
         return logs, state.replace(metrics=metrics)
@@ -274,7 +276,7 @@ def make_augment_generative_train_and_eval(
 class AugmentGenerativeMetrics(metrics.Collection):
     loss: metrics.Average.from_output("loss")
     mae: metrics.Average.from_output("mae")
-    p_η_x_hat: metrics.Average.from_output("p_η_x_hat")
+    log_p_η_x_hat: metrics.Average.from_output("log_p_η_x_hat")
 
     def update(self, **kwargs) -> "AugmentGenerativeMetrics":
         updates = self.single_from_model_output(**kwargs)
