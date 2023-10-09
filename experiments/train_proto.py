@@ -69,7 +69,6 @@ def main(_):
         project=FLAGS.wandb_project,
         entity=FLAGS.wandb_entity,
         save_code=FLAGS.wandb_save_code,
-        group="train-canonicalizer",
     ) as run:
         config = FLAGS.config
         # --- Make directories for saving ckeckpoints/logs ---
