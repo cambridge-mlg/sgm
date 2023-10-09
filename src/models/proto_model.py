@@ -134,7 +134,7 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
                     x ------- -η_x -----> x_hat
                     ∧                       |
                     |                       v
-                    x                    mse
+                    x                     mse
                     |                       ∧
                     ∨                       |
                 x_rand --- -η_x_rand ---> x_hat'.
