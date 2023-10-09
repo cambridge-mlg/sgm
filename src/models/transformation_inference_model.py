@@ -628,6 +628,6 @@ def create_transformation_inference_state(params, rng, config):
                 optax.constant_schedule(0.0),
             ],
             boundaries=[config.inf_steps * config.blur_sigma_decay_end],
-        )
+        ),
         rng=rng,
     )

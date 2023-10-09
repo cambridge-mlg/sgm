@@ -13,7 +13,7 @@ def _get_log_gaussian_kernel(sigma: float, filter_size):
 def gaussian_filter2d(
     image,
     filter_shape: tuple[int, int] = (3, 3),
-    sigma: tuple[float, float] | float = 1.0,
+    sigma: float = 1.0,
     constant_values: float = -1.0,
 ):
     """Perform Gaussian blur on image(s).
@@ -25,7 +25,7 @@ def gaussian_filter2d(
       filter_shape: `tuple` of 2 integers, specifying
         the height and width of the 2-D gaussian filter. Can be a single
         integer to specify the same value for all spatial dimensions.
-      sigma: A `float` or `tuple`/`list` of 2 floats, specifying
+      sigma: A `float`  specifying
         the standard deviation in x and y direction the 2-D gaussian filter.
         Can be a single float to specify the same value for all spatial
         dimensions. This is relative to the pixel-spacing of the image, i.e. if the image width
@@ -33,16 +33,6 @@ def gaussian_filter2d(
         of length equal to half the image width.
     """
     chex.assert_rank(image, 3)
-
-    sigma_tuple: tuple[float, float]
-    if isinstance(sigma, tuple):
-        if len(sigma) != 2:
-            raise ValueError("sigma should be a float or a tuple/list of 2 floats")
-        sigma_tuple = sigma
-    elif isinstance(sigma, float):
-        sigma_tuple = (sigma, sigma)
-    else:
-        raise TypeError
 
     if any(filter_size % 2 == 0 for filter_size in filter_shape):
         raise ValueError(
@@ -53,13 +43,10 @@ def gaussian_filter2d(
     if any(filter_size <= 0 for filter_size in filter_shape):
         raise ValueError("filter_shape should be positive integers")
 
-    if any(s < 0 for s in sigma_tuple):
-        raise ValueError("sigma should be greater than or equal to 0.")
-
-    log_gaussian_kernel_x = _get_log_gaussian_kernel(sigma_tuple[1], filter_shape[1])
+    log_gaussian_kernel_x = _get_log_gaussian_kernel(sigma, filter_shape[1])
     log_gaussian_kernel_x = log_gaussian_kernel_x[jnp.newaxis, :]
 
-    log_gaussian_kernel_y = _get_log_gaussian_kernel(sigma_tuple[0], filter_shape[0])
+    log_gaussian_kernel_y = _get_log_gaussian_kernel(sigma, filter_shape[0])
     log_gaussian_kernel_y = log_gaussian_kernel_y[:, jnp.newaxis]
 
     log_gaussian_kernel = log_gaussian_kernel_x + log_gaussian_kernel_y
