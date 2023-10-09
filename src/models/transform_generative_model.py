@@ -240,7 +240,7 @@ def make_transformation_generative_train_and_eval(
         logs.add_entry(
             "schedules",
             "lr_gen",
-            state.opt_state.inner_states["generative"][0].hyperparams["learning_rate"],
+            state.opt_state[0].hyperparams["learning_rate"],
         )
         logs.add_entry("schedules", "mae_loss_mult", state.mae_loss_mult)
         logs.add_entry("gradients", "grad_norm", optax.global_norm(grads))
@@ -316,26 +316,16 @@ class TransformationGenerativeTrainState(train_state.TrainState):
 
 
 def create_transformation_generative_optimizer(params, config):
-    partition_optimizers = {
-        "generative": optax.inject_hyperparams(clipped_adamw)(
-            optax.warmup_cosine_decay_schedule(
-                config.gen_init_lr_mult * config.gen_lr,
-                config.gen_lr,
-                config.gen_warmup_steps,
-                config.gen_steps,
-                config.gen_lr * config.gen_final_lr_mult,
-            ),
-            2.0,
+    return optax.inject_hyperparams(clipped_adamw)(
+        optax.warmup_cosine_decay_schedule(
+            config.gen_init_lr_mult * config.gen_lr,
+            config.gen_lr,
+            config.gen_warmup_steps,
+            config.gen_steps,
+            config.gen_lr * config.gen_final_lr_mult,
         ),
-    }
-
-    def get_partition(path, value):
-        return "generative"
-
-    param_partitions = flax.core.freeze(
-        traverse_util.path_aware_map(get_partition, params)
+        2.0,
     )
-    return optax.multi_transform(partition_optimizers, param_partitions)
 
 
 def create_transformation_generative_state(params, rng, config):
