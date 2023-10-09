@@ -240,7 +240,7 @@ def make_transformation_generative_train_and_eval(
         logs.add_entry(
             "schedules",
             "lr_gen",
-            state.opt_state[0].hyperparams["learning_rate"],
+            state.opt_state.hyperparams["learning_rate"],
         )
         logs.add_entry("schedules", "mae_loss_mult", state.mae_loss_mult)
         logs.add_entry("gradients", "grad_norm", optax.global_norm(grads))
