@@ -6,7 +6,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
 
     params = params.split(",")
-    config.angle = int(params[0])
+    config.angle = float(params[0])
     config.num_val = 10000
     if len(params) > 1:
         config.num_trn = int(params[1])
@@ -36,7 +36,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.inf_lr = 3e-4
     config.inf_init_lr_mult = 1 / 3
     config.inf_final_lr_mult = 1 / 90
-    config.inf_warmup_steps = 1_000
+    config.inf_warmup_steps = config.inf_steps // 10
     config.σ_lr = 1e-2
     # Schedule of the loss in the η space (rather than the x_mse space) for the "inference" model
     config.η_loss_mult_peak = 0.0  # No η loss
@@ -59,7 +59,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.gen_lr = 2.7e-3
     config.gen_init_lr_mult = 1 / 9
     config.gen_final_lr_mult = 1 / 2700
-    config.gen_warmup_steps = 1_000
+    config.gen_warmup_steps = config.gen_steps // 10
 
     config.train_split = f"train[{config.num_val}:{end_index}]"
     config.pp_train = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'
