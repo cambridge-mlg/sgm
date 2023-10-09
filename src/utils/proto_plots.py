@@ -233,7 +233,7 @@ def plot_training_samples(state, batch):
 
 def plot_proto_model_training_metrics(history):
     # Plot the training history
-    colors = sns.color_palette("husl", 4)
+    colors = sns.color_palette("husl", 3)
     steps, loss, x_mse, lr_inf, lr_σ = history.collect(
         "steps",
         "loss",
@@ -282,21 +282,22 @@ def plot_proto_model_training_metrics(history):
     # Schedule axis:
     host = axs[-1]
     par1 = host.twinx()
-    # par2 = host.twinx()
 
-    p1, = host.plot(steps, lr_inf, "--", label=f"inf   {lr_inf[-1]:.4f}", color=colors[0])
-    p2, = host.plot(steps, lr_σ, "--", label=f"σ    {lr_σ[-1]:.4f}", color=colors[1])
+    p1, = host.plot(steps, lr_inf, "-", label=f"inf   {lr_inf[-1]:.4f}", color=colors[0])
+    p2, = host.plot(steps, lr_σ, "--", label=f"σ    {lr_σ[-1]:.4f}", color=colors[0])
     p3, = par1.plot(
         steps,
         augment_bounds_mult,
+        "-",
         label=f"augment_bounds_mult {augment_bounds_mult[-1]:.4f}",
-        color=colors[2]
+        color=colors[1]
     )
     p4, = par1.plot(
         steps,
         blur_sigma,
+        "--"
         label=f"blur sigma {blur_sigma[-1]:.4f}",
-        color=colors[3]
+        color=colors[1]
     )
     lines = [p1, p2, p3, p4]
     host.legend(lines, [l.get_label() for l in lines])
@@ -313,7 +314,6 @@ def plot_proto_model_training_metrics(history):
     tkw = dict(size=4, width=1.5)
     host.tick_params(axis='y', colors=p1.get_color(), **tkw)
     par1.tick_params(axis='y', colors=p3.get_color(), **tkw)
-    # par2.tick_params(axis='y', colors=p3.get_color(), **tkw)
 
     axs[-1].set_xlim(min(steps), max(steps))
     axs[-1].set_xlabel("Steps")
