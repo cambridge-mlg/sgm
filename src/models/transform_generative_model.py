@@ -154,7 +154,6 @@ def make_transformation_generative_train_and_eval(
     ):
         rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
 
-        # TODO: is the MAE loss (and hence the below fn and a per-sample loss) strictly necessary?
         def get_xhat_on_random_augmentation(x, rng):
             """
             Rather than obtaining the prototype of `x` directly by passing it into the canonicalization
