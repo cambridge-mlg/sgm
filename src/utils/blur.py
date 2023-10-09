@@ -6,7 +6,7 @@ import chex
 def _get_log_gaussian_kernel(sigma: float, filter_size):
     """Compute 1D Gaussian kernel."""
     x = jnp.arange(filter_size, dtype=jnp.float32) - ((filter_size - 1) / 2)
-    y = -x**2 / (2.0 * (sigma**2))
+    y = -(x**2) / (2.0 * (sigma**2))
     return y
 
 
@@ -14,7 +14,7 @@ def gaussian_filter2d(
     image,
     filter_shape: tuple[int, int] = (3, 3),
     sigma: tuple[float, float] | float = 1.0,
-    constant_values: float = -1.,
+    constant_values: float = -1.0,
 ):
     """Perform Gaussian blur on image(s).
 
@@ -43,9 +43,12 @@ def gaussian_filter2d(
         sigma_tuple = (sigma, sigma)
     else:
         raise TypeError
-    
-    # if any(filter_size % 2 == 0 for filter_size in filter_shape):
-    #     raise ValueError("filter_shape should be odd integers, otherwise the filter will not have a center to convolve on, and the output image will be skewed")
+
+    if any(filter_size % 2 == 0 for filter_size in filter_shape):
+        raise ValueError(
+            "filter_shape should be odd integers, otherwise the filter will not have "
+            "a center to convolve on, and the output image will be skewed."
+        )
 
     if any(filter_size <= 0 for filter_size in filter_shape):
         raise ValueError("filter_shape should be positive integers")
@@ -68,11 +71,15 @@ def gaussian_filter2d(
     # Convolve the image with the gaussian kernel:
     out = jax.vmap(
         lambda img_channel: jax.lax.conv(
-            jnp.transpose(img_channel[None, ..., None], [0, 3, 1, 2]),  # lhs = NCHW image tensor
+            jnp.transpose(
+                img_channel[None, ..., None], [0, 3, 1, 2]
+            ),  # lhs = NCHW image tensor
             gaussian_kernel,  # rhs = OIHW conv kernel tensor
             (1, 1),  # window strides
             "SAME",  # padding mode
-        ).squeeze(0).squeeze(0),
+        )
+        .squeeze(0)
+        .squeeze(0),
         in_axes=2,
         out_axes=-1,
     )(image - constant_values)
