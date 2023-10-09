@@ -1,9 +1,9 @@
 """Affine transformations of images."""
+from chex import Array, assert_rank, assert_shape
 import functools
-from jax import numpy as jnp
 import jax
+from jax import numpy as jnp
 from jax.scipy.linalg import expm
-from chex import Array, assert_shape, assert_rank
 
 from src.transformations.map_coords import map_coordinates
 
@@ -55,6 +55,9 @@ def gen_affine_matrix(
 
     Gs = create_generator_matrices()
 
+    assert_rank(Gs, 3)
+    assert_shape(Gs, (6, 3, 3))
+
     T = expm((η[:, jnp.newaxis, jnp.newaxis] * Gs).sum(axis=0))
 
     return T
@@ -99,8 +102,13 @@ def transform_image_with_affine_matrix(
 
     Args:
         image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax/TF image format.
-
         T: a 3x3 affine transformation Array.
+        fill_mode: How to handle points outside the boundaries of the input (e.g. when a transformation of the grid
+            goes out of bounds). See `jax.scipy.ndimage.map_coordinates` for more info.
+        fill_value: The default value to use for points outside the boundaries of the input. We set it to -1.0
+            as we assume that the input image is normalized to the range [-1, 1].
+        order: Interpolation order (1 - linear, 3 - bicubic)
+
 
     Returns:
         A transformed image of same shape as the input.
@@ -119,22 +127,11 @@ def transform_image_with_affine_matrix(
     # (x_s, y_s) = A x (x_t, y_t, 1)^T
     transformed_pts = A @ input_pts
     transformed_pts = (transformed_pts + 1) / 2
+    # [width - 1] and [height - 1] because that's the total width/height of the image
+    # when measured between the centers of the pixels.
     transformed_pts = transformed_pts * jnp.array([[width - 1], [height - 1]])
 
     # Transform the image by moving the pixels to their new locations
-    output = jnp.stack(
-        [
-            map_coordinates(
-                image[:, :, i],
-                transformed_pts[::-1],
-                order=order,
-                mode=fill_mode,
-                cval=fill_value,
-            )
-            for i in range(num_channels)
-        ],
-        axis=-1,
-    )
     output = jax.vmap(
         functools.partial(
             map_coordinates,
@@ -176,6 +173,8 @@ def affine_transform_image(
         * η_3 is the scaling factor in x.
         * η_4 is the scaling factor in y.
         * η_5 controls shearing in x and y.
+        fill_value: The default value to use for points outside the boundaries of the input. We set it to -1.0
+            as we assume that the input image is normalized to the range [-1, 1].
 
     Returns:
         A transformed image of same shape as the input.
