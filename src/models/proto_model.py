@@ -94,7 +94,7 @@ class TransformationInferenceNet(nn.Module):
         return distrax.Transformed(base, bijector)
 
 
-def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet):
+def make_transformation_inference_train_and_eval(config, model: TransformationInferenceNet):
     transform_image_fn = jax.jit(
         functools.partial(transform_image_with_affine_matrix, order=config.interpolation_order, fill_value=-1., fill_mode="constant")
     )
@@ -424,11 +424,11 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
         def mse_same_label_examples(xs, labels, mask, rng):
             """
             Compute MSE between a pair of images transformed "into each other" through 
-            the canonicalization model, where the pair of images is chosen to have the same label
-            (and hence, for some datasets, likely a similar canonicalized form).
+            the prototype model, where the pair of images is chosen to have the same label
+            (and hence, for some datasets, likely a similar prototype).
 
             The "transforming into each other" happens by first transforming the original image
-            into the canonical form, and then transforming the canonical form into the paired image
+            into the prototype, and then transforming the prototype into the paired image
             by using (inverse of) the canonicalization transform of the paired image.
             """
             sample_rng, pair_match_rng = random.split(rng, 2)
@@ -499,7 +499,7 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
     return train_step, eval_step
 
 
-def create_canonicalizer_optimizer(params, config):
+def create_transformation_inference_optimizer(params, config):
     partition_optimizers = {
         "inference": optax.inject_hyperparams(clipped_adamw)(
             optax.warmup_cosine_decay_schedule(
@@ -537,19 +537,19 @@ def create_canonicalizer_optimizer(params, config):
 
 
 @flax.struct.dataclass
-class CanonincalizerMetrics(metrics.Collection):
+class TransformationInferenceMetrics(metrics.Collection):
     loss: metrics.Average.from_output("loss")
     x_mse: metrics.Average.from_output("x_mse")
     η_recon_loss: metrics.Average.from_output("η_recon_loss")
     invertibility_loss: metrics.Average.from_output("invertibility_loss")
 
-    def update(self, **kwargs) -> "CanonincalizerMetrics":
+    def update(self, **kwargs) -> "TransformationInferenceMetrics":
         updates = self.single_from_model_output(**kwargs)
         return self.merge(updates)
 
 
-class CanonicalizerTrainState(train_state.TrainState):
-    metrics: CanonincalizerMetrics
+class TransformationInferenceTrainState(train_state.TrainState):
+    metrics: TransformationInferenceMetrics
     augment_bounds_mult: float
     augment_bounds_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     η_loss_mult: float
@@ -586,13 +586,13 @@ class CanonicalizerTrainState(train_state.TrainState):
         )
 
 
-def create_canonicalizer_state(params, rng, config):
-    opt = create_canonicalizer_optimizer(params, config)
-    return CanonicalizerTrainState.create(
+def create_transformation_inference_state(params, rng, config):
+    opt = create_transformation_inference_optimizer(params, config)
+    return TransformationInferenceTrainState.create(
         apply_fn=TransformationInferenceNet.apply,
         params=params,
         tx=opt,
-        metrics=CanonincalizerMetrics.empty(),
+        metrics=TransformationInferenceMetrics.empty(),
         augment_bounds_mult_schedule=optax.join_schedules(
             [
                 optax.linear_schedule(init_value=0.0, end_value=1.0, transition_steps=config.inf_steps *config.augment_warmup_end),
