@@ -129,8 +129,13 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
         rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
 
         if train and config.blur_sigma_init > 0.0:
-            # Possibly blur the sample:
-            x = gaussian_filter2d(x, sigma=state.blur_sigma, filter_shape=config.blur_filter_shape)
+            # Possibly blur the sample (lax.select useful for defining schedules that go to 0.):
+            x = jax.lax.cond(
+                state.blur_sigma > 1e-5,  # A small value to avoid numerical issues with a very narrow kernel
+                lambda im: gaussian_filter2d(im, sigma=state.blur_sigma, filter_shape=config.blur_filter_shape),
+                lambda im: im,
+                x,
+            )
 
         def nonsymmetrised_per_sample_loss(rng):
             """
