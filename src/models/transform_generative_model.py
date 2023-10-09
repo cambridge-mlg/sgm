@@ -142,7 +142,7 @@ class TransformationGenerativeNet(nn.Module):
 def make_transformation_generative_train_and_eval(
     config,
     model: TransformationGenerativeNet,
-    canon_function: Callable[[Array, Array], Array],
+    prototype_function: Callable[[Array, Array], Array],
 ):
 
     def loss_fn(
@@ -173,7 +173,7 @@ def make_transformation_generative_train_and_eval(
 
             x_rand = transform_image_with_affine_matrix(x, η_rand_aff_mat)
             
-            η_rand_canon = canon_function(x_rand, canon_fn_rng)
+            η_rand_canon = prototype_function(x_rand, canon_fn_rng)
             η_rand_canon_aff_mat = gen_affine_matrix_no_shear(η_rand_canon)
             η_rand_canon_aff_mat_inv = jnp.linalg.inv(η_rand_canon_aff_mat)
             return transform_image_with_affine_matrix(
@@ -183,7 +183,7 @@ def make_transformation_generative_train_and_eval(
         def per_sample_loss_fn(rng):
             η_rng, x_hat_rng = random.split(rng)
 
-            η_x = canon_function(x, η_rng)
+            η_x = prototype_function(x, η_rng)
 
             x_hat = get_xhat_on_random_augmentation(x, x_hat_rng)
 
