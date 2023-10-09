@@ -98,6 +98,8 @@ def make_canonicalizer_train_and_eval(config, model: TransformationInferenceNet)
     transform_image_fn = jax.jit(
         functools.partial(transform_image_with_affine_matrix, order=config.interpolation_order, fill_value=-1., fill_mode="constant")
     )
+    # Currently `gen_affine_augment` and `gen_affine_model` are the same, but it might make sense for them
+    # to be different
     gen_affine_augment = gen_affine_matrix_no_shear
     gen_affine_model = gen_affine_matrix_no_shear
 
