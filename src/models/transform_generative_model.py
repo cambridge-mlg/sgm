@@ -156,13 +156,13 @@ def make_transformation_generative_train_and_eval(
 
         def get_xhat_on_random_augmentation(x, rng):
             """
-            Rather than obtaining the prototype of `x` directly by passing it into the canonicalization
+            Rather than obtaining the prototype of `x` directly by passing it into the prototype 
             function, augment it randomly and then pass it through to get the prototype.
 
             This is useful for training the generative model to be robust to imperfections in the 
             canonicalization function.
             """
-            sample_rng, canon_fn_rng = random.split(rng)
+            sample_rng, prototype_fn_rng = random.split(rng)
             Η_rand = distrax.Uniform(
                 # Separate model bounds and augment bounds
                 low=-jnp.array(config.augment_bounds) + jnp.array(config.augment_offset),
@@ -173,11 +173,11 @@ def make_transformation_generative_train_and_eval(
 
             x_rand = transform_image_with_affine_matrix(x, η_rand_aff_mat)
             
-            η_rand_canon = prototype_function(x_rand, canon_fn_rng)
-            η_rand_canon_aff_mat = gen_affine_matrix_no_shear(η_rand_canon)
-            η_rand_canon_aff_mat_inv = jnp.linalg.inv(η_rand_canon_aff_mat)
+            η_rand_proto = prototype_function(x_rand, prototype_fn_rng)
+            η_rand_proto_aff_mat = gen_affine_matrix_no_shear(η_rand_proto)
+            η_rand_proto_aff_mat_inv = jnp.linalg.inv(η_rand_proto_aff_mat)
             return transform_image_with_affine_matrix(
-                x, η_rand_canon_aff_mat_inv @ η_rand_aff_mat, order=config.interpolation_order
+                x, η_rand_proto_aff_mat_inv @ η_rand_aff_mat, order=config.interpolation_order
             )
 
         def per_sample_loss_fn(rng):

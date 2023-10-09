@@ -1,5 +1,5 @@
 """
-Plotting functions and utilities for logging training progress of a canonicalizer (prototype inference) model.
+Plotting functions and utilities for logging training progress of a transformation inference (prototype inference) model.
 """
 from typing import Protocol
 import distrax
@@ -70,7 +70,7 @@ def construct_plot_data_samples_canonicalizations(get_prototype_fn: GetPrototype
                     axes[i, 2 * j].imshow(images_to_plot[idx], **imshow_kwargs)
                     axes[i, 2 * j + 1].imshow(prototypes[idx], **imshow_kwargs)
             axes[0, 2 * j].set_title("Original")
-            axes[0, 2 * j + 1].set_title("Canonicalized")
+            axes[0, 2 * j + 1].set_title("Prototype")
         return fig
     return plot_data_samples_canonicalizations
 
@@ -158,7 +158,7 @@ def construct_plot_augmented_data_samples_canonicalizations(get_prototype_fn: Ge
                 axes[i, 0].imshow(images_to_plot[i, j], **imshow_kwargs)
                 axes[i, 1].imshow(prototypes[i, j], **imshow_kwargs)
             axes[0, 0].set_title("Original", fontsize=9)
-            axes[0, 1].set_title("Canon.", fontsize=9)
+            axes[0, 1].set_title("Proto.", fontsize=9)
             for ax in axes.ravel():
                 ax.axis("off")
         return fig

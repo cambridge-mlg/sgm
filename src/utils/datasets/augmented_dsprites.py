@@ -475,12 +475,12 @@ def visualise_latent_distribution_from_config(aug_dsprites_config: AugDspritesCo
     return fig, axes
 
 
-def plot_prototypes_by_shape(canon_function, batch):
+def plot_prototypes_by_shape(prototype_function, batch):
     import matplotlib.pyplot as plt
 
     rng = random.PRNGKey(0)
     def get_proto(x):
-        η = canon_function(x, rng)
+        η = prototype_function(x, rng)
         xhat = transform_image_with_affine_matrix(
             x, jnp.linalg.inv(gen_affine_matrix_no_shear(η)), order=3
         )

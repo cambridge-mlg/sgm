@@ -95,13 +95,13 @@ def main(_):
         train_ds, val_ds, _ = get_data(config, data_rng)
         logging.info("Finished constructing the dataset")
         # --- Network setup ---
-        canon_model = TransformationInferenceNet(**config.model.inference.to_dict())
+        proto_model = TransformationInferenceNet(**config.model.inference.to_dict())
 
-        canon_init_rng, init_rng = random.split(init_rng)
+        proto_init_rng, init_rng = random.split(init_rng)
 
         logging.info("Initialise the model")
-        variables = canon_model.init(
-            {"params": canon_init_rng, "sample": canon_init_rng},
+        variables = proto_model.init(
+            {"params": proto_init_rng, "sample": proto_init_rng},
             jnp.empty((64, 64, 1))
             if "dsprites" in config.dataset
             else jnp.empty((28, 28, 1)),
@@ -110,19 +110,19 @@ def main(_):
 
         parameter_overview.log_parameter_overview(variables)
 
-        canon_params = flax.core.freeze(variables["params"])
+        proto_params = flax.core.freeze(variables["params"])
 
-        canon_state_rng, state_rng = random.split(state_rng)
-        canon_state = create_transformation_inference_state(canon_params, canon_state_rng, config)
+        proto_state_rng, state_rng = random.split(state_rng)
+        proto_state = create_transformation_inference_state(proto_params, proto_state_rng, config)
 
-        train_step_canon, eval_step_canon = make_transformation_inference_train_and_eval(
-            config, canon_model
+        train_step_proto, eval_step_proto = make_transformation_inference_train_and_eval(
+            config, proto_model
         )
 
         # --- Logging visualisations ---: # TODO move this to src/
         @jax.jit
         def get_prototype(x, rng, params):
-            p_η = canon_model.apply({"params": params}, x, train=False)
+            p_η = proto_model.apply({"params": params}, x, train=False)
             η = p_η.sample(seed=rng)  # type: ignore
             xhat = transform_image(x, -η, order=config.interpolation_order)
             return xhat
@@ -135,7 +135,7 @@ def main(_):
 
         def plot_and_log_data_samples_canonicalizations(state, batch):
             fig = plot_data_samples_canonicalizations(state, batch)
-            wandb.log({"canonicalizations": wandb.Image(fig)}, step=state.step)
+            wandb.log({"prototypes": wandb.Image(fig)}, step=state.step)
             plt.close(fig)
 
         plot_augmented_data_samples_canonicalizations = (
@@ -147,7 +147,7 @@ def main(_):
         def plot_and_log_data_augmented_samples_canonicalizations(state, batch):
             fig = plot_augmented_data_samples_canonicalizations(state, batch)
             wandb.log(
-                {"augmented_canonicalizations": wandb.Image(fig)}, step=state.step
+                {"prototypes_on_augmented": wandb.Image(fig)}, step=state.step
             )
             plt.close(fig)
 
@@ -167,13 +167,13 @@ def main(_):
 
         # --- Training ---
         total_steps = config.inf_steps
-        canon_final_state, history, _ = ciclo.train_loop(
-            canon_state,
+        proto_final_state, history, _ = ciclo.train_loop(
+            proto_state,
             deterministic_data.start_input_pipeline(train_ds),
             {
-                ciclo.on_train_step: [train_step_canon],
+                ciclo.on_train_step: [train_step_proto],
                 ciclo.on_reset_step: reset_metrics,
-                ciclo.on_test_step: eval_step_canon,
+                ciclo.on_test_step: eval_step_proto,
                 ciclo.every(1): custom_wandb_logger(run=run),  # type:ignore
                 ciclo.every(int(total_steps * config.eval_freq)): [
                     plot_and_log_data_samples_canonicalizations,
@@ -198,14 +198,14 @@ def main(_):
         }
         manager = CheckpointManager(checkpoint_dir, checkpointers=handlers)
         manager.save(
-            canon_final_state.step,
-            {"state": canon_final_state, "config": config.to_dict()},
+            proto_final_state.step,
+            {"state": proto_final_state, "config": config.to_dict()},
         )
 
         # --- Log reconstructions for eval: ---
-        def canon_function(x, rng):
-            η = canon_model.apply(
-                {"params": canon_final_state.params}, x, train=False
+        def prototype_function(x, rng):
+            η = proto_model.apply(
+                {"params": proto_final_state.params}, x, train=False
             ).sample(seed=rng)  # type: ignore
             return η
 
@@ -213,7 +213,7 @@ def main(_):
             it = deterministic_data.start_input_pipeline(val_ds)
             batch = next(it)
 
-            fig = plot_prototypes_by_shape(canon_function=canon_function, batch=batch)
+            fig = plot_prototypes_by_shape(prototype_function, batch=batch)
             run.log({"dsprites_by_elem_final_prototypes": wandb.Image(fig)})
 
         # --- Log final metrics as an image: ---
