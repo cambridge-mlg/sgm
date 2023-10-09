@@ -22,10 +22,10 @@ from orbax.checkpoint import (
 )
 
 import wandb
-from src.models.proto_model import (
+from models.transformation_inference_model import (
     TransformationInferenceNet,
-    create_canonicalizer_state,
-    make_canonicalizer_train_and_eval,
+    create_transformation_inference_state,
+    make_transformation_inference_train_and_eval,
 )
 from src.models.utils import reset_metrics
 from src.transformations import transform_image
@@ -113,9 +113,9 @@ def main(_):
         canon_params = flax.core.freeze(variables["params"])
 
         canon_state_rng, state_rng = random.split(state_rng)
-        canon_state = create_canonicalizer_state(canon_params, canon_state_rng, config)
+        canon_state = create_transformation_inference_state(canon_params, canon_state_rng, config)
 
-        train_step_canon, eval_step_canon = make_canonicalizer_train_and_eval(
+        train_step_canon, eval_step_canon = make_transformation_inference_train_and_eval(
             config, canon_model
         )
 
