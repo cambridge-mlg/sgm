@@ -139,7 +139,7 @@ class TransformationGenerativeNet(nn.Module):
         return distrax.Transformed(base, bijector)
 
 
-def make_augment_generative_train_and_eval(
+def make_transformation_generative_train_and_eval(
     config,
     model: TransformationGenerativeNet,
     canon_function: Callable[[Array, Array], Array],
@@ -273,18 +273,18 @@ def make_augment_generative_train_and_eval(
 
 
 @flax.struct.dataclass
-class AugmentGenerativeMetrics(metrics.Collection):
+class TransformationGenerativeMetrics(metrics.Collection):
     loss: metrics.Average.from_output("loss")
     mae: metrics.Average.from_output("mae")
     log_p_η_x_hat: metrics.Average.from_output("log_p_η_x_hat")
 
-    def update(self, **kwargs) -> "AugmentGenerativeMetrics":
+    def update(self, **kwargs) -> "TransformationGenerativeMetrics":
         updates = self.single_from_model_output(**kwargs)
         return self.merge(updates)
 
 
-class AugmentGenerativeTrainState(train_state.TrainState):
-    metrics: AugmentGenerativeMetrics
+class TransformationGenerativeTrainState(train_state.TrainState):
+    metrics: TransformationGenerativeMetrics
     mae_loss_mult: float
     mae_loss_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     rng: PRNGKey
@@ -316,7 +316,7 @@ class AugmentGenerativeTrainState(train_state.TrainState):
         )
 
 
-def create_augment_generative_optimizer(params, config):
+def create_transformation_generative_optimizer(params, config):
     partition_optimizers = {
         "generative": optax.inject_hyperparams(clipped_adamw)(
             optax.warmup_cosine_decay_schedule(
@@ -339,13 +339,13 @@ def create_augment_generative_optimizer(params, config):
     return optax.multi_transform(partition_optimizers, param_partitions)
 
 
-def create_augment_generative_state(params, rng, config):
-    opt = create_augment_generative_optimizer(params, config)
-    return AugmentGenerativeTrainState.create(
+def create_transformation_generative_state(params, rng, config):
+    opt = create_transformation_generative_optimizer(params, config)
+    return TransformationGenerativeTrainState.create(
         apply_fn=TransformationGenerativeNet.apply,
         params=params,
         tx=opt,
-        metrics=AugmentGenerativeMetrics.empty(),
+        metrics=TransformationGenerativeMetrics.empty(),
         mae_loss_mult_schedule=optax.linear_schedule(
             init_value=config.mae_loss_mult_initial,
             end_value=config.mae_loss_mult_final,
