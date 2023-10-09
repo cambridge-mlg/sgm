@@ -233,7 +233,7 @@ def plot_training_samples(state, batch):
 
 def plot_proto_model_training_metrics(history):
     # Plot the training history
-    colors = sns.color_palette("husl", 3)
+    colors = sns.color_palette("husl", 4)
     steps, loss, x_mse, lr_inf, lr_σ = history.collect(
         "steps",
         "loss",
@@ -243,6 +243,7 @@ def plot_proto_model_training_metrics(history):
     )
     sigma = history.collect("σ")
     augment_bounds_mult = history.collect("augment_bounds_mult")
+    blur_sigma = history.collect("blur_sigma")
     steps_test, loss_test, x_mse_test = history.collect(
         "steps", "loss_test", "x_mse_test"
     )
@@ -291,20 +292,23 @@ def plot_proto_model_training_metrics(history):
         label=f"augment_bounds_mult {augment_bounds_mult[-1]:.4f}",
         color=colors[2]
     )
-    lines = [p1, p2, p3]
+    p4, = par1.plot(
+        steps,
+        blur_sigma,
+        label=f"blur sigma {blur_sigma[-1]:.4f}",
+        color=colors[3]
+    )
+    lines = [p1, p2, p3, p4]
     host.legend(lines, [l.get_label() for l in lines])
 
     host.set_yscale("log")
     par1.set_yscale("log")
-    # par2.set_yscale("log")
 
     host.set_ylabel(f"LR")
-    # par1.set_ylabel("σ LR")
     par1.set_ylabel("Multipliers")
 
     host.yaxis.label.set_color(p1.get_color())
     par1.yaxis.label.set_color(p3.get_color())
-    # par2.yaxis.label.set_color(p3.get_color())
 
     tkw = dict(size=4, width=1.5)
     host.tick_params(axis='y', colors=p1.get_color(), **tkw)
