@@ -578,6 +578,7 @@ class TransformationInferenceTrainState(train_state.TrainState):
             opt_state=new_opt_state,
             augment_bounds_mult=self.augment_bounds_mult_schedule(self.step),
             η_loss_mult=self.η_loss_mult_schedule(self.step),
+            blur_sigma=self.blur_sigma_schedule(self.step),
             **kwargs,
         )
     
