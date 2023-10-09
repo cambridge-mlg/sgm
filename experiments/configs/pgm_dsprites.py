@@ -69,9 +69,9 @@ def get_config() -> config_dict.ConfigDict:
         },
     )
     # Shape probabilities:
-    config.aug_dsprites.heart_distribution.shape_prob = 1 / 3
-    config.aug_dsprites.square_distribution.shape_prob = 1 / 3
-    config.aug_dsprites.ellipse_distribution.shape_prob = 1 / 3
+    config.aug_dsprites.heart_distribution.unnormalised_shape_prob = 1 / 3
+    config.aug_dsprites.square_distribution.unnormalised_shape_prob = 1 / 3
+    config.aug_dsprites.ellipse_distribution.unnormalised_shape_prob = 1 / 3
 
     # --- Training ---
     config.n_samples = 5

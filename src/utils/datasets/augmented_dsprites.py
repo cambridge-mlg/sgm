@@ -47,7 +47,7 @@ def expected_kwargs_for_distribution_type(
 
 
 class ShapeDistributionConfig(Protocol):
-    shape_prob: float
+    unnormalised_shape_prob: float
     orientation: DistributionConfig
     scale: DistributionConfig
     x_position: DistributionConfig
@@ -186,9 +186,9 @@ def construct_augmented_dsprites(
     shape_probs = (
         shape_probs := np.array(
             [
-                aug_dsprites_config.square_distribution.shape_prob,
-                aug_dsprites_config.ellipse_distribution.shape_prob,
-                aug_dsprites_config.heart_distribution.shape_prob,
+                aug_dsprites_config.square_distribution.unnormalised_shape_prob,
+                aug_dsprites_config.ellipse_distribution.unnormalised_shape_prob,
+                aug_dsprites_config.heart_distribution.unnormalised_shape_prob,
             ]
         )
     ) / shape_probs.sum()

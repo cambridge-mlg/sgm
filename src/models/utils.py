@@ -89,12 +89,9 @@ def make_approx_invariant(
 
 
 def clipped_adamw(learning_rate, norm, weight_decay: float = 1e-4):
-    return optax.MultiSteps(
-        optax.chain(
-            optax.clip_by_global_norm(norm),
-            optax.adamw(learning_rate=learning_rate, weight_decay=weight_decay),
-        ),
-        1,
+    return optax.chain(
+        optax.clip_by_global_norm(norm),
+        optax.adamw(learning_rate=learning_rate, weight_decay=weight_decay),
     )
 
 
