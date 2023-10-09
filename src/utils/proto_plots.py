@@ -280,19 +280,19 @@ def plot_proto_model_training_metrics(history):
     axs[3].set_title("σ")
 
     # Schedule axis:
-    host = axs[-1]
-    par1 = host.twinx()
+    lr_axis = axs[-1]
+    multiplier_axis = lr_axis.twinx()
 
-    p1, = host.plot(steps, lr_inf, "-", label=f"inf   {lr_inf[-1]:.4f}", color=colors[0])
-    p2, = host.plot(steps, lr_σ, "--", label=f"σ    {lr_σ[-1]:.4f}", color=colors[0])
-    p3, = par1.plot(
+    p1, = lr_axis.plot(steps, lr_inf, "-", label=f"inf   {lr_inf[-1]:.4f}", color=colors[0])
+    p2, = lr_axis.plot(steps, lr_σ, "--", label=f"σ    {lr_σ[-1]:.4f}", color=colors[0])
+    p3, = multiplier_axis.plot(
         steps,
         augment_bounds_mult,
         "-",
         label=f"augment_bounds_mult {augment_bounds_mult[-1]:.4f}",
         color=colors[1]
     )
-    p4, = par1.plot(
+    p4, = multiplier_axis.plot(
         steps,
         blur_sigma,
         "--"
@@ -300,20 +300,20 @@ def plot_proto_model_training_metrics(history):
         color=colors[1]
     )
     lines = [p1, p2, p3, p4]
-    host.legend(lines, [l.get_label() for l in lines])
+    lr_axis.legend(lines, [l.get_label() for l in lines])
 
-    host.set_yscale("log")
-    par1.set_yscale("log")
+    lr_axis.set_yscale("log")
+    multiplier_axis.set_yscale("linear")
 
-    host.set_ylabel(f"LR")
-    par1.set_ylabel("Multipliers")
+    lr_axis.set_ylabel(f"LR")
+    multiplier_axis.set_ylabel("Multipliers")
 
-    host.yaxis.label.set_color(p1.get_color())
-    par1.yaxis.label.set_color(p3.get_color())
+    lr_axis.yaxis.label.set_color(p1.get_color())
+    multiplier_axis.yaxis.label.set_color(p3.get_color())
 
     tkw = dict(size=4, width=1.5)
-    host.tick_params(axis='y', colors=p1.get_color(), **tkw)
-    par1.tick_params(axis='y', colors=p3.get_color(), **tkw)
+    lr_axis.tick_params(axis='y', colors=p1.get_color(), **tkw)
+    multiplier_axis.tick_params(axis='y', colors=p3.get_color(), **tkw)
 
     axs[-1].set_xlim(min(steps), max(steps))
     axs[-1].set_xlabel("Steps")
