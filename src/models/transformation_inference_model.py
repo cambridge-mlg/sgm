@@ -22,6 +22,7 @@ from src.models.convnext import ConvNeXt, get_convnext_constructor
 from src.models.utils import clipped_adamw, huber_loss
 from src.utils.types import KwArgs
 from src.transformations.affine import transform_image_with_affine_matrix, gen_affine_matrix_no_shear
+from src.utils.blur import gaussian_filter2d
 
 
 class TransformationInferenceNet(nn.Module):
@@ -126,6 +127,10 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
         train,
     ):
         rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
+
+        if train and config.blur_sigma_init > 0.0:
+            # Possibly blur the sample:
+            x = gaussian_filter2d(x, sigma=state.blur_sigma, filter_shape=config.blur_filter_shape)
 
         def nonsymmetrised_per_sample_loss(rng):
             """
@@ -399,6 +404,11 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
         )
         logs.add_entry(
             "schedules",
+            "blur_sigma",
+            state.blur_sigma,
+        )
+        logs.add_entry(
+            "schedules",
             "lr_σ",
             state.opt_state.inner_states["σ"][0].hyperparams["learning_rate"],
         )
@@ -554,6 +564,8 @@ class TransformationInferenceTrainState(train_state.TrainState):
     augment_bounds_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     η_loss_mult: float
     η_loss_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
+    blur_sigma: float
+    blur_sigma_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     rng: PRNGKey
 
     def apply_gradients(self, *, grads, **kwargs):
@@ -570,7 +582,7 @@ class TransformationInferenceTrainState(train_state.TrainState):
         )
     
     @classmethod
-    def create(cls, *, apply_fn, params, tx, augment_bounds_mult_schedule, η_loss_mult_schedule, **kwargs):
+    def create(cls, *, apply_fn, params, tx, augment_bounds_mult_schedule, η_loss_mult_schedule, blur_sigma_schedule, **kwargs):
         opt_state = tx.init(params)
         return cls(
             step=0,
@@ -582,6 +594,8 @@ class TransformationInferenceTrainState(train_state.TrainState):
             augment_bounds_mult=augment_bounds_mult_schedule(0),
             η_loss_mult_schedule=η_loss_mult_schedule,
             η_loss_mult=η_loss_mult_schedule(0),
+            blur_sigma_schedule=blur_sigma_schedule,
+            blur_sigma=blur_sigma_schedule(0),
             **kwargs,
         )
 
@@ -608,5 +622,12 @@ def create_transformation_inference_state(params, rng, config):
             ],
             boundaries=[config.η_loss_decay_start * config.inf_steps, config.η_loss_decay_end * config.inf_steps],
         ),
+        blur_sigma_schedule=optax.join_schedules(
+            [
+                optax.linear_schedule(init_value=config.blur_sigma_init, end_value=0.0, transition_steps=config.inf_steps * config.blur_sigma_decay_end),
+                optax.constant_schedule(0.0),
+            ],
+            boundaries=[config.inf_steps * config.blur_sigma_decay_end],
+        )
         rng=rng,
     )

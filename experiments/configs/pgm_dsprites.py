@@ -100,6 +100,10 @@ def get_config() -> config_dict.ConfigDict:
     config.η_loss_decay_start = 1.0
     config.η_loss_decay_end = 1.0
     config.augment_warmup_end = 0.7
+    # Blur schedule
+    config.blur_filter_shape = (64 / 2, 64 / 2)
+    config.blur_sigma_init = 64 / 4
+    config.blur_sigma_decay_end = 3 / 4 
 
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 1.0

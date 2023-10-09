@@ -42,6 +42,11 @@ def get_config(params) -> config_dict.ConfigDict:
     config.η_loss_decay_end = 0.0
     config.η_loss_decay_start = 0.0
     config.augment_warmup_end = 0.0  # No augmentation warmup
+    # Blur schedule
+    config.blur_filter_shape = (15, 15)
+    config.blur_sigma_init = 28 / 4
+    config.blur_sigma_decay_end = 3 / 4 
+
     # Linearly increase MAE loss mult. from 0 to 1 (pairwise diffs between log-likelihoods for augmented samples)
     config.mae_loss_mult_initial = 0.0
     config.mae_loss_mult_final = 1.0
