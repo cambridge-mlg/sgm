@@ -186,13 +186,20 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
                 rng_η_rand1,
             ) = random.split(rng, 3)
 
-            Η_rand = distrax.Uniform(
-                # Separate model bounds and augment bounds
-                low=-jnp.array(config.augment_bounds) * state.augment_bounds_mult
-                + jnp.array(config.augment_offset),
-                high=jnp.array(config.augment_bounds) * state.augment_bounds_mult
-                + jnp.array(config.augment_offset),
-            )
+            if train:
+                Η_rand = distrax.Uniform(
+                    # Separate model bounds and augment bounds
+                    low=-jnp.array(config.augment_bounds) * state.augment_bounds_mult
+                    + jnp.array(config.augment_offset),
+                    high=jnp.array(config.augment_bounds) * state.augment_bounds_mult
+                    + jnp.array(config.augment_offset),
+                )
+            else:
+                Η_rand = distrax.Uniform(
+                    low=-jnp.array(config.eval_augment_bounds) + jnp.array(config.augment_offset),
+                    high=jnp.array(config.eval_augment_bounds) + jnp.array(config.augment_offset),
+                )
+
             η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
             η_rand1_aff_mat = gen_affine_augment(η_rand1)
 
