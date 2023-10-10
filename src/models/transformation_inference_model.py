@@ -210,7 +210,7 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
                 x,
                 transform_image_fn(
                     x,
-                    η_x_aff_mat @ η_x_rand1_inv_aff_mat @ η_rand1_aff_mat,
+                    η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_aff_mat,
                 ),
             ).mean()
 
@@ -227,7 +227,7 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
             # the modes (at the mean of the modes)
             η_recon_loss = huber_loss(
                 # Measure how close the transformation is to identity
-                (η_x_aff_mat @ η_x_rand1_inv_aff_mat @ η_rand1_aff_mat)[:2, :].ravel(),
+                (η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_aff_mat)[:2, :].ravel(),
                 jnp.eye(3, dtype=η_rand1_aff_mat.dtype)[:2, :].ravel(),
                 slope=1,
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
@@ -324,7 +324,7 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
                 x, 
                 transform_image_fn(
                     x,
-                    η_rand2_inv_aff_mat @ η_x_rand2_aff_mat @ η_x_rand1_inv_aff_mat @ η_rand1_aff_mat,
+                    η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_rand2_aff_mat @ η_rand2_inv_aff_mat,
                 )
             ).mean()
 
@@ -341,7 +341,7 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
             # the modes (at the mean of the modes)
             η_recon_loss = huber_loss(
                 # Measure how close the transformation is to identity
-                (η_rand2_inv_aff_mat @ η_x_rand2_aff_mat @ η_x_rand1_inv_aff_mat @ η_rand1_aff_mat)[:2, :].ravel(),
+                (η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_rand2_aff_mat @ η_rand2_inv_aff_mat)[:2, :].ravel(),
                 jnp.eye(3, dtype=η_rand2_aff_mat.dtype)[:2, :].ravel(),
                 slope=1,
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
