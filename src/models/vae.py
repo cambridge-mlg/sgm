@@ -26,6 +26,7 @@ from jax import numpy as jnp
 from jax import random
 
 import src.utils.plotting as plot_utils
+from src.utils.training import get_learning_rate
 from src.utils.types import KwArgs
 
 INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.0)
@@ -351,7 +352,7 @@ def make_vae_train_and_eval(model, config):
         logs.add_entry(
             "schedules",
             "lr",
-            state.opt_state.hyperparams["learning_rate"],
+            get_learning_rate(state.opt_state),
         )
 
         return logs, state.replace(metrics=metrics)
