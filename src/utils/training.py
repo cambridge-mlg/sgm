@@ -1,5 +1,6 @@
 from typing import Tuple
 
+import optax
 from ciclo import Elapsed, Logs, LoopCallbackBase, LoopState
 from ciclo.types import S
 from ciclo.utils import is_scalar
@@ -46,3 +47,32 @@ class custom_wandb_logger(LoopCallbackBase[S]):
     def __loop_callback__(self, loop_state: LoopState[S]) -> CallbackOutput[S]:
         self(loop_state.elapsed, loop_state.logs)
         return Logs(), loop_state.state
+
+
+def get_learning_rate(opt_state):
+    if isinstance(opt_state, optax.MultiTransformState):
+        learning_rates = []
+        for sub_opt_state in opt_state.inner_states.values():
+            if isinstance(sub_opt_state, optax.MaskedState):
+                sub_opt_state = sub_opt_state.inner_state
+            if (
+                isinstance(sub_opt_state, optax.InjectHyperparamsState)
+                and "learning_rate" in sub_opt_state.hyperparams
+            ):
+                learning_rates.append(sub_opt_state.hyperparams["learning_rate"])
+
+        if not learning_rates:
+            return None
+        if len(learning_rates) == 1:
+            return learning_rates[0]
+        return learning_rates
+    else:
+        if isinstance(opt_state, optax.MaskedState):
+            opt_state = opt_state.inner_state
+        if (
+            isinstance(opt_state, optax.InjectHyperparamsState)
+            and "learning_rate" in opt_state.hyperparams
+        ):
+            return opt_state.hyperparams["learning_rate"]
+        else:
+            return None
