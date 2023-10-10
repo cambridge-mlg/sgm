@@ -37,6 +37,7 @@ class TransformationInferenceNet(nn.Module):
     convnext_dims: Optional[Sequence[int]] = None
     # default factory kwargs for convnext
     convnext_kwargs: Optional[KwArgs] = None
+    use_layernorm: bool = True
 
     def setup(self) -> None:
         self.bounds_array = jnp.array(self.bounds)
@@ -56,7 +57,8 @@ class TransformationInferenceNet(nn.Module):
                 for hidden_dim in self.hidden_dims:
                     h = nn.Dense(hidden_dim)(h)
                     h = nn.gelu(h)
-                    h = nn.LayerNorm()(h)
+                    if self.use_layernorm:
+                        h = nn.LayerNorm()(h)
 
             case "convnext":
                 constructor_kwargs = dict(num_outputs=1024, in_channels=1, init_downsample=1, **(self.convnext_kwargs or {}))
@@ -347,7 +349,7 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
 
-            invertibility_loss = invertibility_loss_fn(x_rand1, affine_mat=η_x_rand1_inv_aff_mat, inv_affine_mat=η_x_rand1_aff_mat)
+            invertibility_loss = invertibility_loss_fn(x_rand1, affine_mat=η_x_rand1_inv_aff_mat, affine_mat_inv=η_x_rand1_aff_mat)
 
             return x_mse, η_recon_loss, invertibility_loss, difficulty
 
