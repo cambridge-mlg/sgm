@@ -43,7 +43,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.eval_freq = 0.01
     config.plot_freq = 0.1
     config.batch_size = 512
-    config.batch_size_eval = 64
+    config.batch_size_eval = 50
 
     config.init_lr = 3e-4
     config.peak_lr_mult = 3
