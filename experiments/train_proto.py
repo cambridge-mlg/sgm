@@ -1,7 +1,7 @@
 import os
 
 # os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.45"
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.2"
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.2"
 
 
 import ciclo
@@ -22,7 +22,7 @@ from orbax.checkpoint import (
 )
 
 import wandb
-from models.transformation_inference_model import (
+from src.models.transformation_inference_model import (
     TransformationInferenceNet,
     create_transformation_inference_state,
     make_transformation_inference_train_and_eval,
