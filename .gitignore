@@ -150,5 +150,8 @@ logs/
 checkpoints/
 checkpoint_*
 
+# local notebooks:
+notebooks/local
+
 # data:
 *.npz
