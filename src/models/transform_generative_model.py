@@ -177,7 +177,7 @@ def make_transformation_generative_train_and_eval(
             η_rand_proto_aff_mat = gen_affine_matrix_no_shear(η_rand_proto)
             η_rand_proto_aff_mat_inv = jnp.linalg.inv(η_rand_proto_aff_mat)
             return transform_image_with_affine_matrix(
-                x, η_rand_proto_aff_mat_inv @ η_rand_aff_mat, order=config.interpolation_order
+                x, η_rand_aff_mat @ η_rand_proto_aff_mat_inv, order=config.interpolation_order
             )
 
         def per_sample_loss_fn(rng):
