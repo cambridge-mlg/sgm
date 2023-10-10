@@ -295,9 +295,9 @@ def plot_proto_model_training_metrics(history):
     p4, = multiplier_axis.plot(
         steps,
         blur_sigma,
-        "--"
+        "--",
         label=f"blur sigma {blur_sigma[-1]:.4f}",
-        color=colors[1]
+        color=colors[1],
     )
     lines = [p1, p2, p3, p4]
     lr_axis.legend(lines, [l.get_label() for l in lines])
