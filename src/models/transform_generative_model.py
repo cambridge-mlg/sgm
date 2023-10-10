@@ -7,13 +7,21 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.a `p_x_given_z`.
 """
 
+from typing import Callable, Optional, Sequence, Union
+
+import ciclo
+import distrax
 import jax
 import jax.numpy as jnp
 import jax.random as random
+import numpy as np
+import optax
 from jax import lax
 from chex import Array, PRNGKey
+from clu import metrics
 import flax
 import flax.linen as nn
+from flax import traverse_util
 from flax.linen import initializers as init
 from flax.training import train_state
 from ml_collections import config_dict
