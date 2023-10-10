@@ -245,25 +245,12 @@ class VAE(nn.Module):
 
         return x_recon
 
-    def elbo(
-        self,
-        x: Array,
-        train: bool = False,
-        β: float = 1.0,
-    ):
-        q_Z_given_x, p_X_given_z, p_Z = self(x, train=train)
-
-        ll = p_X_given_z.log_prob(x) / x.shape[-1]
-        z_kld = q_Z_given_x.kl_divergence(p_Z)
-
-        return ll - β * z_kld, ll, z_kld
-
     def importance_weighted_lower_bound(
         self,
         x: Array,
         num_samples: int = 50,
         train: bool = False,
-    ):
+    ) -> float:
         def single_sample_w(i):
             q_Z_given_x = self.q_Z_given_X(x, train=train)
             z = q_Z_given_x.sample(
