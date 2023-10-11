@@ -69,10 +69,11 @@ def main_with_wandb(_):
         notes=FLAGS.wandb_notes,
         project=FLAGS.wandb_project,
         entity=FLAGS.wandb_entity,
+        config=config.to_dict(),
         save_code=FLAGS.wandb_save_code,
     ) as run:
-        # Log the config:
-        run.config.update(config.to_dict())
+        # Reload the config from wandb (in case using a sweep):
+        config.update(wandb.config)
         # Run main:
         main(config, run)
 
