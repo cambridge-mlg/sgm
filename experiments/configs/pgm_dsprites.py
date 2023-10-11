@@ -54,7 +54,7 @@ def get_config() -> config_dict.ConfigDict:
     )
     config.aug_dsprites.heart_distribution.scale = DistributionConfig(
         "uniform",
-        {"low": 0.5, "high": 1.0},
+        {"low": 0.75, "high": 1.0},
     )
     config.aug_dsprites.heart_distribution.x_position = DistributionConfig(
         "uniform",
@@ -79,8 +79,8 @@ def get_config() -> config_dict.ConfigDict:
     config.eval_freq = 0.01
     config.difficulty_weighted_inf_loss = False
     config.symmetrised_samples_in_loss = True
-    config.interpolation_order = 1
-    config.translate_last = True
+    config.interpolation_order = 3
+    config.translate_last = False
 
     config.gen_steps = 10_000
     config.gen_init_lr = 1e-4
@@ -89,22 +89,22 @@ def get_config() -> config_dict.ConfigDict:
     config.gen_warmup_steps = 1_000
 
     config.σ_lr = 1e-2
-    config.inf_steps = 30_000
+    config.inf_steps = 10_000
     config.inf_lr = 4e-3
     config.inf_init_lr_mult = 1e-3
     config.inf_final_lr_mult = 1e-1
-    config.inf_warmup_steps = 3_000  # roughly 10% of training
+    config.inf_warmup_steps = 1_000  # roughly 10% of training
 
     config.inf_weight_decay = 0.05
 
-    config.η_loss_mult_peak = 1.0
-    config.η_loss_decay_start = 1.0
+    config.η_loss_mult_peak = 0.0
+    config.η_loss_decay_start = 0.0
     config.η_loss_decay_end = 1.0
-    config.augment_warmup_end = 0.7
+    config.augment_warmup_end = 0.0
     # Blur schedule
-    config.blur_filter_shape = (64 / 2, 64 / 2)
-    config.blur_sigma_init = 64 / 4
-    config.blur_sigma_decay_end = 3 / 4 
+    config.blur_filter_shape = (21, 21)
+    config.blur_sigma_init = 1.0
+    config.blur_sigma_decay_end = 0.4
 
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 1.0
@@ -118,6 +118,7 @@ def get_config() -> config_dict.ConfigDict:
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
     config.model.inference.model_type = "mlp"
+    config.model.inference.use_layernorm = True
     # config.model.inference.model_type = "convnext"
     # config.model.inference.convnext_type = "tiny"
     config.model.inference.bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
@@ -129,6 +130,7 @@ def get_config() -> config_dict.ConfigDict:
     config.model.generative.bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
     config.model.generative.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
     config.model.generative.hidden_dims = (1024, 512, 256)
+    config.model.generative.squash_to_bounds = False
     config.model.generative.num_flows = 2
     config.model.generative.num_bins = 4
     config.model.generative.conditioner = config_dict.ConfigDict()
