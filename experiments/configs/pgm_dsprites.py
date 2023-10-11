@@ -76,7 +76,7 @@ def get_config() -> config_dict.ConfigDict:
     # Blur schedule
     config.blur_filter_shape = (21, 21)
     config.blur_sigma_init = 1.0
-    config.blur_sigma_decay_end = 0.4
+    config.blur_sigma_decay_end = 0.5
 
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 1.0
@@ -85,6 +85,7 @@ def get_config() -> config_dict.ConfigDict:
     # training objective:
     config.augment_bounds = (.5, .5, jnp.pi, .5, .5)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
+    config.eval_augment_bounds = (.5, .5, jnp.pi, .5, .5)
 
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
