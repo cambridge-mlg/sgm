@@ -103,11 +103,12 @@ class AUG_VAE(nn.Module):
             x, η_matrix_inv @ η_new_matrix, order=self.interpolation_order
         )
 
-        return jax.lax.cond(
-            jax.random.uniform(self.make_rng("sample"), ()) > 0.5,
-            lambda: x,
-            lambda: new_x,
-        )
+        return new_x
+        # return jax.lax.cond(
+        #     jax.random.uniform(self.make_rng("sample"), ()) > 0.5,
+        #     lambda: x,
+        #     lambda: new_x,
+        # )
 
 
 def create_aug_vae_optimizer(params, config):
@@ -121,6 +122,7 @@ def create_aug_vae_optimizer(params, config):
                 config.steps,
                 config.init_lr * config.final_lr_mult,
             )
+            # TODO: change to new API
         ),
     }
 
