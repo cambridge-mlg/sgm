@@ -1,7 +1,6 @@
 import os
 
 # os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.45"
-# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.2"
 
 
 import ciclo
