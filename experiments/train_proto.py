@@ -201,6 +201,7 @@ def main(_):
             proto_final_state.step,
             {"state": proto_final_state, "config": config.to_dict()},
         )
+        run.summary.update({"checkpoint_dir": str(checkpoint_dir)})
 
         # --- Log reconstructions for eval: ---
         def prototype_function(x, rng):
