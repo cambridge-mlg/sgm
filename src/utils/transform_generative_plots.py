@@ -36,35 +36,35 @@ def plot_proto_model_training_metrics(history):
         ax.set_title(metric_name)
 
     # Schedule axis:
-    host = axs[-1]
-    par1 = host.twinx()
+    lr_ax = axs[-1]
+    multiplier_ax = lr_ax.twinx()
     # par2 = host.twinx()
 
-    p1, = host.plot(steps, lr_gen, "--", label=f"gen   {lr_gen[-1]:.4f}", color=colors[0])
-    p2, = par1.plot(
+    p1, = lr_ax.plot(steps, lr_gen, "--", label=f"lr_gen {lr_gen[-1]:.4f}", color=colors[0])
+    p2, = multiplier_ax.plot(
         steps,
         mae_loss_mult,
         label=f"mae_loss_mult {mae_loss_mult[-1]:.4f}",
         color=colors[2]
     )
     lines = [p1, p2]
-    host.legend(lines, [l.get_label() for l in lines])
+    lr_ax.legend(lines, [l.get_label() for l in lines])
 
-    host.set_yscale("log")
-    par1.set_yscale("log")
+    lr_ax.set_yscale("log")
+    multiplier_ax.set_yscale("log")
     # par2.set_yscale("log")
 
-    host.set_ylabel(f"LR")
+    lr_ax.set_ylabel(f"LR")
     # par1.set_ylabel("σ LR")
-    par1.set_ylabel("Multipliers")
+    multiplier_ax.set_ylabel("Multipliers")
 
-    host.yaxis.label.set_color(p1.get_color())
-    par1.yaxis.label.set_color(p3.get_color())
+    lr_ax.yaxis.label.set_color(p1.get_color())
+    multiplier_ax.yaxis.label.set_color(p2.get_color())
     # par2.yaxis.label.set_color(p3.get_color())
 
     tkw = dict(size=4, width=1.5)
-    host.tick_params(axis='y', colors=p1.get_color(), **tkw)
-    par1.tick_params(axis='y', colors=p3.get_color(), **tkw)
+    lr_ax.tick_params(axis='y', colors=p1.get_color(), **tkw)
+    multiplier_ax.tick_params(axis='y', colors=p2.get_color(), **tkw)
     # par2.tick_params(axis='y', colors=p3.get_color(), **tkw)
 
     axs[-1].set_xlim(min(steps), max(steps))
@@ -72,5 +72,4 @@ def plot_proto_model_training_metrics(history):
 
     for ax in axs:
         ax.grid(color=(0.9, 0.9, 0.9))
-
-    plt.show()
+    return fig
