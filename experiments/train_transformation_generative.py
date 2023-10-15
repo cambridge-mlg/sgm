@@ -22,7 +22,11 @@ from orbax.checkpoint import (
 )
 
 import wandb
-from src.models.transformation_generative_model import TransformationGenerativeNet, create_transformation_generative_state, make_transformation_generative_train_and_eval
+from src.models.transformation_generative_model import (
+    TransformationGenerativeNet,
+    create_transformation_generative_state,
+    make_transformation_generative_train_and_eval,
+)
 from src.models.transformation_inference_model import TransformationInferenceNet
 
 from src.models.utils import reset_metrics
@@ -41,6 +45,10 @@ from src.utils.proto_plots import (
     plot_training_samples,
 )
 from src.utils.training import custom_wandb_logger
+from src.utils.transform_generative_plots import (
+    plot_generative_histograms,
+    plot_transform_gen_model_training_metrics,
+)
 
 flax.config.update("flax_use_orbax_checkpointing", True)
 logging.set_verbosity(logging.INFO)
@@ -58,12 +66,19 @@ flags.DEFINE_string("wandb_project", "iclr2024experiments", "Project for wandb.r
 flags.DEFINE_string("wandb_entity", "invariance-learners", "Entity for wandb.run.")
 flags.DEFINE_bool("wandb_save_code", default=True, help="Save code to wandb.")
 
-flags.DEFINE_string("prototype_model_dir", "", "Path to output directory for the transformation inferencem model run to use.")
+flags.DEFINE_string(
+    "prototype_model_dir",
+    "",
+    "Path to output directory for the transformation inferencem model run to use.",
+)
 
 
 def main_with_wandb(_):
     config = FLAGS.config
-    config.prototype_model_dir = FLAGS.prototype_model_dir
+    # config = config.unlock()
+    # config.prototype_model_dir = FLAGS.prototype_model_dir
+    # config = config.lock()
+    # config.unlocked().update({"prototype_model_dir": FLAGS.prototype_model_dir})
     with wandb.init(
         mode=FLAGS.wandb_mode,
         tags=FLAGS.wandb_tags,
@@ -77,6 +92,7 @@ def main_with_wandb(_):
         config.update(wandb.config)
         # Run main:
         main(config, run, config.prototype_model_dir)
+
 
 def main(config, run, prototype_model_dir: str):
     # --- Make directories for saving ckeckpoints/logs ---
@@ -97,7 +113,9 @@ def main(config, run, prototype_model_dir: str):
         "state": Checkpointer(PyTreeCheckpointHandler()),
         "config": Checkpointer(JsonCheckpointHandler()),
     }
-    manager = CheckpointManager(Path(prototype_model_dir) / "checkpoints", checkpointers=handlers)
+    manager = CheckpointManager(
+        Path(prototype_model_dir) / "checkpoints", checkpointers=handlers
+    )
     last_prototype_step = manager.latest_step()
     proto_ckpt_restored = manager.restore(last_prototype_step)
 
@@ -107,7 +125,9 @@ def main(config, run, prototype_model_dir: str):
     proto_model = TransformationInferenceNet(**proto_config["model"]["inference"])
 
     def prototype_function(x, rng):
-        η = proto_model.apply({"params": proto_state.params}, x, train=False).sample(seed=rng)
+        η = proto_model.apply({"params": proto_state.params}, x, train=False).sample(
+            seed=rng
+        )
         return η
 
     # - Possibly Visualise the DSPRITES data augmentation distribution
@@ -124,11 +144,13 @@ def main(config, run, prototype_model_dir: str):
     gen_model = TransformationGenerativeNet(**config.model.generative.to_dict())
 
     gen_init_rng, init_rng = random.split(init_rng)
-    variables = gen_model.init({'params': gen_init_rng, 'sample': gen_init_rng},
+    variables = gen_model.init(
+        {"params": gen_init_rng, "sample": gen_init_rng},
         jnp.empty((64, 64, 1))
         if "dsprites" in config.dataset
         else jnp.empty((28, 28, 1)),
-            , train=False)
+        train=False,
+    )
 
     parameter_overview.log_parameter_overview(variables)
 
@@ -136,8 +158,10 @@ def main(config, run, prototype_model_dir: str):
 
     gen_state = create_transformation_generative_state(gen_params, state_rng, config)
 
-    train_step, eval_step = make_transformation_generative_train_and_eval(config, gen_model, prototype_function=prototype_function)
-    
+    train_step, eval_step = make_transformation_generative_train_and_eval(
+        config, gen_model, prototype_function=prototype_function
+    )
+
     # --- Training ---
     total_steps = config.gen_steps
     gen_final_state, history, _ = ciclo.train_loop(
@@ -170,9 +194,55 @@ def main(config, run, prototype_model_dir: str):
     )
 
     # --- Log final metrics as an image: ---
-    fig = plot_proto_model_training_metrics(history)
+    fig = plot_transform_gen_model_training_metrics(history)
     run.log({"run_metrics_summary": wandb.Image(fig)})
     fig.savefig(output_dir / "run_metrics_summary.pdf", bbox_inches="tight")
+
+    # --- Log generative histograms ---
+    nrows = 5
+    val_iter = deterministic_data.start_input_pipeline(val_ds)
+    val_batch = next(val_iter)
+    val_histograms_fig = plt.figure(figsize=(14, 3 * nrows))
+    val_histograms_subfigs = val_histograms_fig.subfigures(nrows=nrows)
+    for i in range(nrows):
+        plot_generative_histograms(
+            x=val_batch["image"][0, i],
+            rng=rng,
+            prototype_function=prototype_function,
+            interpolation_order=config.interpolation_order,
+            transform_gen_distribution_function=gen_model.apply(
+                {"params": gen_final_state.params}, train=False
+            ),
+            fig=val_histograms_subfigs[i],
+        )
+    wandb.log({"val_histograms": wandb.Image(val_histograms_fig)})
+    # - Same one, but with a transformed digit:
+    trans_histograms_fig = plt.figure(figsize=(14, 3 * nrows))
+    trans_histograms_subfigs = trans_histograms_fig.subfigures(nrows=nrows)
+    transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
+        val_batch["image"][0, 0],
+        jnp.concatenate(
+            (
+                jnp.linspace(
+                    -jnp.array(config.eval_augment_bounds),
+                    jnp.array(config.eval_augment_bounds),
+                    nrows,
+                ),
+            )
+        ),
+    )
+    for i in range(nrows):
+        plot_generative_histograms(
+            x=transformed_xs[i],
+            rng=rng,
+            prototype_function=prototype_function,
+            interpolation_order=config.interpolation_order,
+            transform_gen_distribution_function=gen_model.apply(
+                {"params": gen_final_state.params}, train=False
+            ),
+            fig=trans_histograms_subfigs[i],
+        )
+    wandb.log({"trans_histograms": wandb.Image(val_histograms_fig)})
 
 
 if __name__ == "__main__":

@@ -1,9 +1,17 @@
+from typing import Optional
+import jax
+import jax.numpy as jnp
+from matplotlib.figure import Figure
 import numpy as np
+from scipy.stats import gaussian_kde
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from src.transformations.affine import gen_affine_matrix_no_shear, transform_image_with_affine_matrix
 
-def plot_proto_model_training_metrics(history):
+
+def plot_transform_gen_model_training_metrics(history) -> Figure:
     colors = sns.color_palette("husl", 3)
 
     # plot the training history
@@ -72,4 +80,48 @@ def plot_proto_model_training_metrics(history):
 
     for ax in axs:
         ax.grid(color=(0.9, 0.9, 0.9))
+    return fig
+
+
+
+# function to plot the histograms of p(η|x_hat) in each dimmension
+def plot_generative_histograms(x, rng, prototype_function, transform_gen_distribution_function, interpolation_order, fig: Optional[Figure]=None) -> Figure:
+    rng_proto, rng_gen_samples = jax.random.split(rng, 2)
+    η = prototype_function(x, rng_proto)
+    η_aff_mat = gen_affine_matrix_no_shear(η)
+    η_aff_mat_inv = jnp.linalg.inv(η_aff_mat)
+    xhat = transform_image_with_affine_matrix(x, η_aff_mat_inv, order=interpolation_order)
+
+    # p_H_x_hat = gen_model.apply({"params": gen_final_state.params}, xhat)
+    p_H_x_hat = transform_gen_distribution_function(xhat)
+    
+    ηs_p = p_H_x_hat.sample(seed=rng_gen_samples, sample_shape=(20_000,))
+
+    transform_param_dim = p_H_x_hat.event_shape[0]
+    if fig is None:
+        fig = plt.figure(figsize=(3*(transform_param_dim+2), 3))
+    axs = fig.subplots(nrows=1, ncols=transform_param_dim + 2)
+
+    axs[0].imshow(x, cmap='gray', vmin=-1, vmax=1)
+    axs[0].axis('off')
+    axs[0].set_title("x")
+    axs[1].imshow(xhat, cmap='gray', vmin=-1, vmax=1)
+    axs[1].axis('off')
+    axs[1].set_title("x_hat")
+
+    for i, ax in enumerate(axs[2:]):
+        x = np.linspace(ηs_p[:, i].min(), ηs_p[:, i].max(), 1000)
+
+        # plot p(η|x_hat)
+        ax.hist(ηs_p[:, i], bins=100, density=True, alpha=0.5, color="C0")
+        kde = gaussian_kde(ηs_p[:, i])
+        ax.plot(x, kde(x), color="C0")
+
+        # make a axvline to plot η (the transformation inferred by transformation inference net.)
+        ax.axvline(η[i], color="C1", linestyle="--")
+
+        ax.set_title(f"dim {i}")
+        ax.set_xlim(x.min(), x.max())
+
+    plt.tight_layout()
     return fig
