@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 # os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.45"
 
@@ -21,11 +22,13 @@ from orbax.checkpoint import (
 )
 
 import wandb
-from src.models.transformation_inference_model import (
-    TransformationInferenceNet,
-    create_transformation_inference_state,
-    make_transformation_inference_train_and_eval,
+from src.models.transformation_generative_model import (
+    TransformationGenerativeNet,
+    create_transformation_generative_state,
+    make_transformation_generative_train_and_eval,
 )
+from src.models.transformation_inference_model import TransformationInferenceNet
+
 from src.models.utils import reset_metrics
 from src.transformations import transform_image
 from src.utils.datasets.augmented_dsprites import (
@@ -42,6 +45,10 @@ from src.utils.proto_plots import (
     plot_training_samples,
 )
 from src.utils.training import custom_wandb_logger
+from src.utils.transform_generative_plots import (
+    plot_generative_histograms,
+    plot_transform_gen_model_training_metrics,
+)
 
 flax.config.update("flax_use_orbax_checkpointing", True)
 logging.set_verbosity(logging.INFO)
@@ -59,9 +66,19 @@ flags.DEFINE_string("wandb_project", "iclr2024experiments", "Project for wandb.r
 flags.DEFINE_string("wandb_entity", "invariance-learners", "Entity for wandb.run.")
 flags.DEFINE_bool("wandb_save_code", default=True, help="Save code to wandb.")
 
+flags.DEFINE_string(
+    "prototype_model_dir",
+    "",
+    "Path to output directory for the transformation inferencem model run to use.",
+)
+
 
 def main_with_wandb(_):
     config = FLAGS.config
+    # config = config.unlock()
+    # config.prototype_model_dir = FLAGS.prototype_model_dir
+    # config = config.lock()
+    # config.unlocked().update({"prototype_model_dir": FLAGS.prototype_model_dir})
     with wandb.init(
         mode=FLAGS.wandb_mode,
         tags=FLAGS.wandb_tags,
@@ -74,9 +91,10 @@ def main_with_wandb(_):
         # Reload the config from wandb (in case using a sweep):
         config.update(wandb.config)
         # Run main:
-        main(config, run)
+        main(config, run, config.prototype_model_dir)
 
-def main(config, run):
+
+def main(config, run, prototype_model_dir: str):
     # --- Make directories for saving ckeckpoints/logs ---
     output_dir = config.get(
         "output_dir",
@@ -86,12 +104,33 @@ def main(config, run):
     checkpoint_dir = output_dir / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    # Log the checkpoint_dir to wandb
-    run.summary.update({"checkpoint_dir": str(checkpoint_dir)})
-
+    # - Set up rng
     rng = random.PRNGKey(config.seed)
     data_rng, init_rng, state_rng = random.split(rng, 3)
 
+    # --- Load the prototype model ---
+    handlers = {
+        "state": Checkpointer(PyTreeCheckpointHandler()),
+        "config": Checkpointer(JsonCheckpointHandler()),
+    }
+    manager = CheckpointManager(
+        Path(prototype_model_dir) / "checkpoints", checkpointers=handlers
+    )
+    last_prototype_step = manager.latest_step()
+    proto_ckpt_restored = manager.restore(last_prototype_step)
+
+    proto_config = proto_ckpt_restored["config"]
+    proto_state = proto_ckpt_restored["state"]
+
+    proto_model = TransformationInferenceNet(**proto_config["model"]["inference"])
+
+    def prototype_function(x, rng):
+        η = proto_model.apply({"params": proto_state.params}, x, train=False).sample(
+            seed=rng
+        )
+        return η
+
+    # - Possibly Visualise the DSPRITES data augmentation distribution
     if config.dataset == "aug_dsprites":
         fig, _ = visualise_latent_distribution_from_config(config.aug_dsprites)
         run.log({"dsprites_augment_distribution": wandb.Image(fig)})
@@ -102,13 +141,11 @@ def main(config, run):
     train_ds, val_ds, _ = get_data(config, data_rng)
     logging.info("Finished constructing the dataset")
     # --- Network setup ---
-    proto_model = TransformationInferenceNet(**config.model.inference.to_dict())
+    gen_model = TransformationGenerativeNet(**config.model.generative.to_dict())
 
-    proto_init_rng, init_rng = random.split(init_rng)
-
-    logging.info("Initialise the model")
-    variables = proto_model.init(
-        {"params": proto_init_rng, "sample": proto_init_rng},
+    gen_init_rng, init_rng = random.split(init_rng)
+    variables = gen_model.init(
+        {"params": gen_init_rng, "sample": gen_init_rng},
         jnp.empty((64, 64, 1))
         if "dsprites" in config.dataset
         else jnp.empty((28, 28, 1)),
@@ -117,77 +154,24 @@ def main(config, run):
 
     parameter_overview.log_parameter_overview(variables)
 
-    proto_params = flax.core.freeze(variables["params"])
+    gen_params = flax.core.freeze(variables["params"])
 
-    proto_state_rng, state_rng = random.split(state_rng)
-    proto_state = create_transformation_inference_state(proto_params, proto_state_rng, config)
+    gen_state = create_transformation_generative_state(gen_params, state_rng, config)
 
-    train_step_proto, eval_step_proto = make_transformation_inference_train_and_eval(
-        config, proto_model
+    train_step, eval_step = make_transformation_generative_train_and_eval(
+        config, gen_model, prototype_function=prototype_function
     )
-
-    # --- Logging visualisations ---: # TODO move this to src/
-    @jax.jit
-    def get_prototype(x, rng, params):
-        p_η = proto_model.apply({"params": params}, x, train=False)
-        η = p_η.sample(seed=rng)  # type: ignore
-        xhat = transform_image(x, -η, order=config.interpolation_order)
-        return xhat
-
-    plot_data_samples_canonicalizations = (
-        construct_plot_data_samples_canonicalizations(
-            get_prototype_fn=get_prototype
-        )
-    )
-
-    def plot_and_log_data_samples_canonicalizations(state, batch):
-        fig = plot_data_samples_canonicalizations(state, batch)
-        wandb.log({"prototypes": wandb.Image(fig)}, step=state.step)
-        plt.close(fig)
-
-    plot_augmented_data_samples_canonicalizations = (
-        construct_plot_augmented_data_samples_canonicalizations(
-            get_prototype_fn=get_prototype, config=config
-        )
-    )
-
-    def plot_and_log_data_augmented_samples_canonicalizations(state, batch):
-        fig = plot_augmented_data_samples_canonicalizations(state, batch)
-        wandb.log(
-            {"prototypes_on_augmented": wandb.Image(fig)}, step=state.step
-        )
-        plt.close(fig)
-
-    plot_training_augmented_samples = construct_plot_training_augmented_samples(
-        config=config
-    )
-
-    def plot_and_log_training_augmented_samples(state, batch):
-        fig = plot_training_augmented_samples(state, batch)
-        wandb.log({"training_samples_augmented": wandb.Image(fig)}, step=state.step)
-        plt.close(fig)
-    
-    def plot_and_log_training_samples(state, batch):
-        fig = plot_training_samples(state, batch)
-        wandb.log({"training_samples": wandb.Image(fig)}, step=state.step)
-        plt.close(fig)
 
     # --- Training ---
-    total_steps = config.inf_steps
-    proto_final_state, history, _ = ciclo.train_loop(
-        proto_state,
+    total_steps = config.gen_steps
+    gen_final_state, history, _ = ciclo.train_loop(
+        gen_state,
         deterministic_data.start_input_pipeline(train_ds),
         {
-            ciclo.on_train_step: [train_step_proto],
+            ciclo.on_train_step: [train_step],
             ciclo.on_reset_step: reset_metrics,
-            ciclo.on_test_step: eval_step_proto,
+            ciclo.on_test_step: eval_step,
             ciclo.every(1): custom_wandb_logger(run=run),  # type:ignore
-            ciclo.every(int(total_steps * config.eval_freq)): [
-                plot_and_log_data_samples_canonicalizations,
-                plot_and_log_data_augmented_samples_canonicalizations,
-                plot_and_log_training_augmented_samples,
-                plot_and_log_training_samples,
-            ],
         },
         test_dataset=lambda: deterministic_data.start_input_pipeline(val_ds),
         epoch_duration=int(total_steps * config.eval_freq),
@@ -205,28 +189,60 @@ def main(config, run):
     }
     manager = CheckpointManager(checkpoint_dir, checkpointers=handlers)
     manager.save(
-        proto_final_state.step,
-        {"state": proto_final_state, "config": config.to_dict()},
+        gen_final_state.step,
+        {"state": gen_final_state, "config": config.to_dict()},
     )
 
-    # --- Log reconstructions for eval: ---
-    def prototype_function(x, rng):
-        η = proto_model.apply(
-            {"params": proto_final_state.params}, x, train=False
-        ).sample(seed=rng)  # type: ignore
-        return η
-
-    if config.dataset == "aug_dsprites":
-        it = deterministic_data.start_input_pipeline(val_ds)
-        batch = next(it)
-
-        fig = plot_prototypes_by_shape(prototype_function, batch=batch)
-        run.log({"dsprites_by_elem_final_prototypes": wandb.Image(fig)})
-
     # --- Log final metrics as an image: ---
-    fig = plot_proto_model_training_metrics(history)
+    fig = plot_transform_gen_model_training_metrics(history)
     run.log({"run_metrics_summary": wandb.Image(fig)})
     fig.savefig(output_dir / "run_metrics_summary.pdf", bbox_inches="tight")
+
+    # --- Log generative histograms ---
+    nrows = 5
+    val_iter = deterministic_data.start_input_pipeline(val_ds)
+    val_batch = next(val_iter)
+    val_histograms_fig = plt.figure(figsize=(14, 3 * nrows))
+    val_histograms_subfigs = val_histograms_fig.subfigures(nrows=nrows)
+    for i in range(nrows):
+        plot_generative_histograms(
+            x=val_batch["image"][0, i],
+            rng=rng,
+            prototype_function=prototype_function,
+            interpolation_order=config.interpolation_order,
+            transform_gen_distribution_function=gen_model.apply(
+                {"params": gen_final_state.params}, train=False
+            ),
+            fig=val_histograms_subfigs[i],
+        )
+    wandb.log({"val_histograms": wandb.Image(val_histograms_fig)})
+    # - Same one, but with a transformed digit:
+    trans_histograms_fig = plt.figure(figsize=(14, 3 * nrows))
+    trans_histograms_subfigs = trans_histograms_fig.subfigures(nrows=nrows)
+    transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
+        val_batch["image"][0, 0],
+        jnp.concatenate(
+            (
+                jnp.linspace(
+                    -jnp.array(config.eval_augment_bounds),
+                    jnp.array(config.eval_augment_bounds),
+                    nrows,
+                ),
+            )
+        ),
+    )
+    for i in range(nrows):
+        plot_generative_histograms(
+            x=transformed_xs[i],
+            rng=rng,
+            prototype_function=prototype_function,
+            interpolation_order=config.interpolation_order,
+            transform_gen_distribution_function=gen_model.apply(
+                {"params": gen_final_state.params}, train=False
+            ),
+            fig=trans_histograms_subfigs[i],
+        )
+    wandb.log({"trans_histograms": wandb.Image(val_histograms_fig)})
 
 
 if __name__ == "__main__":
