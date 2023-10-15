@@ -12,12 +12,12 @@ from PIL import Image
 from src.transformations.affine import (
     affine_transform_image,
     create_generator_matrices,
-    gen_transform_mat,
+    gen_affine_matrix,
 )
 
 
 def _pytorch_transform_image(image, η):
-    G = np.array(gen_transform_mat(η))
+    G = np.array(gen_affine_matrix(η))
     image = torch.from_numpy(np.moveaxis(image[np.newaxis, :, :], -1, 1))
     flowgrid = F.affine_grid(
         torch.from_numpy(G[np.newaxis, :2, :]), size=image.size(), align_corners=True
@@ -90,7 +90,7 @@ class AffineMatrixTests(parameterized.TestCase):
     )
     def test_rotation(self, θ):
         η = jnp.array([0.0, 0.0, θ, 0.0, 0.0, 0.0])
-        T = gen_transform_mat(η)
+        T = gen_affine_matrix(η)
 
         # pylint: disable=bad-whitespace
         T_rot = jnp.array(
@@ -113,7 +113,7 @@ class AffineMatrixTests(parameterized.TestCase):
     )
     def test_translation(self, tx, ty):
         η = jnp.array([tx, ty, 0.0, 0.0, 0.0, 0.0])
-        T = gen_transform_mat(η)
+        T = gen_affine_matrix(η)
 
         T_trans = jnp.array([[1.0, 0.0, tx], [0.0, 1.0, ty], [0.0, 0.0, 1.0]])
         np.testing.assert_allclose(T, T_trans, rtol=1e-7, atol=1e-7)
@@ -127,7 +127,7 @@ class AffineMatrixTests(parameterized.TestCase):
     )
     def test_scaling(self, sx, sy):
         η = jnp.array([0.0, 0.0, 0.0, sx, sy, 0.0])
-        T = gen_transform_mat(η)
+        T = gen_affine_matrix(η)
 
         # pylint: disable=bad-whitespace
         T_trans = jnp.array(

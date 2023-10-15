@@ -25,6 +25,7 @@ def transform_image(
     η: Array,
     fill_mode: str = "constant",
     fill_value: float = -1.0,
+    order: int = 3,
 ) -> Array:
     """Applies transformations to an image.
 
@@ -47,7 +48,7 @@ def transform_image(
     # Apply affine transformations
     η_affine = jnp.concatenate((η[:5], jnp.zeros(1, dtype=η.dtype)))
     image = affine_transform_image(
-        image, η_affine, fill_mode=fill_mode, fill_value=fill_value
+        image, η_affine, fill_mode=fill_mode, fill_value=fill_value, order=order,
     )
 
     # # Apply color transformations

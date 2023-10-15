@@ -1,5 +1,7 @@
 """Affine transformations of images."""
 from chex import Array, assert_rank, assert_shape
+import functools
+import jax
 from jax import numpy as jnp
 from jax.scipy.linalg import expm
 
@@ -28,7 +30,7 @@ def create_generator_matrices() -> Array:
     return Gs
 
 
-def gen_transform_mat(
+def gen_affine_matrix(
     η: Array,
 ) -> Array:
     """Generates an affine transformation matrix which can be used to translate,
@@ -61,11 +63,38 @@ def gen_transform_mat(
     return T
 
 
-def _transform_image(
+def gen_affine_matrix_no_shear(
+    η: Array,
+) -> Array:
+    """Generates an affine transformation matrix which can be used to translate,
+    rotate and scale a 2D image.
+
+    See App. E of "Learning Invariant Weights in Neural Networks" by van der
+    Ouderaa and van der Wilk.
+
+    Args:
+        η: an Array with 5 entries:
+        * η_0 controls translation in x.
+        * η_1 controls translation in y.
+        * η_2 is the angle of rotation.
+        * η_3 is the scaling factor in x.
+        * η_4 is the scaling factor in y.
+
+    Returns:
+        A 3x3 affine transformation array.
+    """
+    assert_shape(η, (5,))
+    η_with_shear = jnp.concatenate((η, jnp.zeros(1, dtype=η.dtype)))
+
+    return gen_affine_matrix(η_with_shear)
+
+
+def transform_image_with_affine_matrix(
     image: Array,
     T: Array,
-    fill_mode: str = "nearest",
-    fill_value: float = 0.0,
+    fill_mode: str = "constant",
+    fill_value: float = -1.0,
+    order: int = 3,
 ) -> Array:
     """Applies an affine transformation to an image.
 
@@ -73,8 +102,13 @@ def _transform_image(
 
     Args:
         image: a rank-3 Array of shape (height, width, num channels) – i.e. Jax/TF image format.
-
         T: a 3x3 affine transformation Array.
+        fill_mode: How to handle points outside the boundaries of the input (e.g. when a transformation of the grid
+            goes out of bounds). See `jax.scipy.ndimage.map_coordinates` for more info.
+        fill_value: The default value to use for points outside the boundaries of the input. We set it to -1.0
+            as we assume that the input image is normalized to the range [-1, 1].
+        order: Interpolation order (1 - linear, 3 - bicubic)
+
 
     Returns:
         A transformed image of same shape as the input.
@@ -93,22 +127,24 @@ def _transform_image(
     # (x_s, y_s) = A x (x_t, y_t, 1)^T
     transformed_pts = A @ input_pts
     transformed_pts = (transformed_pts + 1) / 2
-    transformed_pts = transformed_pts * jnp.array([[width], [height]])
+    # [width - 1] and [height - 1] because that's the total width/height of the image
+    # when measured between the centers of the pixels.
+    transformed_pts = transformed_pts * jnp.array([[width - 1], [height - 1]])
 
     # Transform the image by moving the pixels to their new locations
-    output = jnp.stack(
-        [
-            map_coordinates(
-                image[:, :, i],
-                transformed_pts[::-1],
-                order=3,
-                mode=fill_mode,
-                cval=fill_value,
-            )
-            for i in range(num_channels)
-        ],
-        axis=-1,
-    )
+    output = jax.vmap(
+        functools.partial(
+            map_coordinates,
+            order=order,
+            mode=fill_mode,
+            cval=fill_value,
+        ),
+        in_axes=(2, None),
+        out_axes=1,
+    )(
+        image,
+        transformed_pts[::-1],
+    )  # shape [height * width, num_channels]
     output = jnp.reshape(output, image.shape)
 
     return output
@@ -119,6 +155,7 @@ def affine_transform_image(
     η: Array,
     fill_mode: str = "constant",
     fill_value: float = -1.0,
+    order: int = 3,
 ) -> Array:
     """Applies an affine transformation to an image.
 
@@ -136,6 +173,8 @@ def affine_transform_image(
         * η_3 is the scaling factor in x.
         * η_4 is the scaling factor in y.
         * η_5 controls shearing in x and y.
+        fill_value: The default value to use for points outside the boundaries of the input. We set it to -1.0
+            as we assume that the input image is normalized to the range [-1, 1].
 
     Returns:
         A transformed image of same shape as the input.
@@ -143,8 +182,8 @@ def affine_transform_image(
     assert_rank(image, 3)
     assert_shape(η, (6,))
 
-    T = gen_transform_mat(η)
-    return _transform_image(image, T, fill_mode=fill_mode, fill_value=fill_value)
+    T = gen_affine_matrix(η)
+    return transform_image_with_affine_matrix(image, T, fill_mode=fill_mode, fill_value=fill_value, order=order)
 
 
 def rotate_image(
