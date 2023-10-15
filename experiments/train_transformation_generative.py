@@ -75,10 +75,11 @@ flags.DEFINE_string(
 
 def main_with_wandb(_):
     config = FLAGS.config
-    # config = config.unlock()
-    # config.prototype_model_dir = FLAGS.prototype_model_dir
-    # config = config.lock()
-    # config.unlocked().update({"prototype_model_dir": FLAGS.prototype_model_dir})
+    # Update with prototype_model_dir
+    config = config.unlock()
+    config.prototype_model_dir = FLAGS.prototype_model_dir
+    config = config.lock()
+
     with wandb.init(
         mode=FLAGS.wandb_mode,
         tags=FLAGS.wandb_tags,
@@ -125,7 +126,7 @@ def main(config, run, prototype_model_dir: str):
     proto_model = TransformationInferenceNet(**proto_config["model"]["inference"])
 
     def prototype_function(x, rng):
-        η = proto_model.apply({"params": proto_state.params}, x, train=False).sample(
+        η = proto_model.apply({"params": proto_state["params"]}, x, train=False).sample(
             seed=rng
         )
         return η
@@ -210,8 +211,8 @@ def main(config, run, prototype_model_dir: str):
             rng=rng,
             prototype_function=prototype_function,
             interpolation_order=config.interpolation_order,
-            transform_gen_distribution_function=gen_model.apply(
-                {"params": gen_final_state.params}, train=False
+            transform_gen_distribution_function=lambda xhat: gen_model.apply(
+                {"params": gen_final_state.params}, xhat, train=False
             ),
             fig=val_histograms_subfigs[i],
         )
@@ -237,8 +238,8 @@ def main(config, run, prototype_model_dir: str):
             rng=rng,
             prototype_function=prototype_function,
             interpolation_order=config.interpolation_order,
-            transform_gen_distribution_function=gen_model.apply(
-                {"params": gen_final_state.params}, train=False
+            transform_gen_distribution_function=lambda xhat: gen_model.apply(
+                {"params": gen_final_state.params}, xhat, train=False
             ),
             fig=trans_histograms_subfigs[i],
         )

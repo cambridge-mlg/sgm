@@ -46,7 +46,7 @@ def get_config() -> config_dict.ConfigDict:
     config.aug_dsprites.square_distribution.unnormalised_shape_prob = 1 / 3
     config.aug_dsprites.ellipse_distribution.unnormalised_shape_prob = 1 / 3
 
-    # --- Training ---
+    # --- Training (proto) ---
     config.n_samples = 5
     config.eval_freq = 0.01
     config.difficulty_weighted_inf_loss = False
@@ -54,11 +54,6 @@ def get_config() -> config_dict.ConfigDict:
     config.interpolation_order = 3
     config.translate_last = False
 
-    config.gen_steps = 10_000
-    config.gen_init_lr = 1e-4
-    config.gen_peak_lr_mult = 3
-    config.gen_final_lr_mult = 1 / 30
-    config.gen_warmup_steps = 1_000
 
     config.σ_lr = 1e-2
     config.inf_steps = 10_000
@@ -73,6 +68,17 @@ def get_config() -> config_dict.ConfigDict:
     config.η_loss_decay_start = 0.0
     config.η_loss_decay_end = 1.0
     config.augment_warmup_end = 0.0
+
+    # Training (gen)
+    config.gen_steps = 10_000
+    config.gen_lr = 2.7e-3
+    config.gen_init_lr_mult = 1 / 9
+    config.gen_final_lr_mult = 1 / 2700
+    config.gen_warmup_steps = 1_000
+
+    config.mae_loss_mult_initial = 0.0
+    config.mae_loss_mult_final = 1.0
+
     # Blur schedule
     config.blur_filter_shape = (21, 21)
     config.blur_sigma_init = 1.0
