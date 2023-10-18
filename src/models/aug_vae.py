@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 
 import distrax
 import flax
+import jax
 import numpy as np
 import optax
 from chex import Array
@@ -18,24 +19,30 @@ from flax import linen as nn
 from flax import traverse_util
 from jax import numpy as jnp
 
-from src.models.proto_gen_model import PrototypicalGenerativeModel
+from src.models.transform_generative_model import TransformationGenerativeNet
+from src.models.transformation_inference_model import TransformationInferenceNet
 from src.models.vae import VAE
 from src.models.vae import VaeMetrics as AugVaeMetrics
 from src.models.vae import VaeTrainState as AugVaeTrainState
 from src.models.vae import make_vae_plotting_fns as make_aug_vae_plotting_fns
 from src.models.vae import make_vae_train_and_eval as make_aug_vae_train_and_eval
+from src.transformations.affine import (
+    gen_affine_matrix_no_shear,
+    transform_image_with_affine_matrix,
+)
 from src.utils.types import KwArgs
-
-INV_SOFTPLUS_1 = jnp.log(jnp.exp(1) - 1.0)
 
 
 class AUG_VAE(nn.Module):
     vae: Optional[KwArgs] = None
-    pgm: Optional[KwArgs] = None
+    inference: Optional[KwArgs] = None
+    generative: Optional[KwArgs] = None
+    interpolation_order: int = 3
 
     def setup(self):
         self.vae_model = VAE(**(self.vae or {}))
-        self.proto_gen_model = PrototypicalGenerativeModel(**(self.pgm or {}))
+        self.inference_model = TransformationInferenceNet(**(self.inference or {}))
+        self.generative_model = TransformationGenerativeNet(**(self.generative or {}))
 
     def __call__(
         self, x: Array, train: bool = True
@@ -44,7 +51,7 @@ class AUG_VAE(nn.Module):
         # the proto_gen_model will not be initialized. This is probablt not an
         # issue, since the idea is to pre-train the pgm.
         if train:
-            x = self.proto_gen_model.resample(x, train=train)
+            x = self.resample(x, train=train)
 
         return self.vae_model(x, train=train)
 
@@ -64,7 +71,7 @@ class AUG_VAE(nn.Module):
         train: bool = True,
     ) -> Array:
         if train:
-            x = self.proto_gen_model.resample(x, train=train)
+            x = self.resample(x, train=train)
 
         return self.vae_model.reconstruct(x, sample_z, sample_xrecon, train)
 
@@ -75,14 +82,38 @@ class AUG_VAE(nn.Module):
         train: bool = False,
     ) -> float:
         if train:
-            x = self.proto_gen_model.resample(x, train=train)
+            x = self.resample(x, train=train)
 
         return self.vae_model.importance_weighted_lower_bound(x, num_samples, train)
+
+    def resample(self, x: Array, train: bool = True) -> Array:
+        q_H_x = self.inference_model(x, train=train)
+        η = q_H_x.sample(seed=self.make_rng("sample"))
+        η_matrix = gen_affine_matrix_no_shear(η)
+        η_matrix_inv = jnp.linalg.inv(η_matrix)
+        x_hat = transform_image_with_affine_matrix(
+            x, η_matrix_inv, order=self.interpolation_order
+        )
+
+        p_H_x_hat = self.generative_model(x_hat, train=train)
+        η_new = p_H_x_hat.sample(seed=self.make_rng("sample"))
+        η_new_matrix = gen_affine_matrix_no_shear(η_new)
+
+        new_x = transform_image_with_affine_matrix(
+            x, η_matrix_inv @ η_new_matrix, order=self.interpolation_order
+        )
+
+        return new_x
+        # return jax.lax.cond(
+        #     jax.random.uniform(self.make_rng("sample"), ()) > 0.5,
+        #     lambda: x,
+        #     lambda: new_x,
+        # )
 
 
 def create_aug_vae_optimizer(params, config):
     partition_optimizers = {
-        "pgm": optax.identity(),
+        "nop": optax.set_to_zero(),
         "vae": optax.inject_hyperparams(optax.adam)(
             optax.warmup_cosine_decay_schedule(
                 config.init_lr,
@@ -91,6 +122,7 @@ def create_aug_vae_optimizer(params, config):
                 config.steps,
                 config.init_lr * config.final_lr_mult,
             )
+            # TODO: change to new API
         ),
     }
 
@@ -98,8 +130,8 @@ def create_aug_vae_optimizer(params, config):
         if "vae_model" in path:
             return "vae"
 
-        if "proto_gen_model" in path:
-            return "pgm"
+        if "inference_model" in path or "generative_model" in path:
+            return "nop"
 
     param_partitions = flax.core.freeze(
         traverse_util.path_aware_map(get_partition, params)

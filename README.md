@@ -13,7 +13,7 @@ git clone --recurse-submodules git@github.com:JamesAllingham/learning-invariance
 cd learning-invariances
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install "jax[cuda11_pip]==0.4.14" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+pip install "jax[cuda12_pip]==0.4.16" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 # ^ for GPU support, can be modified to get a different CUDA version
 pip install orbax-checkpoint==0.4.0  --force --no-deps
 # ^ really don't know why this is needed :(
@@ -133,3 +133,61 @@ curl -O https://bootstrap.pypa.io/get-pip.py
 
   - Make prior on η depend on x rather than x_hat, and simply be rotationally invariant network? That way it doesn't depend on the quality of the z|x or xhat|x inference network? 
   - Can't model η independently since we know that the prior is not independent (i.e. to get a an x from an x)hat we could rotate or we could shear but not both?)
+
+
+
+
+def make_paper_plot(idxs):
+    # create a plot with 3 rows and 4 * len(idxs) columns
+    top_row = []
+    mid_row = []
+    bot_row = []
+
+    p_H_X_hat, p_H_X_hat_vars = model.bind({"params": final_state.params}).generative_net.unbind()
+
+    for i, idx in enumerate(idxs):
+        rng_local = random.fold_in(rng, i)
+        x_ = val_batch['image'][0][idx]
+
+        transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
+            x_,
+            jnp.linspace(-jnp.array(config.model.bounds) * 0.5, jnp.array(config.model.bounds) * 0.5, 4)
+        )
+        top_row.append(transformed_xs)
+
+        # row 2 is the prototypes
+        xhats, ηs = get_proto(transformed_xs)
+        mid_row.append(xhats)
+
+        # row 3 is samples from the learned distribution p_H_X_hat
+        p_H_x_hat = p_H_X_hat.apply(p_H_X_hat_vars, xhat)
+        ηs = p_H_x_hat.sample(seed=rng_local, sample_shape=(4,))
+        x_samples = jax.vmap(transform_image, in_axes=(0, 0))(xhats, ηs)
+        bot_row.append(x_samples)
+
+    top_row = jnp.concatenate(top_row, axis=0)
+    mid_row = jnp.concatenate(mid_row, axis=0)
+    bot_row = jnp.concatenate(bot_row, axis=0)
+
+    all_rows = jnp.concatenate([top_row, mid_row, bot_row], axis=0)
+    print(all_rows.shape)
+    plot_img_array(all_rows, ncol=4*len(idxs), pad_value=255)
+
+
+make_paper_plot([18, 22, 24, 27])
+make_paper_plot([14, 15, 4, 10, 9])
+
+
+
+
+def resample(self, x, train: bool = False):
+        q_H_x = self.inference_net(x, train=train)
+        η = q_H_x.sample(seed=self.make_rng("sample"))
+
+        x_hat = transform_image(x, -η)
+
+        p_H_x_hat = self.generative_net(x_hat, train=train)
+        η_new = p_H_x_hat.sample(seed=self.make_rng("sample"))
+
+        x_recon = transform_image(x, -η + η_new)
+        return x_recon

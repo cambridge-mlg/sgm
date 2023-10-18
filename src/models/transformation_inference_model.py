@@ -1,3 +1,12 @@
+"""Transformation inference model implementation.
+
+A note on notation. In order to distinguish between random variables and their values, we use upper
+and lower case variable names. I.e., p(Z) or `p_Z` is the distribution over the r.v. Z, and is a
+function, while p(z) or `p_z` is the probability that Z=z. Similarly, p(X|Z) or `p_X_given_Z` is a
+a function which returns another function p(X|z) or `p_X_given_z`, which would return the proability
+that X=x|Z=z a.k.a `p_x_given_z`.
+"""
+
 import functools
 from typing import Callable, Optional, Sequence
 
@@ -13,6 +22,7 @@ import flax.linen as nn
 from flax.linen import initializers as init
 from flax.training import train_state
 from flax import traverse_util
+from ml_collections import config_dict
 import distrax
 from clu import metrics
 import optax
@@ -21,7 +31,10 @@ from src.models.convnext import ConvNeXt, get_convnext_constructor
 
 from src.models.utils import clipped_adamw, huber_loss
 from src.utils.types import KwArgs
-from src.transformations.affine import transform_image_with_affine_matrix, gen_affine_matrix_no_shear
+from src.transformations.affine import (
+    transform_image_with_affine_matrix,
+    gen_affine_matrix_no_shear,
+)
 from src.utils.blur import gaussian_filter2d
 
 
@@ -31,7 +44,7 @@ class TransformationInferenceNet(nn.Module):
     offset: Optional[Sequence[int]] = None
     σ_init: Callable = init.constant(jnp.log(jnp.exp(0.01) - 1.0))
     squash_to_bounds: bool = False
-    model_type: str = "mlp" # "mlp" or "convnext"
+    model_type: str = "mlp"  # "mlp" or "convnext"
     convnext_type: str = "tiny"
     convnext_depths: Optional[Sequence[int]] = None
     convnext_dims: Optional[Sequence[int]] = None
@@ -61,21 +74,38 @@ class TransformationInferenceNet(nn.Module):
                         h = nn.LayerNorm()(h)
 
             case "convnext":
-                constructor_kwargs = dict(num_outputs=1024, in_channels=1, init_downsample=1, **(self.convnext_kwargs or {}))
+                constructor_kwargs = dict(
+                    num_outputs=1024,
+                    in_channels=1,
+                    init_downsample=1,
+                    **(self.convnext_kwargs or {}),
+                )
                 match self.convnext_type:
                     case "custom":
                         assert self.convnext_depths is not None
                         assert self.convnext_dims is not None
-                        convnext = ConvNeXt(dims=self.convnext_dims, depths=self.convnext_depths, **constructor_kwargs)
+                        convnext = ConvNeXt(
+                            dims=self.convnext_dims,
+                            depths=self.convnext_depths,
+                            **constructor_kwargs,
+                        )
                     case _:
-                        convnext = get_convnext_constructor(self.convnext_type)(**constructor_kwargs)
+                        convnext = get_convnext_constructor(self.convnext_type)(
+                            **constructor_kwargs
+                        )
                 h = convnext(x)
-                h = nn.LayerNorm()(h)  # no layer norm might actually help with scaling the right way?
+                h = nn.LayerNorm()(
+                    h
+                )  # no layer norm might actually help with scaling the right way?
             case _:
                 raise ValueError(f"Unknown model type {self.model_type}")
 
         output_dim = np.prod(self.event_shape)
-        μ = nn.Dense(output_dim, kernel_init=nn.initializers.zeros_init(), bias_init=nn.initializers.zeros_init())(h)
+        μ = nn.Dense(
+            output_dim,
+            kernel_init=nn.initializers.zeros_init(),
+            bias_init=nn.initializers.zeros_init(),
+        )(h)
         σ = jax.nn.softplus(self.param("σ_", self.σ_init, self.event_shape))
 
         base = distrax.Independent(
@@ -91,15 +121,26 @@ class TransformationInferenceNet(nn.Module):
                     len(self.event_shape),
                 ),
             ]
-            + ([distrax.Block(distrax.Tanh(), len(self.event_shape))] if self.squash_to_bounds else [])
+            + (
+                [distrax.Block(distrax.Tanh(), len(self.event_shape))]
+                if self.squash_to_bounds
+                else []
+            )
         )
 
         return distrax.Transformed(base, bijector)
 
 
-def make_transformation_inference_train_and_eval(config, model: TransformationInferenceNet):
+def make_transformation_inference_train_and_eval(
+    model: TransformationInferenceNet, config: config_dict.ConfigDict
+):
     transform_image_fn = jax.jit(
-        functools.partial(transform_image_with_affine_matrix, order=config.interpolation_order, fill_value=-1., fill_mode="constant")
+        functools.partial(
+            transform_image_with_affine_matrix,
+            order=config.interpolation_order,
+            fill_value=-1.0,
+            fill_mode="constant",
+        )
     )
     # Currently `gen_affine_augment` and `gen_affine_model` are the same, but it might make sense for them
     # to be different
@@ -133,8 +174,11 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
         if train and config.blur_sigma_init > 0.0:
             # Possibly blur the sample (lax.select useful for defining schedules that go to 0.):
             x = jax.lax.cond(
-                state.blur_sigma > 1e-5,  # A small value to avoid numerical issues with a very narrow kernel
-                lambda im: gaussian_filter2d(im, sigma=state.blur_sigma, filter_shape=config.blur_filter_shape),
+                state.blur_sigma
+                > 1e-5,  # A small value to avoid numerical issues with a very narrow kernel
+                lambda im: gaussian_filter2d(
+                    im, sigma=state.blur_sigma, filter_shape=config.blur_filter_shape
+                ),
                 lambda im: im,
                 x,
             )
@@ -196,8 +240,10 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
                 )
             else:
                 Η_rand = distrax.Uniform(
-                    low=-jnp.array(config.eval_augment_bounds) + jnp.array(config.augment_offset),
-                    high=jnp.array(config.eval_augment_bounds) + jnp.array(config.augment_offset),
+                    low=-jnp.array(config.eval_augment_bounds)
+                    + jnp.array(config.augment_offset),
+                    high=jnp.array(config.eval_augment_bounds)
+                    + jnp.array(config.augment_offset),
                 )
 
             η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
@@ -211,7 +257,9 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
             η_x = q_H_x.sample(seed=rng_sample2)
             # Get the affine matrices
             η_x_rand1_aff_mat = gen_affine_model(η_x_rand1)
-            η_x_rand1_inv_aff_mat = linalg.inv(η_x_rand1_aff_mat)  # Inv. faster than matrix exponential
+            η_x_rand1_inv_aff_mat = linalg.inv(
+                η_x_rand1_aff_mat
+            )  # Inv. faster than matrix exponential
             η_x_aff_mat = gen_affine_model(η_x)
             η_x_inv_aff_mat = linalg.inv(η_x_aff_mat)
 
@@ -227,7 +275,7 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
 
             # This loss regularises for the applied sequence of transformations to be identity, but directly in η space
             # This is a useful proxy and can provide a helpful learning signal.
-            # However, it is possible for it to be non-0 while the MSE is perfect due to 
+            # However, it is possible for it to be non-0 while the MSE is perfect due to
             # self-symmetric objects (multiple orbit stabilizers). Ultimately, we care about
             # low MSE.
             # The loss is chosen to be more-or-less linear in the difference (hence the Huber loss)
@@ -242,7 +290,11 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
 
-            invertibility_loss = invertibility_loss_fn(x_rand1, affine_mat=η_x_rand1_inv_aff_mat, affine_mat_inv=η_x_rand1_aff_mat)
+            invertibility_loss = invertibility_loss_fn(
+                x_rand1,
+                affine_mat=η_x_rand1_inv_aff_mat,
+                affine_mat_inv=η_x_rand1_aff_mat,
+            )
 
             return x_mse, η_recon_loss, invertibility_loss, difficulty
 
@@ -264,15 +316,15 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
             compute the MSE loss between x and the re-reconstruction of x as shown below:
 
 
-                      ┌───────┐             ┌─────────────┐   
+                      ┌───────┐             ┌─────────────┐
                 x─────┤n_rand1├───►x_rand1──┤n_x_rand1.inv├───┐
                 │     └───────┘             └─────────────┘   │
-                ▼                                             ▼                                                                                      
+                ▼                                             ▼
                mse                                           x_hat
                 ▲                                             │
                 │   ┌───────────┐              ┌─────────┐    │
                 x'◄─┤n_rand2.inv├──x_rand2◄────┤n_x_rand2├────┘
-                    └───────────┘              └─────────┘    
+                    └───────────┘              └─────────┘
 
             However, implementing this directly requires doing 3 affine transformations, which adds 'blur' to the image.
             So instead we note that the diagram above is equivalent to (assuming invertible group actions):
@@ -323,25 +375,30 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
 
             # Get the affine matrices
             η_x_rand1_aff_mat = gen_affine_model(η_x_rand1)
-            η_x_rand1_inv_aff_mat = linalg.inv(η_x_rand1_aff_mat)  # Inv. faster than matrix exponential
+            η_x_rand1_inv_aff_mat = linalg.inv(
+                η_x_rand1_aff_mat
+            )  # Inv. faster than matrix exponential
             η_x_rand2_aff_mat = gen_affine_model(η_x_rand2)
             η_x_rand2_inv_aff_mat = linalg.inv(η_x_rand2_aff_mat)
 
             # Consider transforming x twice (first into latent space, and then untransforming) as a
             # way to regularise for invertibility
             x_mse = optax.squared_error(
-                x, 
+                x,
                 transform_image_fn(
                     x,
-                    η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_rand2_aff_mat @ η_rand2_inv_aff_mat,
-                )
+                    η_rand1_aff_mat
+                    @ η_x_rand1_inv_aff_mat
+                    @ η_x_rand2_aff_mat
+                    @ η_rand2_inv_aff_mat,
+                ),
             ).mean()
 
             difficulty = optax.squared_error(x_rand1, x_rand2).mean()
 
             # This loss regularises for the applied sequence of transformations to be identity, but directly in η space.
             # It can be a useful proxy provides a helpful learning signal.
-            # However, it is possible for it to be non-0 while the MSE is perfect due to 
+            # However, it is possible for it to be non-0 while the MSE is perfect due to
             # self-symmetric objects (multiple orbit stabilizers). Ultimately, we care about
             # low MSE.
             # The loss is chosen to be more-or-less linear in the difference (hence the Huber loss)
@@ -350,20 +407,35 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
             # the modes (at the mean of the modes)
             η_recon_loss = huber_loss(
                 # Measure how close the transformation is to identity
-                (η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_rand2_aff_mat @ η_rand2_inv_aff_mat)[:2, :].ravel(),
+                (
+                    η_rand1_aff_mat
+                    @ η_x_rand1_inv_aff_mat
+                    @ η_x_rand2_aff_mat
+                    @ η_rand2_inv_aff_mat
+                )[:2, :].ravel(),
                 jnp.eye(3, dtype=η_rand2_aff_mat.dtype)[:2, :].ravel(),
                 slope=1,
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
 
-            invertibility_loss = invertibility_loss_fn(x_rand1, affine_mat=η_x_rand1_inv_aff_mat, affine_mat_inv=η_x_rand1_aff_mat)
+            invertibility_loss = invertibility_loss_fn(
+                x_rand1,
+                affine_mat=η_x_rand1_inv_aff_mat,
+                affine_mat_inv=η_x_rand1_aff_mat,
+            )
 
             return x_mse, η_recon_loss, invertibility_loss, difficulty
 
-        per_sample_loss = symmetrised_per_sample_loss if config.symmetrised_samples_in_loss else nonsymmetrised_per_sample_loss
+        per_sample_loss = (
+            symmetrised_per_sample_loss
+            if config.symmetrised_samples_in_loss
+            else nonsymmetrised_per_sample_loss
+        )
 
         rngs = random.split(rng_local, config.n_samples)
-        x_mse, η_recon_loss, invertibility_loss, difficulty = jax.vmap(per_sample_loss)(rngs)
+        x_mse, η_recon_loss, invertibility_loss, difficulty = jax.vmap(per_sample_loss)(
+            rngs
+        )
 
         # (maybe) do a weighted average based on the difficulty of the sample
         weights = (
@@ -376,7 +448,11 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
 
         invertibility_loss = invertibility_loss.mean()
 
-        loss = config.x_mse_loss_mult * x_mse + state.η_loss_mult * η_recon_loss + config.invertibility_loss_mult * invertibility_loss
+        loss = (
+            config.x_mse_loss_mult * x_mse
+            + state.η_loss_mult * η_recon_loss
+            + config.invertibility_loss_mult * invertibility_loss
+        )
 
         return loss, {
             "loss": loss,
@@ -384,7 +460,6 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
             "η_recon_loss": η_recon_loss,
             "invertibility_loss": invertibility_loss,
         }
-
 
     @jax.jit
     def train_step(state, batch):
@@ -447,7 +522,7 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
 
         def mse_same_label_examples(xs, labels, mask, rng):
             """
-            Compute MSE between a pair of images transformed "into each other" through 
+            Compute MSE between a pair of images transformed "into each other" through
             the prototype model, where the pair of images is chosen to have the same label
             (and hence, for some datasets, likely a similar prototype).
 
@@ -459,11 +534,15 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
 
             # Create a mask that excludes self-matching images
             num_images = xs.shape[0]
-            self_match_mask = jnp.eye(num_images, dtype=bool)  # [batch_size, batch_size]
+            self_match_mask = jnp.eye(
+                num_images, dtype=bool
+            )  # [batch_size, batch_size]
 
             # Create a mask that matches labels between original and transformed images
-            label_match_mask = jnp.equal(jnp.expand_dims(labels, axis=-1), labels)  # [batch_size, batch_size]
-            mask_mask  = jnp.expand_dims(mask, axis=0)  # [1, batch_size]
+            label_match_mask = jnp.equal(
+                jnp.expand_dims(labels, axis=-1), labels
+            )  # [batch_size, batch_size]
+            mask_mask = jnp.expand_dims(mask, axis=0)  # [1, batch_size]
 
             match_mask = jnp.logical_and(label_match_mask, ~self_match_mask)
             match_mask = jnp.logical_and(match_mask, mask_mask)
@@ -475,13 +554,20 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
                 any_matching = is_matching.any()
                 return jax.lax.cond(
                     any_matching,
-                    lambda: (random.choice(rng, num_idxs, p=is_matching/is_matching.sum()), True),
+                    lambda: (
+                        random.choice(rng, num_idxs, p=is_matching / is_matching.sum()),
+                        True,
+                    ),
                     lambda: (0, False),
                 )
 
             pair_match_rngs = random.split(pair_match_rng, num_images)
-            paired_idxs, has_matching = jax.vmap(get_matching_index, in_axes=(0, 0))(match_mask, pair_match_rngs)
-            paired_xs = jax.vmap(lambda idx, xs_: xs_[idx], in_axes=(0, None))(paired_idxs, xs)
+            paired_idxs, has_matching = jax.vmap(get_matching_index, in_axes=(0, 0))(
+                match_mask, pair_match_rngs
+            )
+            paired_xs = jax.vmap(lambda idx, xs_: xs_[idx], in_axes=(0, None))(
+                paired_idxs, xs
+            )
 
             # Now transform the original image using the eta from the transformed image
             def per_example_paired_image_mse(x1, x2, rng):
@@ -499,12 +585,21 @@ def make_transformation_inference_train_and_eval(config, model: TransformationIn
                 x1_hat = transform_image_fn(x1, η1_inv_aff_mat)
                 x2_recon = transform_image_fn(x1_hat, η2_aff_mat)
                 return optax.squared_error(x2, x2_recon).mean()
-            
-            # Return MSE of 0 if there is no label match
-            return jax.vmap(per_example_paired_image_mse, in_axes=(0, 0, 0))(xs, paired_xs, random.split(sample_rng, num_images)), has_matching
 
-        label_paired_image_mse, has_matching = mse_same_label_examples(batch["image"][0], batch["label"][0], batch["mask"][0], step_rng)
-        mean_label_paired_image_mse = (label_paired_image_mse * has_matching).sum() / has_matching.sum()
+            # Return MSE of 0 if there is no label match
+            return (
+                jax.vmap(per_example_paired_image_mse, in_axes=(0, 0, 0))(
+                    xs, paired_xs, random.split(sample_rng, num_images)
+                ),
+                has_matching,
+            )
+
+        label_paired_image_mse, has_matching = mse_same_label_examples(
+            batch["image"][0], batch["label"][0], batch["mask"][0], step_rng
+        )
+        mean_label_paired_image_mse = (
+            label_paired_image_mse * has_matching
+        ).sum() / has_matching.sum()
 
         # Loss function metrics
         _, metrics = jax.vmap(
@@ -535,7 +630,7 @@ def create_transformation_inference_optimizer(params, config):
             ),
             2.0,
             # Optax WD default: 0.0001 https://optax.readthedocs.io/en/latest/api.html#optax.adamw
-            config.get("inf_weight_decay", 0.0001),  
+            config.get("inf_weight_decay", 0.0001),
         ),
         "σ": optax.inject_hyperparams(optax.adam)(
             optax.warmup_cosine_decay_schedule(
@@ -595,9 +690,19 @@ class TransformationInferenceTrainState(train_state.TrainState):
             blur_sigma=self.blur_sigma_schedule(self.step),
             **kwargs,
         )
-    
+
     @classmethod
-    def create(cls, *, apply_fn, params, tx, augment_bounds_mult_schedule, η_loss_mult_schedule, blur_sigma_schedule, **kwargs):
+    def create(
+        cls,
+        *,
+        apply_fn,
+        params,
+        tx,
+        augment_bounds_mult_schedule,
+        η_loss_mult_schedule,
+        blur_sigma_schedule,
+        **kwargs,
+    ):
         opt_state = tx.init(params)
         return cls(
             step=0,
@@ -624,7 +729,11 @@ def create_transformation_inference_state(params, rng, config):
         metrics=TransformationInferenceMetrics.empty(),
         augment_bounds_mult_schedule=optax.join_schedules(
             [
-                optax.linear_schedule(init_value=0.0, end_value=1.0, transition_steps=config.inf_steps *config.augment_warmup_end),
+                optax.linear_schedule(
+                    init_value=0.0,
+                    end_value=1.0,
+                    transition_steps=config.inf_steps * config.augment_warmup_end,
+                ),
                 optax.constant_schedule(1.0),
             ],
             boundaries=[config.inf_steps * config.augment_warmup_end],
@@ -632,14 +741,28 @@ def create_transformation_inference_state(params, rng, config):
         η_loss_mult_schedule=optax.join_schedules(
             [
                 optax.constant_schedule(config.η_loss_mult_peak),
-                optax.linear_schedule(init_value=config.η_loss_mult_peak, end_value=0.0, transition_steps=(config.η_loss_decay_end - config.η_loss_decay_start) * config.inf_steps),
+                optax.linear_schedule(
+                    init_value=config.η_loss_mult_peak,
+                    end_value=0.0,
+                    transition_steps=(
+                        config.η_loss_decay_end - config.η_loss_decay_start
+                    )
+                    * config.inf_steps,
+                ),
                 optax.constant_schedule(0.0),
             ],
-            boundaries=[config.η_loss_decay_start * config.inf_steps, config.η_loss_decay_end * config.inf_steps],
+            boundaries=[
+                config.η_loss_decay_start * config.inf_steps,
+                config.η_loss_decay_end * config.inf_steps,
+            ],
         ),
         blur_sigma_schedule=optax.join_schedules(
             [
-                optax.linear_schedule(init_value=config.blur_sigma_init, end_value=0.0, transition_steps=config.inf_steps * config.blur_sigma_decay_end),
+                optax.linear_schedule(
+                    init_value=config.blur_sigma_init,
+                    end_value=0.0,
+                    transition_steps=config.inf_steps * config.blur_sigma_decay_end,
+                ),
                 optax.constant_schedule(0.0),
             ],
             boundaries=[config.inf_steps * config.blur_sigma_decay_end],

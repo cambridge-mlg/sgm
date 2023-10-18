@@ -53,7 +53,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.β_schedule_init_value = 10.0
     config.β_schedule_final_value = 1.0
 
-    config.run_iwlb = True
+    config.run_iwlb = False
     config.iwlb_num_samples = 100
 
     return config
