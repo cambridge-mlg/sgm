@@ -43,7 +43,8 @@ def expected_kwargs_for_distribution_type(
         case DistributionType.DELTA:
             return {"value"}
         case _:
-            raise NotImplemented(f"Invalid distribution type {distribution_type}")
+            raise NotImplementedError(f"Invalid distribution type {distribution_type}."
+                                      f"Expected one of {DistributionType.__members__}")
 
 
 class ShapeDistributionConfig(Protocol):

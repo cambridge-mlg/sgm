@@ -188,15 +188,7 @@ def make_transformation_inference_train_and_eval(
             The self-supervised loss for the generative network can be summarised with the following diagram
 
                     x ------- -η_x -----> x_hat
-                    ∧                       |
-                    |                       v
-                    x                     mse
-                    |                       ∧
-                    ∨                       |
-                x_rand --- -η_x_rand ---> x_hat'.
-
-                    x ------- -η_x -----> x_hat
-                    ∧                       |
+                    |                       |
                     |                       v
                 η_rand                    mse
                     |                       ∧
@@ -333,12 +325,12 @@ def make_transformation_inference_train_and_eval(
                 x'◄────────────────────────────┐
                 │                              │
                 ▼     ┌────────────────────────┴────────────────────────┐
-               mse    │n_rand2.inv @ n_x_rand2 @ n_x_rand1.inv @ n_rand1│
+               mse    │n_rand2.inv ∘ n_x_rand2 ∘ n_x_rand1.inv ∘ n_rand1│
                 ▲     └────────────────────────┬────────────────────────┘
                 │                              │
                 x──────────────────────────────┘
 
-            Where @ denotes composition of group actions. In all of the above, we assume we have group action representations
+            Where ∘ denotes composition of group actions. In all of the above, we assume we have group action representations
             for which negation yields the inverse.
             """
             (
