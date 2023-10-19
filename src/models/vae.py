@@ -245,6 +245,19 @@ class VAE(nn.Module):
 
         return x_recon
 
+    def elbo(
+        self,
+        x: Array,
+        train: bool = False,
+        β: float = 1.0,
+    ) -> float:
+        q_Z_given_x, p_X_given_z, p_Z = self(x, train=train)
+
+        ll = p_X_given_z.log_prob(x) / x.shape[-1]
+        kld = q_Z_given_x.kl_divergence(p_Z)
+
+        return ll - β * kld, ll, kld
+
     def importance_weighted_lower_bound(
         self,
         x: Array,
@@ -283,14 +296,14 @@ def make_vae_train_and_eval(model, config):
     ):
         rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
 
-        q_Z_given_x, p_X_given_z, p_Z = model.apply(
-            {"params": params}, x, train, rngs={"sample": rng_local}
+        elbo, ll, kld = model.apply(
+            {"params": params},
+            x,
+            train,
+            β=state.β,
+            method=model.elbo,
+            rngs={"sample": rng_local},
         )
-
-        ll = p_X_given_z.log_prob(x) / x.shape[-1]
-        z_kld = q_Z_given_x.kl_divergence(p_Z)
-
-        elbo = ll - state.β * z_kld
 
         if not train and config.get("run_iwlb", False):
             iwlb = model.apply(
@@ -308,7 +321,7 @@ def make_vae_train_and_eval(model, config):
             "loss": -elbo,
             "elbo": elbo,
             "ll": ll,
-            "z_kld": z_kld,
+            "kld": kld,
             "iwlb": iwlb,
         }
 
@@ -385,7 +398,7 @@ class VaeMetrics(metrics.Collection):
     loss: metrics.Average.from_output("loss")
     elbo: metrics.Average.from_output("elbo")
     ll: metrics.Average.from_output("ll")
-    z_kld: metrics.Average.from_output("z_kld")
+    kld: metrics.Average.from_output("kld")
     iwlb: metrics.Average.from_output("iwlb")
 
     def update(self, **kwargs) -> "VaeMetrics":

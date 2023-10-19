@@ -19,7 +19,7 @@ from flax import linen as nn
 from flax import traverse_util
 from jax import numpy as jnp
 
-from src.models.transform_generative_model import TransformationGenerativeNet
+from src.models.transformation_generative_model import TransformationGenerativeNet
 from src.models.transformation_inference_model import TransformationInferenceNet
 from src.models.vae import VAE
 from src.models.vae import VaeMetrics as AugVaeMetrics
@@ -48,7 +48,7 @@ class AUG_VAE(nn.Module):
         self, x: Array, train: bool = True
     ) -> Tuple[distrax.Distribution, ...]:
         # Note: if using this function to initialize the model, if train=False,
-        # the proto_gen_model will not be initialized. This is probablt not an
+        # the proto_gen_model will not be initialized. This is probably not an
         # issue, since the idea is to pre-train the pgm.
         if train:
             x = self.resample(x, train=train)
@@ -75,6 +75,17 @@ class AUG_VAE(nn.Module):
 
         return self.vae_model.reconstruct(x, sample_z, sample_xrecon, train)
 
+    def elbo(
+        self,
+        x: Array,
+        train: bool = False,
+        β: float = 1.0,
+    ) -> float:
+        if train:
+            x = self.resample(x, train=train)
+
+        return self.vae_model.elbo(x, train, β)
+
     def importance_weighted_lower_bound(
         self,
         x: Array,
@@ -87,16 +98,16 @@ class AUG_VAE(nn.Module):
         return self.vae_model.importance_weighted_lower_bound(x, num_samples, train)
 
     def resample(self, x: Array, train: bool = True) -> Array:
-        q_H_x = self.inference_model(x, train=train)
-        η = q_H_x.sample(seed=self.make_rng("sample"))
+        q_H_given_x = self.inference_model(x, train=train)
+        η = q_H_given_x.sample(seed=self.make_rng("sample"))
         η_matrix = gen_affine_matrix_no_shear(η)
         η_matrix_inv = jnp.linalg.inv(η_matrix)
         x_hat = transform_image_with_affine_matrix(
             x, η_matrix_inv, order=self.interpolation_order
         )
 
-        p_H_x_hat = self.generative_model(x_hat, train=train)
-        η_new = p_H_x_hat.sample(seed=self.make_rng("sample"))
+        p_H_given_x_hat = self.generative_model(x_hat, train=train)
+        η_new = p_H_given_x_hat.sample(seed=self.make_rng("sample"))
         η_new_matrix = gen_affine_matrix_no_shear(η_new)
 
         new_x = transform_image_with_affine_matrix(
