@@ -45,8 +45,8 @@ class Encoder(nn.Module):
     """p(z|x) = N(μ(x), σ(x)), where μ(x) and σ(x) are neural networks."""
 
     latent_dim: int
-    conv_dims: Optional[Sequence[int]] = None
-    dense_dims: Optional[Sequence[int]] = None
+    conv_dims: Sequence[int]
+    dense_dims: Sequence[int]
     act_fn: Callable = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
     σ_min: float = 1e-2
@@ -58,19 +58,16 @@ class Encoder(nn.Module):
     def __call__(self, x: Array, train: Optional[bool] = None) -> distrax.Distribution:
         train = nn.merge_param("train", self.train, train)
 
-        conv_dims = self.conv_dims if self.conv_dims is not None else [64, 128, 256]
-        dense_dims = self.dense_dims if self.dense_dims is not None else [64, 32]
-
         h = x
         if len(x.shape) > 1:
             assert x.shape[0] == x.shape[1], "Images should be square."
             num_2strides = np.minimum(
-                _get_num_even_divisions(x.shape[0]), len(conv_dims)
+                _get_num_even_divisions(x.shape[0]), len(self.conv_dims)
             )
             if self.max_2strides is not None:
                 num_2strides = np.minimum(num_2strides, self.max_2strides)
 
-            for i, conv_dim in enumerate(conv_dims):
+            for i, conv_dim in enumerate(self.conv_dims):
                 h = nn.Conv(
                     conv_dim,
                     kernel_size=(3, 3),
@@ -83,7 +80,7 @@ class Encoder(nn.Module):
 
             h = h.flatten()
 
-        for dense_dim in dense_dims:
+        for dense_dim in self.dense_dims:
             h = nn.Dense(dense_dim)(h)
             h = self.norm_cls()(h)
             h = self.act_fn(h)
@@ -111,8 +108,8 @@ class Decoder(nn.Module):
     """p(x|z) = N(μ(z), σ), where μ(z) is a neural network."""
 
     image_shape: Tuple[int, int, int]
-    conv_dims: Optional[Sequence[int]] = None
-    dense_dims: Optional[Sequence[int]] = None
+    conv_dims: Sequence[int]
+    dense_dims: Sequence[int]
     σ_init: Callable = init.constant(INV_SOFTPLUS_1)
     act_fn: Callable = nn.relu
     norm_cls: nn.Module = nn.LayerNorm
@@ -125,19 +122,18 @@ class Decoder(nn.Module):
     def __call__(self, z: Array, train: Optional[bool] = None) -> distrax.Distribution:
         train = nn.merge_param("train", self.train, train)
 
-        conv_dims = self.conv_dims if self.conv_dims is not None else [256, 128, 64]
-        dense_dims = self.dense_dims if self.dense_dims is not None else [32, 64]
-
         if len(self.image_shape) == 3:
             assert (
                 self.image_shape[0] == self.image_shape[1]
             ), "Images should be square."
         output_size = self.image_shape[0]
-        num_2strides = np.minimum(_get_num_even_divisions(output_size), len(conv_dims))
+        num_2strides = np.minimum(
+            _get_num_even_divisions(output_size), len(self.conv_dims)
+        )
         if self.max_2strides is not None:
             num_2strides = np.minimum(num_2strides, self.max_2strides)
 
-        for dense_dim in dense_dims:
+        for dense_dim in self.dense_dims:
             z = nn.Dense(dense_dim)(z)
             z = self.norm_cls()(z)
             z = self.act_fn(z)
@@ -147,12 +143,12 @@ class Decoder(nn.Module):
         h = nn.Dense(dense_size * dense_size * 3, name=f"resize")(z)
         h = h.reshape(dense_size, dense_size, 3)
 
-        for i, conv_dim in enumerate(conv_dims):
+        for i, conv_dim in enumerate(self.conv_dims):
             h = nn.ConvTranspose(
                 conv_dim,
                 kernel_size=(3, 3),
                 # use stride of 2 for the last few layers
-                strides=(2, 2) if i >= len(conv_dims) - num_2strides else (1, 1),
+                strides=(2, 2) if i >= len(self.conv_dims) - num_2strides else (1, 1),
             )(h)
             h = self.norm_cls()(h)
             h = self.act_fn(h)
@@ -170,11 +166,16 @@ class Decoder(nn.Module):
 class VAE(nn.Module):
     latent_dim: int = 20
     image_shape: Tuple[int, int, int] = (28, 28, 1)
+    conv_dims: Optional[Sequence[int]] = None
+    dense_dims: Optional[Sequence[int]] = None
     Z_given_X: Optional[KwArgs] = None
     X_given_Z: Optional[KwArgs] = None
     σ_min: float = 1e-2
 
     def setup(self):
+        conv_dims = self.conv_dims if self.conv_dims is not None else [256, 128, 64]
+        dense_dims = self.dense_dims if self.dense_dims is not None else [32, 64]
+
         # p(Z)
         self.p_Z = distrax.Independent(
             distrax.Normal(
@@ -190,10 +191,18 @@ class VAE(nn.Module):
             reinterpreted_batch_ndims=1,
         )
         # q(Z|X)
-        self.q_Z_given_X = Encoder(latent_dim=self.latent_dim, **(self.Z_given_X or {}))
+        self.q_Z_given_X = Encoder(
+            latent_dim=self.latent_dim,
+            conv_dims=conv_dims,
+            dense_dims=dense_dims,
+            **(self.Z_given_X or {}),
+        )
         # p(X|Z)
         self.p_X_given_Z = Decoder(
-            image_shape=self.image_shape, **(self.X_given_Z or {})
+            image_shape=self.image_shape,
+            conv_dims=tuple(reversed(conv_dims)),
+            dense_dims=tuple(reversed(dense_dims)),
+            **(self.X_given_Z or {}),
         )
 
     def __call__(
@@ -384,11 +393,11 @@ def make_vae_train_and_eval(model, config):
 def create_vae_optimizer(config):
     return optax.inject_hyperparams(optax.adam)(
         optax.warmup_cosine_decay_schedule(
-            config.init_lr,
-            config.init_lr * config.peak_lr_mult,
-            config.warmup_steps,
+            config.lr * config.init_lr_mult,
+            config.lr,
+            config.steps * config.warmup_steps_pct,
             config.steps,
-            config.init_lr * config.final_lr_mult,
+            config.lr * config.final_lr_mult,
         )
     )
 

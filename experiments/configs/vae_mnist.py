@@ -30,13 +30,11 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model_name = "VAE"
     config.model = config_dict.ConfigDict()
     config.model.latent_dim = 16
+    config.model.conv_dims = (64, 128, 256)
+    config.model.dense_dims = (256,)
     config.model.Z_given_X = config_dict.ConfigDict()
-    config.model.Z_given_X.conv_dims = (64, 128, 256)
-    config.model.Z_given_X.dense_dims = (256,)
     config.model.Z_given_X.max_2strides = 2
     config.model.X_given_Z = config_dict.ConfigDict()
-    config.model.X_given_Z.conv_dims = (256, 128, 64)
-    config.model.X_given_Z.dense_dims = (256,)
     config.model.X_given_Z.max_2strides = 2
 
     config.steps = 10_000
@@ -45,10 +43,12 @@ def get_config(params) -> config_dict.ConfigDict:
     config.batch_size = 512
     config.batch_size_eval = 50
 
-    config.init_lr = 3e-4
-    config.peak_lr_mult = 3
-    config.final_lr_mult = 1
-    config.warmup_steps = 1_000
+    config.lr = 9e-4
+    config.init_lr_mult = 1 / 3
+    config.final_lr_mult = 1 / 3
+    config.warmup_steps_pct = 0.1
+    config.weight_decay = 1e-4
+    config.clip_norm = 2.0
 
     config.β_schedule_init_value = 10.0
     config.β_schedule_final_value = 1.0
