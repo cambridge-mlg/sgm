@@ -7,12 +7,12 @@ import flax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
-import wandb
 from absl import app, flags, logging
 from clu import deterministic_data, parameter_overview
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
+import wandb
 from src.models.utils import reset_metrics
 from src.models.vae import (
     VAE,
@@ -79,6 +79,16 @@ def main(_):
         config=config.to_dict(),
         settings=wandb.Settings(code_dir="../"),
     ) as run:
+        config = config_dict.ConfigDict(wandb.config)
+
+        with config.ignore_type():
+            config.model.conv_dims = tuple(
+                int(x) for x in config.model.conv_dims.split(",")
+            )
+            config.model.dense_dims = tuple(
+                int(x) for x in config.model.dense_dims.split(",")
+            )
+
         rng = random.PRNGKey(config.seed)
         data_rng, init_rng, state_rng = random.split(rng, 3)
 
