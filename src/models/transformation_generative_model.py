@@ -11,27 +11,27 @@ from typing import Callable, Optional, Sequence, Union
 
 import ciclo
 import distrax
+import flax
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import jax.random as random
 import numpy as np
 import optax
-from jax import lax
 from chex import Array, PRNGKey
 from clu import metrics
-import flax
-import flax.linen as nn
 from flax import traverse_util
 from flax.linen import initializers as init
 from flax.training import train_state
+from jax import lax
 from ml_collections import config_dict
 
 from src.models.utils import clipped_adamw
-from src.utils.types import KwArgs
 from src.transformations.affine import (
     gen_affine_matrix_no_shear,
     transform_image_with_affine_matrix,
 )
+from src.utils.types import KwArgs
 
 
 class Conditioner(nn.Module):
@@ -337,7 +337,8 @@ def create_transformation_generative_optimizer(params, config):
             config.gen_steps,
             config.gen_lr * config.gen_final_lr_mult,
         ),
-        2.0,
+        config.get("clip_norm", 2.0),
+        config.get("weight_decay", 1e-4),
     )
 
 
