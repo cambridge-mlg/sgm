@@ -1,0 +1,63 @@
+command:
+  - ${interpreter}
+  - ${program}
+  - --config=experiments/configs/vae_mnist.py:45,50000
+  - --rerun
+method: bayes
+metric:
+  goal: minimize
+  name: valid/loss
+name: vae_sweep_45_50k
+parameters:
+  clip_norm:
+    distribution: log_uniform
+    max: 3.92
+    min: 0
+  final_lr_mult:
+    distribution: log_uniform
+    max: 0
+    min: -13.8
+  init_lr_mult:
+    distribution: log_uniform
+    max: 0
+    min: -6.9
+  lr:
+    distribution: log_uniform
+    max: -4.6
+    min: -9.2
+  model:
+    parameters:
+      conv_dims:
+        distribution: categorical
+        values:
+          - 64,128
+          - 128,256
+          - 64,128,256
+      dense_dims:
+        distribution: categorical
+        values:
+          - "256"
+          - 128,64
+          - "128"
+  steps:
+    distribution: categorical
+    values:
+      - 2500
+      - 5000
+      - 10000
+      - 15000
+      - 20000
+  warmup_steps_pct:
+    distribution: uniform
+    max: 0.3
+    min: 0
+  weight_decay:
+    distribution: log_uniform
+    max: -4.6
+    min: -13.8
+  β_schedule_init_value:
+    distribution: uniform
+    max: 20
+    min: 1
+program: experiments/train_vae.py
+run_cap: 32
