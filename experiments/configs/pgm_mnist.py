@@ -37,6 +37,8 @@ def get_config(params) -> config_dict.ConfigDict:
     config.inf_init_lr_mult = 1 / 3
     config.inf_final_lr_mult = 1 / 90
     config.inf_warmup_steps = config.inf_steps // 10
+    config.inf_clip_norm = 2.0
+    config.inf_weight_decay = 1e-4
     config.σ_lr = 1e-2
     # Schedule of the loss in the η space (rather than the x_mse space) for the "inference" model
     config.η_loss_mult_peak = 0.0  # No η loss
@@ -60,6 +62,8 @@ def get_config(params) -> config_dict.ConfigDict:
     config.gen_init_lr_mult = 1 / 9
     config.gen_final_lr_mult = 1 / 2700
     config.gen_warmup_steps = config.gen_steps // 10
+    config.gen_clip_norm = 2.0
+    config.gen_weight_decay = 1e-4
 
     config.train_split = f"train[{config.num_val}:{end_index}]"
     config.pp_train = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'

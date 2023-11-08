@@ -620,7 +620,7 @@ def create_transformation_inference_optimizer(params, config):
                 config.inf_steps,
                 config.inf_lr * config.inf_final_lr_mult,
             ),
-            2.0,
+            config.get("inf_clip_norm", 2.0),
             # Optax WD default: 0.0001 https://optax.readthedocs.io/en/latest/api.html#optax.adamw
             config.get("inf_weight_decay", 0.0001),
         ),

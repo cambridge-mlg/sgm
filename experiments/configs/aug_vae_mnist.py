@@ -55,17 +55,19 @@ def get_config(params) -> config_dict.ConfigDict:
     config.eval_freq = 0.01
     config.plot_freq = 0.1
     config.batch_size = 512
-    config.batch_size_eval = 64
+    config.batch_size_eval = 50
 
-    config.init_lr = 3e-4
-    config.peak_lr_mult = 3
-    config.final_lr_mult = 1
-    config.warmup_steps = config.steps // 10
+    config.lr = 9e-4
+    config.init_lr_mult = 1 / 3
+    config.final_lr_mult = 1 / 3
+    config.warmup_steps_pct = 0.1
+    config.weight_decay = 1e-4
+    config.clip_norm = 2.0
 
     config.β_schedule_init_value = 10.0
     config.β_schedule_final_value = 1.0
 
-    config.run_iwlb = True
+    config.run_iwlb = False
     config.iwlb_num_samples = 100
 
     return config

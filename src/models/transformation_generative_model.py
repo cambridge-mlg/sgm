@@ -337,8 +337,8 @@ def create_transformation_generative_optimizer(params, config):
             config.gen_steps,
             config.gen_lr * config.gen_final_lr_mult,
         ),
-        config.get("clip_norm", 2.0),
-        config.get("weight_decay", 1e-4),
+        config.get("gen_clip_norm", 2.0),
+        config.get("gen_weight_decay", 1e-4),
     )
 
 

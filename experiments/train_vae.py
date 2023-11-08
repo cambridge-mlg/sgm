@@ -92,7 +92,7 @@ def main(_):
         rng = random.PRNGKey(config.seed)
         data_rng, init_rng, state_rng = random.split(rng, 3)
 
-        train_ds, val_ds, _ = get_data(config, data_rng)
+        train_ds, val_ds, test_ds = get_data(config, data_rng)
 
         model = VAE(**config.model.to_dict())
 
@@ -113,7 +113,7 @@ def main(_):
         x = next(deterministic_data.start_input_pipeline(val_ds))["image"][0]
         reconstruction_plot, sampling_plot = make_vae_plotting_fns(config, model, x)
 
-        _, _, _ = ciclo.train_loop(
+        final_state, _, _ = ciclo.train_loop(
             state,
             deterministic_data.start_input_pipeline(train_ds),
             {
@@ -135,6 +135,9 @@ def main(_):
             ],
             stop=config.steps + 1,
         )
+
+        # TODO: add test set evaluation
+        # Also, add reconstruction mse as a metric and do IWLB
 
 
 if __name__ == "__main__":

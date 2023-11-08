@@ -26,6 +26,7 @@ from jax import numpy as jnp
 from jax import random
 
 import src.utils.plotting as plot_utils
+from src.models.utils import clipped_adamw
 from src.utils.training import get_learning_rate
 from src.utils.types import KwArgs
 
@@ -399,6 +400,9 @@ def create_vae_optimizer(config):
             config.steps,
             config.lr * config.final_lr_mult,
         )
+        # config.get("clip_norm", 2.0),
+        # config.get("weight_decay", 1e-4),
+        # TODO: switch to clipped adamw and use the above commented out lines
     )
 
 
