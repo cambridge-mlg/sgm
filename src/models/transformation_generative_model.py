@@ -140,7 +140,7 @@ class TransformationGenerativeNet(nn.Module):
         mask = mask.astype(bool)
 
         def bijector_fn(params: Array):
-            return distrax.RationalQuadraticSpline(params, range_min=-1., range_max=3.)
+            return distrax.RationalQuadraticSpline(params, range_min=-3., range_max=3.)
 
 
         for i in range(self.num_flows):
