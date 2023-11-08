@@ -142,6 +142,7 @@ NeurReps/results*/
 
 # logging
 logs/
+old/
 
 # jobs
 *%*.txt
