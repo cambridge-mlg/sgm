@@ -2,7 +2,7 @@
 
 # adapted from https://github.com/y0ast/slurm-for-ml/blob/master/run_file.sh
 
-# Expects to be in the same folder as generic.sh
+# Expects to be in the same folder as slurm_run.sh
 
 # Set number of GPUs and CPUs
 gpus=1      # NOTE: batch size will be divided by number of GPUs
@@ -21,7 +21,7 @@ for FILE in $1*; do
     n_jobs=$(grep -c '^' "$FILE")
 
     # Set/determine number of jobs to run in parallel
-    jobs_in_parallel=auto
+    jobs_in_parallel=1
 
     max_n_gpus=64
     if [ "$jobs_in_parallel" = "auto" ]; then
@@ -33,7 +33,7 @@ for FILE in $1*; do
     # Extract job time and name from filename
     # see https://stackoverflow.com/a/5257398 for an explanation of this code
     IFS='/'; arr=($FILE); unset IFS;
-    FILE_=${arr[1]}
+    FILE_=${arr[-1]}
     IFS='.'; arr=($FILE_); unset IFS;
     FILE_=${arr[0]}
     IFS='%'; arr=($FILE_); unset IFS;
@@ -41,7 +41,8 @@ for FILE in $1*; do
     TIME=${arr[1]}
 
     # Define and create logging directory
-    log_dir="logs/$NAME"
+    path="$(dirname "$0")"
+    log_dir="${path}/logs/$NAME"
     mkdir -p $log_dir
     log_file="$log_dir/%x_%A_%a.out"
     err_file="$log_dir/%x_%A_%a.err"
