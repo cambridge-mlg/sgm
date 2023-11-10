@@ -23,8 +23,8 @@ module load rhel7/default-gpu              # REQUIRED - loads the basic environm
 # My custom modules
 source ~/.bashrc
 source ~/.virtualenvs/inv/bin/activate
-# module load cuda/11.2
-# module load cudnn/8.1_cuda-11.2
+# module load cuda/12.1
+# module load cudnn/8.9_cuda-12.1
 
 #! Work directory (i.e. where the job will run):
 workdir="$SLURM_SUBMIT_DIR"  # The value of SLURM_SUBMIT_DIR sets workdir to the directory
@@ -73,6 +73,6 @@ else
 fi
 
 # Submit the job
-CMD="srun python $JOB_CMD"
+CMD="srun $JOB_CMD"
 echo $CMD
 eval $CMD
