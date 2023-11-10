@@ -29,9 +29,9 @@ def get_config(params) -> config_dict.ConfigDict:
     config.translate_last = False
     config.symmetrised_samples_in_loss = False
     config.x_mse_loss_mult = 1.0
-    config.invertibility_loss_mult = 0.0
+    config.invertibility_loss_mult = 0.1
 
-    config.inf_steps = 10_000
+    config.inf_steps = 20_000
     config.inf_lr = 3e-4
     config.inf_init_lr_mult = 1 / 3
     config.inf_final_lr_mult = 1 / 90
@@ -44,7 +44,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.augment_warmup_end = 0.0  # No augmentation warmup
     # Blur schedule
     config.blur_filter_shape = (15, 15)
-    config.blur_sigma_init = 0.0  # Off by default
+    config.blur_sigma_init = 1.0
     config.blur_sigma_decay_end = 0.5
 
     # Linearly increase MAE loss mult. from 0 to 1 (pairwise diffs between log-likelihoods for augmented samples)
