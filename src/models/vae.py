@@ -402,7 +402,7 @@ def create_vae_optimizer(config):
         )
         # config.get("clip_norm", 2.0),
         # config.get("weight_decay", 1e-4),
-        # TODO: switch to clipped adamw and use the above commented out lines
+        # TODO: switch to clipped adamw and use the above commented out lines, also for augvae
     )
 
 

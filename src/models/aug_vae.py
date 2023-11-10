@@ -127,11 +127,11 @@ def create_aug_vae_optimizer(params, config):
         "nop": optax.set_to_zero(),
         "vae": optax.inject_hyperparams(optax.adam)(
             optax.warmup_cosine_decay_schedule(
-                config.init_lr,
-                config.init_lr * config.peak_lr_mult,
-                config.warmup_steps,
+                config.lr * config.init_lr_mult,
+                config.lr,
+                config.steps * config.warmup_steps_pct,
                 config.steps,
-                config.init_lr * config.final_lr_mult,
+                config.lr * config.final_lr_mult,
             )
             # TODO: change to new API
         ),
