@@ -26,7 +26,9 @@ class GetPrototypeFn(Protocol):
         ...
 
 
-def construct_plot_data_samples_canonicalizations(get_prototype_fn: GetPrototypeFn, n_images: int = 56):
+def construct_plot_data_samples_canonicalizations(
+    get_prototype_fn: GetPrototypeFn, n_images: int = 56
+):
     nrows = math.ceil(math.sqrt(n_images))
     ncols = math.ceil(n_images / nrows) * 2
 
@@ -46,8 +48,8 @@ def construct_plot_data_samples_canonicalizations(get_prototype_fn: GetPrototype
             state.params,
         )
         return images_to_plot, prototypes
-    def plot_data_samples_canonicalizations(state, batch):
 
+    def plot_data_samples_canonicalizations(state, batch):
         images_to_plot, prototypes = get_images_and_prototypes(state, batch)
         images_to_plot, prototypes = map(
             lambda z: np.array(z), (images_to_plot, prototypes)
@@ -72,6 +74,7 @@ def construct_plot_data_samples_canonicalizations(get_prototype_fn: GetPrototype
             axes[0, 2 * j].set_title("Original")
             axes[0, 2 * j + 1].set_title("Prototype")
         return fig
+
     return plot_data_samples_canonicalizations
 
 
@@ -89,9 +92,13 @@ def get_aug_image_fn(config):
 
         x_rand = transform_image(image, η_rand, order=config.interpolation_order)
         return x_rand
+
     return aug_image
 
-def construct_plot_augmented_data_samples_canonicalizations(get_prototype_fn: GetPrototypeFn, config, n_images: int = 7, n_samples: int = 8):
+
+def construct_plot_augmented_data_samples_canonicalizations(
+    get_prototype_fn: GetPrototypeFn, config, n_images: int = 7, n_samples: int = 8
+):
     aug_image = get_aug_image_fn(config)
 
     @jax.jit
@@ -136,9 +143,7 @@ def construct_plot_augmented_data_samples_canonicalizations(get_prototype_fn: Ge
         and each row within shows an augmented image and the corresponding canonicalization.
         """
 
-        images_to_plot, prototypes = get_augmented_images_and_prototypes(
-            state, batch
-        )
+        images_to_plot, prototypes = get_augmented_images_and_prototypes(state, batch)
         images_to_plot, prototypes = map(
             lambda z: np.array(z), (images_to_plot, prototypes)
         )
@@ -205,12 +210,11 @@ def construct_plot_training_augmented_samples(config, n_images: int = 49):
                     break
                 else:
                     axes[i, 2 * j].imshow(images[idx], **imshow_kwargs)
-                    axes[i, 2 * j + 1].imshow(
-                        images_augmented[idx], **imshow_kwargs
-                    )
+                    axes[i, 2 * j + 1].imshow(images_augmented[idx], **imshow_kwargs)
             axes[0, 2 * j].set_title("Original")
             axes[0, 2 * j + 1].set_title("Train. augmented")
         return fig
+
     return plot_training_augmented_samples
 
 
@@ -252,17 +256,21 @@ def plot_proto_model_training_metrics(history):
 
     n_plots = 5
     fig, axs = plt.subplots(
-        n_plots, 1, figsize=(15, n_plots * 3.0), dpi=300, sharex=True
+        n_plots, 1, figsize=(15, n_plots * 3.0), dpi=100, sharex=True
     )
 
     axs[0].plot(steps, loss, label=f"train {loss[-1]:.4f}", color=colors[0])
-    axs[0].plot(steps_test, loss_test, label=f"test  {loss_test[-1]:.4f}", color=colors[1])
+    axs[0].plot(
+        steps_test, loss_test, label=f"test  {loss_test[-1]:.4f}", color=colors[1]
+    )
     axs[0].legend()
     # axs[0].set_yscale("log")
     axs[0].set_title("Loss")
 
     axs[1].plot(steps, x_mse, label=f"train {x_mse[-1]:.4f}", color=colors[0])
-    axs[1].plot(steps_test, x_mse_test, label=f"test  {x_mse_test[-1]:.4f}", color=colors[1])
+    axs[1].plot(
+        steps_test, x_mse_test, label=f"test  {x_mse_test[-1]:.4f}", color=colors[1]
+    )
     axs[1].legend()
     axs[1].set_title("x_mse")
 
@@ -283,16 +291,20 @@ def plot_proto_model_training_metrics(history):
     lr_axis = axs[-1]
     multiplier_axis = lr_axis.twinx()
 
-    p1, = lr_axis.plot(steps, lr_inf, "-", label=f"inf   {lr_inf[-1]:.4f}", color=colors[0])
-    p2, = lr_axis.plot(steps, lr_σ, "--", label=f"σ    {lr_σ[-1]:.4f}", color=colors[0])
-    p3, = multiplier_axis.plot(
+    (p1,) = lr_axis.plot(
+        steps, lr_inf, "-", label=f"inf   {lr_inf[-1]:.4f}", color=colors[0]
+    )
+    (p2,) = lr_axis.plot(
+        steps, lr_σ, "--", label=f"σ    {lr_σ[-1]:.4f}", color=colors[0]
+    )
+    (p3,) = multiplier_axis.plot(
         steps,
         augment_bounds_mult,
         "-",
         label=f"augment_bounds_mult {augment_bounds_mult[-1]:.4f}",
-        color=colors[1]
+        color=colors[1],
     )
-    p4, = multiplier_axis.plot(
+    (p4,) = multiplier_axis.plot(
         steps,
         blur_sigma,
         "--",
@@ -312,8 +324,8 @@ def plot_proto_model_training_metrics(history):
     multiplier_axis.yaxis.label.set_color(p3.get_color())
 
     tkw = dict(size=4, width=1.5)
-    lr_axis.tick_params(axis='y', colors=p1.get_color(), **tkw)
-    multiplier_axis.tick_params(axis='y', colors=p3.get_color(), **tkw)
+    lr_axis.tick_params(axis="y", colors=p1.get_color(), **tkw)
+    multiplier_axis.tick_params(axis="y", colors=p3.get_color(), **tkw)
 
     axs[-1].set_xlim(min(steps), max(steps))
     axs[-1].set_xlabel("Steps")
@@ -321,4 +333,3 @@ def plot_proto_model_training_metrics(history):
     for ax in axs:
         ax.grid(color=(0.9, 0.9, 0.9))
     return fig
-
