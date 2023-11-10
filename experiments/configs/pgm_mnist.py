@@ -32,7 +32,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 0.0
 
-    config.inf_steps = 10_000
+    config.inf_steps = 15_000
     config.inf_lr = 3e-4
     config.inf_init_lr_mult = 1 / 3
     config.inf_final_lr_mult = 1 / 90
