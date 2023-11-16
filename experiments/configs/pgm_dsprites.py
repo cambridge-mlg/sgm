@@ -26,8 +26,8 @@ def get_config() -> config_dict.ConfigDict:
 
     config.aug_dsprites.square_distribution = config_dict.ConfigDict()
 
-    config.aug_dsprites.square_distribution.orientation = f"uniform(low=0.0, high={math.pi / 2})"
-    config.aug_dsprites.square_distribution.scale = "uniform(low=0.65, high=1.0)"
+    config.aug_dsprites.square_distribution.orientation = f"biuniform(low1=0.0, high1={math.pi / 8}, low2={math.pi / 4}, high2={4*math.pi / 5})"
+    config.aug_dsprites.square_distribution.scale = "biuniform(low1=0.45, high1=0.65, low2=0.89, high2=1.0)"
     config.aug_dsprites.square_distribution.x_position = "biuniform(low1=0.15, high1=0.6, low2=0.4, high2=0.9)"
     config.aug_dsprites.square_distribution.y_position = "truncated_normal(minval=0.05, maxval=0.95, loc=0.5, scale=0.15)"
 
@@ -38,8 +38,8 @@ def get_config() -> config_dict.ConfigDict:
 
     config.aug_dsprites.heart_distribution = config_dict.ConfigDict()
 
-    config.aug_dsprites.heart_distribution.orientation = f"uniform(low=0.0, high={math.pi/2})"
-    config.aug_dsprites.heart_distribution.scale = "uniform(low=0.75, high=1.0)"
+    config.aug_dsprites.heart_distribution.orientation = f"biuniform(low1=0.0, high1={math.pi/2}, low2={math.pi}, high2={math.pi*1.25})"
+    config.aug_dsprites.heart_distribution.scale = "truncated_normal(loc=0.8, scale=0.05, minval=0.45, maxval=1.05)"
     config.aug_dsprites.heart_distribution.x_position = "uniform(low=0.1, high=0.8)"
     config.aug_dsprites.heart_distribution.y_position = "biuniform(low1=0.0, high1=0.3, low2=0.5, high2=0.8)"
     # Shape probabilities:
@@ -51,13 +51,13 @@ def get_config() -> config_dict.ConfigDict:
     config.n_samples = 5
     config.eval_freq = 0.01
     config.difficulty_weighted_inf_loss = False
-    config.symmetrised_samples_in_loss = True
+    config.symmetrised_samples_in_loss = False
     config.interpolation_order = 3
     config.translate_last = False
 
 
     config.σ_lr = 1e-2
-    config.inf_steps = 10_000
+    config.inf_steps = 40_000
     config.inf_lr = 4e-3
     config.inf_init_lr_mult = 1e-3
     config.inf_final_lr_mult = 1e-1
@@ -71,7 +71,7 @@ def get_config() -> config_dict.ConfigDict:
     config.augment_warmup_end = 0.0
 
     # Training (gen)
-    config.gen_steps = 10_000
+    config.gen_steps = 60_000
     config.gen_lr = 2.7e-3
     config.gen_init_lr_mult = 1 / 9
     config.gen_final_lr_mult = 1 / 2700
@@ -86,7 +86,7 @@ def get_config() -> config_dict.ConfigDict:
     config.blur_sigma_decay_end = 0.5
 
     config.x_mse_loss_mult = 1.0
-    config.invertibility_loss_mult = 1.0
+    config.invertibility_loss_mult = 0.1
 
     # Separated out model bounds, and augmentation bounds for augmentations sampled for the
     # training objective:
@@ -107,12 +107,12 @@ def get_config() -> config_dict.ConfigDict:
     config.model.inference.squash_to_bounds = False
 
     config.model.generative = config_dict.ConfigDict()
-    config.model.generative.bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
+    config.model.generative.bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
     config.model.generative.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
-    config.model.generative.hidden_dims = (1024, 512, 256)
+    config.model.generative.hidden_dims = (2048, 512, 512)
     config.model.generative.squash_to_bounds = False
-    config.model.generative.num_flows = 2
-    config.model.generative.num_bins = 4
+    config.model.generative.num_flows = 6
+    config.model.generative.num_bins = 6
     config.model.generative.conditioner = config_dict.ConfigDict()
     config.model.generative.conditioner.hidden_dims = (256, 256)
 

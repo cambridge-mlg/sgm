@@ -149,7 +149,8 @@ def main(config, run, prototype_model_dir: str):
         {"params": gen_init_rng, "sample": gen_init_rng},
         jnp.empty((64, 64, 1))
         if "dsprites" in config.dataset
-        else jnp.empty((28, 28, 1)),
+        else jnp.empty((28, 28, 1)), 
+        η=jnp.empty((5,)),
         train=False,
     )
 
@@ -213,7 +214,7 @@ def main(config, run, prototype_model_dir: str):
             interpolation_order=config.interpolation_order,
             transform_gen_distribution_function=lambda xhat: gen_model.apply(
                 {"params": gen_final_state.params}, xhat, train=False
-            ),
+            )[0],
             fig=val_histograms_subfigs[i],
         )
     wandb.log({"val_histograms": wandb.Image(val_histograms_fig)})
@@ -240,7 +241,7 @@ def main(config, run, prototype_model_dir: str):
             interpolation_order=config.interpolation_order,
             transform_gen_distribution_function=lambda xhat: gen_model.apply(
                 {"params": gen_final_state.params}, xhat, train=False
-            ),
+            )[0],
             fig=trans_histograms_subfigs[i],
         )
     wandb.log({"trans_histograms": wandb.Image(val_histograms_fig)})

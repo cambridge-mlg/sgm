@@ -97,7 +97,7 @@ def plot_generative_histograms(x, rng, prototype_function, transform_gen_distrib
     
     ηs_p = p_H_x_hat.sample(seed=rng_gen_samples, sample_shape=(20_000,))
 
-    transform_param_dim = p_H_x_hat.event_shape[0]
+    transform_param_dim = η.shape[0]
     if fig is None:
         fig = plt.figure(figsize=(3*(transform_param_dim+2), 3))
     axs = fig.subplots(nrows=1, ncols=transform_param_dim + 2)

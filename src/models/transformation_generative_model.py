@@ -7,6 +7,8 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.a `p_x_given_z`.
 """
 
+import functools
+import math
 from typing import Callable, Optional, Sequence, Union
 
 import ciclo
@@ -63,6 +65,36 @@ class Conditioner(nn.Module):
         return y
 
 
+class ConditionedConditioner(nn.Module):
+    """A neural network that predicts the parameters of a flow given an input."""
+
+    event_shape: Sequence[int]
+    num_bijector_params: int
+    hidden_dims: Sequence[int]
+    train: Optional[bool] = None
+    h: Optional[Array] = None
+
+    @nn.compact
+    def __call__(self, x: Array, h: Array, train: Optional[bool] = None) -> Array:
+        train = nn.merge_param("train", self.train, train)
+
+        h = jnp.concatenate((x.flatten(), h.flatten()), axis=0)
+
+        for hidden_dim in self.hidden_dims:
+            h = nn.Dense(hidden_dim)(h)
+            h = nn.relu(h)
+
+        # We initialize this dense layer to zero so that the flow is initialized to the identity function.
+        y = nn.Dense(
+            np.prod(self.event_shape) * self.num_bijector_params,
+            kernel_init=init.zeros,
+            bias_init=init.zeros,
+        )(h)
+        y = y.reshape(tuple(self.event_shape) + (self.num_bijector_params,))
+
+        return y
+
+
 class TransformationGenerativeNet(nn.Module):
     hidden_dims: Sequence[int]
     num_flows: int
@@ -83,7 +115,7 @@ class TransformationGenerativeNet(nn.Module):
         self.event_shape = self.bounds_array.shape
 
     @nn.compact
-    def __call__(self, x_hat, train: bool = False):
+    def __call__(self, x_hat, train: bool = False, η: Optional[Array] = None):
         h = x_hat.flatten()
 
         # shared feature extractor
@@ -113,18 +145,43 @@ class TransformationGenerativeNet(nn.Module):
         num_bijector_params = 3 * self.num_bins + 1
 
         layers = []
-        for _ in range(self.num_flows):
-            params = Conditioner(
+        mask = jnp.arange(0, np.prod(self.event_shape)) % 2
+        mask = jnp.reshape(mask, self.event_shape)
+        mask = mask.astype(bool)
+
+        def bijector_fn(params: Array):
+            return distrax.RationalQuadraticSpline(params, range_min=-3., range_max=3.)
+
+
+        for i in range(self.num_flows):
+            # params_rational_quadratic = Conditioner(
+            #     event_shape=self.event_shape,
+            #     num_bijector_params=num_bijector_params,
+            #     train=train,
+            #     **(self.conditioner or {}),
+            # )(h)
+            # layer = distrax.Block(
+            #     distrax.RationalQuadraticSpline(params_rational_quadratic, range_min=-3.0, range_max=3.0),
+            #     len(self.event_shape),
+            # )
+            # layers.append(layer)
+            
+            conditioner = ConditionedConditioner(
                 event_shape=self.event_shape,
                 num_bijector_params=num_bijector_params,
                 train=train,
                 **(self.conditioner or {}),
-            )(h)
-            layer = distrax.Block(
-                distrax.RationalQuadraticSpline(params, range_min=-3.0, range_max=3.0),
-                len(self.event_shape),
             )
+
+            layer = distrax.MaskedCoupling(
+                mask=mask,
+                bijector=bijector_fn,
+                conditioner=functools.partial(conditioner, h=h),
+            )
+
             layers.append(layer)
+            mask = ~mask
+
 
         bijector = distrax.Chain(
             [
@@ -146,7 +203,8 @@ class TransformationGenerativeNet(nn.Module):
             ]
         )
 
-        return distrax.Transformed(base, bijector)
+        transformed = distrax.Transformed(base, bijector)
+        return transformed, transformed.log_prob(η) if η is not None else None
 
 
 def make_transformation_generative_train_and_eval(
@@ -200,7 +258,7 @@ def make_transformation_generative_train_and_eval(
 
             x_hat = get_xhat_on_random_augmentation(x, x_hat_rng)
 
-            p_Η_x_hat = model.apply({"params": params}, x_hat, train=train)
+            p_Η_x_hat, _ = model.apply({"params": params}, x_hat, train=train)
             log_p_η_x_hat = p_Η_x_hat.log_prob(η_x)
             return log_p_η_x_hat
 
