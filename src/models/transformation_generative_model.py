@@ -72,7 +72,6 @@ class ConditionedConditioner(nn.Module):
     num_bijector_params: int
     hidden_dims: Sequence[int]
     train: Optional[bool] = None
-    h: Optional[Array] = None
 
     @nn.compact
     def __call__(self, x: Array, h: Array, train: Optional[bool] = None) -> Array:
