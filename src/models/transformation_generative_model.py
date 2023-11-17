@@ -150,8 +150,9 @@ class TransformationGenerativeNet(nn.Module):
         mask = mask.astype(bool)
 
         def bijector_fn(params: Array):
-            return distrax.RationalQuadraticSpline(params, range_min=-3., range_max=3.)
-
+            return distrax.RationalQuadraticSpline(
+                params, range_min=-3.0, range_max=3.0
+            )
 
         for i in range(self.num_flows):
             # params_rational_quadratic = Conditioner(
@@ -165,7 +166,7 @@ class TransformationGenerativeNet(nn.Module):
             #     len(self.event_shape),
             # )
             # layers.append(layer)
-            
+
             conditioner = ConditionedConditioner(
                 event_shape=self.event_shape,
                 num_bijector_params=num_bijector_params,
@@ -181,7 +182,6 @@ class TransformationGenerativeNet(nn.Module):
 
             layers.append(layer)
             mask = ~mask
-
 
         bijector = distrax.Chain(
             [
@@ -204,7 +204,11 @@ class TransformationGenerativeNet(nn.Module):
         )
 
         transformed = distrax.Transformed(base, bijector)
-        return transformed, transformed.log_prob(η) if η is not None else None
+
+        if η is not None:
+            return transformed, transformed.log_prob(η)
+        else:
+            return transformed
 
 
 def make_transformation_generative_train_and_eval(
@@ -258,7 +262,7 @@ def make_transformation_generative_train_and_eval(
 
             x_hat = get_xhat_on_random_augmentation(x, x_hat_rng)
 
-            p_Η_x_hat, _ = model.apply({"params": params}, x_hat, train=train)
+            p_Η_x_hat = model.apply({"params": params}, x_hat, train=train)
             log_p_η_x_hat = p_Η_x_hat.log_prob(η_x)
             return log_p_η_x_hat
 
