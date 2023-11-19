@@ -38,7 +38,7 @@ from src.transformations.affine import (
     gen_affine_matrix_no_shear,
     transform_image_with_affine_matrix,
 )
-from src.utils.gen_plots import plot_gen_model_training_metrics
+from src.utils.gen_plots import plot_gen_dists, plot_gen_model_training_metrics
 from src.utils.input import get_data
 from src.utils.plotting import rescale_for_imshow
 from src.utils.proto_plots import plot_proto_model_training_metrics
@@ -221,49 +221,8 @@ def main(_):
 
         fig = plot_gen_model_training_metrics(history)
         run.summary[f"gen_training_metrics"] = wandb.Image(fig)
+
         plt.close(fig)
-
-        def plot_hists(x, i):
-            η = prototype_function(x, rng)
-            η_aff_mat = gen_affine_matrix_no_shear(η)
-            η_aff_mat_inv = jnp.linalg.inv(η_aff_mat)
-            xhat = transform_image_with_affine_matrix(
-                x, η_aff_mat_inv, order=pgm_config.interpolation_order
-            )
-
-            p_H_x_hat = gen_model.apply({"params": gen_final_state.params}, xhat)
-
-            ηs_p = p_H_x_hat.sample(seed=random.PRNGKey(0), sample_shape=(10_000,))
-
-            transform_param_dim = p_H_x_hat.event_shape[0]
-            fig, axs = plt.subplots(
-                1, transform_param_dim + 2, figsize=(3 * (transform_param_dim + 2), 3)
-            )
-
-            axs[0].imshow(rescale_for_imshow(x), cmap="gray")
-            axs[1].imshow(rescale_for_imshow(xhat), cmap="gray")
-
-            for i, ax in enumerate(axs[2:]):
-                x = np.linspace(ηs_p[:, i].min(), ηs_p[:, i].max(), 1000)
-
-                # plot p(η|x_hat)
-                ax.hist(ηs_p[:, i], bins=100, density=True, alpha=0.5, color="C0")
-                kde = gaussian_kde(ηs_p[:, i])
-                ax.plot(x, kde(x), color="C0")
-
-                # make a axvline to plot η, make the line dashed
-                ax.axvline(η[i], color="C1", linestyle="--")
-                # make a twin axis to plot q(η|x)
-                # ax2 = ax.twinx()
-                # ax2.hist(ηs_q[:, i], bins=100, density=True, alpha=0.5, color="C1")
-                # kde = gaussian_kde(ηs_q[:, i])
-                # ax2.plot(x, kde(x), color="C1")
-
-                ax.set_title(f"dim {i}")
-                ax.set_xlim(x.min(), x.max())
-
-            run.summary[f"gen_plots_{i}"] = wandb.Image(fig)
-            plt.close(fig)
 
         val_iter = deterministic_data.start_input_pipeline(val_ds)
         val_batch = next(val_iter)
@@ -275,7 +234,16 @@ def main(_):
                 val_batch["image"][0][9],
             ]
         ):
-            plot_hists(x, i)
+            plot_gen_dists(
+                x,
+                prototype_function,
+                rng,
+                gen_model,
+                gen_final_state.params,
+                pgm_config,
+            )
+            run.summary[f"gen_plots_{i}"] = wandb.Image(fig)
+            plt.close(fig)
 
         ####### VAE MODEL
         rng = random.PRNGKey(vae_config.seed)
