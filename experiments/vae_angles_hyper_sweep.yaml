@@ -9,22 +9,22 @@ metric:
   name: valid/loss
 name: vae_sweep_45_50k
 parameters:
-  clip_norm:
-    distribution: log_uniform
-    max: 3.92
-    min: 0
+  # clip_norm:
+  #   distribution: log_uniform_values
+  #   max: 50
+  #   min: 1
   final_lr_mult:
-    distribution: log_uniform
-    max: 0
-    min: -13.8
+    distribution: log_uniform_values
+    max: 1
+    min: 0.000001
   init_lr_mult:
-    distribution: log_uniform
-    max: 0
-    min: -6.9
+    distribution: log_uniform_values
+    max: 1
+    min: 0.001
   lr:
-    distribution: log_uniform
-    max: -4.6
-    min: -9.2
+    distribution: log_uniform_values
+    max: 0.01
+    min: 0.0001
   model:
     parameters:
       conv_dims:
@@ -51,10 +51,10 @@ parameters:
     distribution: uniform
     max: 0.3
     min: 0
-  weight_decay:
-    distribution: log_uniform
-    max: -4.6
-    min: -13.8
+  # weight_decay:
+  #   distribution: log_uniform_values
+  #   max: 0.01
+  #   min: 0.000001
   β_schedule_init_value:
     distribution: uniform
     max: 20
