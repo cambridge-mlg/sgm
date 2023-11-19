@@ -1,5 +1,15 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
+from jax import numpy as jnp
+from jax import random
+from scipy.stats import gaussian_kde
+
+from src.transformations.affine import (
+    gen_affine_matrix_no_shear,
+    transform_image_with_affine_matrix,
+)
+from src.utils.plotting import rescale_for_imshow
 
 
 def plot_gen_model_training_metrics(history):
@@ -80,5 +90,52 @@ def plot_gen_model_training_metrics(history):
 
     for ax in axs:
         ax.grid(color=(0.9, 0.9, 0.9))
+
+    return fig
+
+
+def plot_gen_dists(x, prototype_function, rng, gen_model, gen_params, config, n=10_000):
+    # function to plot the histograms of p(η|x_hat) in each dimmension
+    proto_rng, sample_rng = random.split(rng)
+    η = prototype_function(x, proto_rng)
+    η_aff_mat = gen_affine_matrix_no_shear(η)
+    η_aff_mat_inv = jnp.linalg.inv(η_aff_mat)
+    xhat = transform_image_with_affine_matrix(
+        x, η_aff_mat_inv, order=config.interpolation_order
+    )
+
+    p_H_x_hat = gen_model.apply({"params": gen_params}, xhat)
+
+    ηs_p = p_H_x_hat.sample(seed=sample_rng, sample_shape=(n,))
+
+    transform_param_dim = η.shape[0]
+    fig, axs = plt.subplots(
+        1, transform_param_dim + 2, figsize=(3 * (transform_param_dim + 2), 3)
+    )
+
+    axs[0].imshow(rescale_for_imshow(x), cmap="gray")
+    axs[1].imshow(rescale_for_imshow(xhat), cmap="gray")
+
+    for i, ax in enumerate(axs[2:]):
+        kde_ = gaussian_kde(ηs_p[:, i])
+        THRESHOLD = 0.001
+        ηs_p_ = ηs_p[kde_(ηs_p[:, i]) > THRESHOLD, i]
+
+        # plot p(η|x_hat)
+        kde = gaussian_kde(ηs_p_)
+
+        x = np.linspace(ηs_p_.min(), ηs_p_.max(), 1000)
+
+        ax.hist(ηs_p_, bins=100, density=True, alpha=0.5, color="C0")
+
+        ax.plot(x, kde(x), color="C0")
+
+        # make a axvline to plot η, make the line dashed
+        ax.axvline(η[i], color="C1", linestyle="--")
+
+        ax.set_title(f"dim {i}")
+        ax.set_xlim(x.min(), x.max())
+
+    plt.tight_layout()
 
     return fig
