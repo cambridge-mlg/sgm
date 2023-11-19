@@ -96,18 +96,7 @@ def main(_):
 
         model = VAE(**config.model.to_dict())
 
-        variables = model.init(
-            {"params": init_rng, "sample": init_rng},
-            jnp.empty((28, 28, 1)),
-            train=False,
-        )
-
-        parameter_overview.log_parameter_overview(variables)
-
-        params = flax.core.freeze(variables["params"])
-        del variables
-
-        state = create_vae_state(params, state_rng, config)
+        state = create_vae_state(model, state_rng, init_rng, config)
 
         train_step, eval_step = make_vae_train_and_eval(model, config)
         x = next(deterministic_data.start_input_pipeline(val_ds))["image"][0]

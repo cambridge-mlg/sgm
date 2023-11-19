@@ -18,7 +18,7 @@ import jax
 import numpy as np
 import optax
 from chex import Array, PRNGKey
-from clu import metrics
+from clu import metrics, parameter_overview
 from flax import linen as nn
 from flax.training import train_state
 from jax import lax
@@ -460,7 +460,18 @@ class VaeTrainState(train_state.TrainState):
         )
 
 
-def create_vae_state(params, rng, config):
+def create_vae_state(model, state_rng, init_rng, config):
+    variables = model.init(
+        {"params": init_rng, "sample": init_rng},
+        jnp.empty((28, 28, 1)),
+        train=False,
+    )
+
+    parameter_overview.log_parameter_overview(variables)
+
+    params = flax.core.freeze(variables["params"])
+    del variables
+
     opt = create_vae_optimizer(config)
 
     return VaeTrainState.create(
@@ -468,7 +479,7 @@ def create_vae_state(params, rng, config):
         params=params,
         tx=opt,
         metrics=VaeMetrics.empty(),
-        rng=rng,
+        rng=state_rng,
         β_schedule=optax.cosine_decay_schedule(
             config.β_schedule_init_value,
             config.steps,
