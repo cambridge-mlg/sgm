@@ -10,32 +10,32 @@ that X=x|Z=z a.k.a `p_x_given_z`.
 import functools
 from typing import Callable, Optional, Sequence
 
-import numpy as np
+import ciclo
+import distrax
+import flax
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import jax.random as random
-from jax import lax
-from jax.scipy import linalg
+import numpy as np
+import optax
 from chex import PRNGKey
-import flax
-import flax.linen as nn
+from clu import metrics, parameter_overview
+from flax import traverse_util
 from flax.linen import initializers as init
 from flax.training import train_state
-from flax import traverse_util
+from jax import lax
+from jax.scipy import linalg
 from ml_collections import config_dict
-import distrax
-from clu import metrics
-import optax
-import ciclo
-from src.models.convnext import ConvNeXt, get_convnext_constructor
 
+from src.models.convnext import ConvNeXt, get_convnext_constructor
 from src.models.utils import clipped_adamw, huber_loss
-from src.utils.types import KwArgs
 from src.transformations.affine import (
-    transform_image_with_affine_matrix,
     gen_affine_matrix_no_shear,
+    transform_image_with_affine_matrix,
 )
 from src.utils.blur import gaussian_filter2d
+from src.utils.types import KwArgs
 
 
 class TransformationInferenceNet(nn.Module):
@@ -712,7 +712,18 @@ class TransformationInferenceTrainState(train_state.TrainState):
         )
 
 
-def create_transformation_inference_state(params, rng, config):
+def create_transformation_inference_state(model, state_rng, init_rng, config):
+    variables = model.init(
+        {"params": init_rng, "sample": init_rng},
+        jnp.empty((28, 28, 1)),
+        train=False,
+    )
+
+    parameter_overview.log_parameter_overview(variables)
+
+    params = flax.core.freeze(variables["params"])
+    del variables
+
     opt = create_transformation_inference_optimizer(params, config)
     return TransformationInferenceTrainState.create(
         apply_fn=TransformationInferenceNet.apply,
@@ -759,5 +770,5 @@ def create_transformation_inference_state(params, rng, config):
             ],
             boundaries=[config.inf_steps * config.blur_sigma_decay_end],
         ),
-        rng=rng,
+        rng=state_rng,
     )

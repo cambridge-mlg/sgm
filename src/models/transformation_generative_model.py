@@ -21,7 +21,7 @@ import jax.random as random
 import numpy as np
 import optax
 from chex import Array, PRNGKey
-from clu import metrics
+from clu import metrics, parameter_overview
 from flax import traverse_util
 from flax.linen import initializers as init
 from flax.training import train_state
@@ -403,7 +403,19 @@ def create_transformation_generative_optimizer(params, config):
     )
 
 
-def create_transformation_generative_state(params, rng, config):
+def create_transformation_generative_state(model, state_rng, init_rng, config):
+    variables = model.init(
+        {"params": init_rng, "sample": init_rng},
+        jnp.empty((28, 28, 1)),
+        η=jnp.empty((len(config.augment_bounds),)),
+        train=False,
+    )
+
+    parameter_overview.log_parameter_overview(variables)
+
+    params = flax.core.freeze(variables["params"])
+    del variables
+
     opt = create_transformation_generative_optimizer(params, config)
     return TransformationGenerativeTrainState.create(
         apply_fn=TransformationGenerativeNet.apply,
@@ -415,5 +427,5 @@ def create_transformation_generative_state(params, rng, config):
             end_value=config.mae_loss_mult_final,
             transition_steps=config.gen_steps,
         ),
-        rng=rng,
+        rng=state_rng,
     )
