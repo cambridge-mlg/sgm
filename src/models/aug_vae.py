@@ -18,6 +18,7 @@ from chex import Array
 from flax import linen as nn
 from flax import traverse_util
 from jax import numpy as jnp
+from clu import parameter_overview
 
 from src.models.transformation_generative_model import TransformationGenerativeNet
 from src.models.transformation_inference_model import TransformationInferenceNet
@@ -150,7 +151,25 @@ def create_aug_vae_optimizer(params, config):
     return optax.multi_transform(partition_optimizers, param_partitions)
 
 
-def create_aug_vae_state(params, rng, config):
+def create_aug_vae_state(
+    model, state_rng, init_rng, config, inf_final_state, gen_final_state
+):
+    variables = model.init(
+        {"params": init_rng, "sample": init_rng},
+        jnp.empty((28, 28, 1)),
+        train=True,
+    )
+
+    parameter_overview.log_parameter_overview(variables)
+
+    params = variables["params"]
+    params["inference_model"] = inf_final_state.params
+    params["generative_model"] = gen_final_state.params
+    params = flax.core.freeze(params)
+    del variables
+
+    parameter_overview.log_parameter_overview(params)
+
     opt = create_aug_vae_optimizer(params, config)
 
     return AugVaeTrainState.create(
@@ -158,7 +177,7 @@ def create_aug_vae_state(params, rng, config):
         params=params,
         tx=opt,
         metrics=AugVaeMetrics.empty(),
-        rng=rng,
+        rng=state_rng,
         β_schedule=optax.cosine_decay_schedule(
             config.β_schedule_init_value,
             config.steps,

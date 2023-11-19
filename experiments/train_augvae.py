@@ -1,3 +1,4 @@
+import itertools
 import os
 
 import ciclo
@@ -8,7 +9,7 @@ import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
 from absl import app, flags, logging
-from clu import deterministic_data, parameter_overview
+from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 from scipy.stats import gaussian_kde
@@ -98,36 +99,24 @@ def main(_):
 
         train_ds, val_ds, _ = get_data(pgm_config, data_rng)
 
-        proto_model = TransformationInferenceNet(**pgm_config.model.inference.to_dict())
+        inf_model = TransformationInferenceNet(**pgm_config.model.inference.to_dict())
 
-        variables = proto_model.init(
-            {"params": init_rng, "sample": init_rng},
-            jnp.empty((28, 28, 1)),
-            train=False,
-        )
-
-        parameter_overview.log_parameter_overview(variables)
-
-        params = flax.core.freeze(variables["params"])
-        del variables
-
-        proto_state = create_transformation_inference_state(
-            params, state_rng, pgm_config
+        inf_state = create_transformation_inference_state(
+            inf_model, state_rng, init_rng, pgm_config
         )
 
         train_step, eval_step = make_transformation_inference_train_and_eval(
-            proto_model, pgm_config
+            inf_model, pgm_config
         )
 
         total_steps = pgm_config.inf_steps
-        proto_final_state, history, _ = ciclo.train_loop(
-            proto_state,
+        inf_final_state, history, _ = ciclo.train_loop(
+            inf_state,
             deterministic_data.start_input_pipeline(train_ds),
             {
                 ciclo.on_train_step: [train_step],
                 ciclo.on_reset_step: reset_metrics,
                 ciclo.on_test_step: eval_step,
-                # ciclo.every(1): custom_wandb_logger(run=run),
             },
             test_dataset=lambda: deterministic_data.start_input_pipeline(val_ds),
             epoch_duration=int(total_steps * pgm_config.eval_freq),
@@ -146,9 +135,7 @@ def main(_):
 
         @jax.jit
         def get_prototype(x):
-            p_η = proto_model.apply(
-                {"params": proto_final_state.params}, x, train=False
-            )
+            p_η = inf_model.apply({"params": inf_final_state.params}, x, train=False)
             η = p_η.sample(seed=rng)
             affine_matrix = gen_affine_matrix_no_shear(η)
             affine_matrix_inv = jnp.linalg.inv(affine_matrix)
@@ -157,49 +144,47 @@ def main(_):
             )
             return xhat, η
 
-        i = 0
-        for x_ in [
-            val_batch["image"][0][14],
-            val_batch["image"][0][12],
-        ]:
-            for mask in [
-                # jnp.array([0, 0, 1, 0, 0]),
-                jnp.array([0, 1, 0, 0, 0]),
+        for i, (x_, mask) in itertools.product(
+            [
+                val_batch["image"][0][14],
+                val_batch["image"][0][12],
+            ],
+            [
+                jnp.array([0, 0, 1, 0, 0]),
                 jnp.array([1, 1, 0, 0, 0]),
-                # jnp.array([0, 0, 0, 1, 1]),
                 jnp.array([1, 1, 1, 1, 1]),
-            ]:
-                transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
-                    x_,
-                    jnp.linspace(
-                        -jnp.array(pgm_config.augment_bounds[:5]) * mask,
-                        jnp.array(pgm_config.augment_bounds[:5]) * mask,
-                        13,
-                    ),
-                )
+            ],
+        ):
+            transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
+                x_,
+                jnp.linspace(
+                    -jnp.array(pgm_config.augment_bounds[:5]) * mask,
+                    jnp.array(pgm_config.augment_bounds[:5]) * mask,
+                    13,
+                ),
+            )
 
-                xhats, ηs = jax.vmap(get_prototype)(transformed_xs)
+            xhats, _ = jax.vmap(get_prototype)(transformed_xs)
 
-                fig, axs = plt.subplots(2, len(xhats), figsize=(15, 3))
+            fig, axs = plt.subplots(2, len(xhats), figsize=(15, 3))
 
-                for ax, x in zip(axs[0], list(transformed_xs)):
-                    ax.imshow(rescale_for_imshow(x), cmap="gray")
-                    ax.set_xticks([])
-                    ax.set_yticks([])
+            for ax, x in zip(axs[0], list(transformed_xs)):
+                ax.imshow(rescale_for_imshow(x), cmap="gray")
+                ax.set_xticks([])
+                ax.set_yticks([])
 
-                for ax, xhat in zip(axs[1], list(xhats)):
-                    ax.imshow(rescale_for_imshow(xhat), cmap="gray")
-                    ax.set_xticks([])
-                    ax.set_yticks([])
+            for ax, xhat in zip(axs[1], list(xhats)):
+                ax.imshow(rescale_for_imshow(xhat), cmap="gray")
+                ax.set_xticks([])
+                ax.set_yticks([])
 
-                i += 1
-                run.summary[f"proto_plots_{i}"] = wandb.Image(fig)
-                plt.close(fig)
+            run.summary[f"inf_plots_{i}"] = wandb.Image(fig)
+            plt.close(fig)
 
         ####### GEN MODEL
         def prototype_function(x, rng):
-            η = proto_model.apply(
-                {"params": proto_final_state.params}, x, train=False
+            η = inf_model.apply(
+                {"params": inf_final_state.params}, x, train=False
             ).sample(seed=rng)
             return η
 
@@ -210,19 +195,8 @@ def main(_):
 
         gen_model = TransformationGenerativeNet(**pgm_config.model.generative.to_dict())
 
-        variables = gen_model.init(
-            {"params": init_rng, "sample": init_rng},
-            jnp.empty((28, 28, 1)),
-            train=False,
-        )
-
-        parameter_overview.log_parameter_overview(variables)
-
-        gen_params = flax.core.freeze(variables["params"])
-        del variables
-
         gen_state = create_transformation_generative_state(
-            gen_params, state_rng, pgm_config
+            gen_model, state_rng, init_rng, pgm_config
         )
 
         train_step, eval_step = make_transformation_generative_train_and_eval(
@@ -236,7 +210,6 @@ def main(_):
                 ciclo.on_train_step: [train_step],
                 ciclo.on_reset_step: reset_metrics,
                 ciclo.on_test_step: eval_step,
-                # ciclo.every(1): custom_wandb_logger(run=run),
             },
             test_dataset=lambda: deterministic_data.start_input_pipeline(val_ds),
             epoch_duration=int(pgm_config.gen_steps * pgm_config.eval_freq),
@@ -317,23 +290,14 @@ def main(_):
             interpolation_order=pgm_config.interpolation_order,
         )
 
-        variables = aug_vae_model.init(
-            {"params": init_rng, "sample": init_rng},
-            jnp.empty((28, 28, 1)),
-            train=True,
+        aug_vae_state = create_aug_vae_state(
+            aug_vae_model,
+            state_rng,
+            init_rng,
+            vae_config,
+            inf_final_state,
+            gen_final_state,
         )
-
-        parameter_overview.log_parameter_overview(variables)
-
-        params = variables["params"]
-        params["inference_model"] = proto_final_state.params
-        params["generative_model"] = gen_final_state.params
-        params = flax.core.freeze(params)
-        del variables
-
-        parameter_overview.log_parameter_overview(params)
-
-        aug_vae_state = create_aug_vae_state(params, state_rng, vae_config)
 
         train_step, eval_step = make_aug_vae_train_and_eval(aug_vae_model, vae_config)
         x = next(deterministic_data.start_input_pipeline(val_ds))["image"][0]
