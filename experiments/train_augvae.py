@@ -14,6 +14,7 @@ from ml_collections import config_dict, config_flags
 from scipy.stats import gaussian_kde
 
 import wandb
+from experiments.utils import duplicated_run
 from src.models.aug_vae import (
     AUG_VAE,
     create_aug_vae_state,
@@ -42,18 +43,6 @@ from src.utils.plotting import rescale_for_imshow
 from src.utils.proto_plots import plot_proto_model_training_metrics
 from src.utils.training import custom_wandb_logger
 
-# os.environ["WANDB_DIR"] = "/home/jua23/rds/rds-t2-cs169-UHqJqMFy204/jua23/wandb/"
-# os.environ[
-#     "WANDB_CACHE_DIR"
-# ] = "/home/jua23/rds/rds-t2-cs169-UHqJqMFy204/jua23/wandb_cache/"
-# os.environ[
-#     "WANDB_DATA_DIR"
-# ] = "/home/jua23/rds/rds-t2-cs169-UHqJqMFy204/jua23/wandb_data/"
-
-
-# os.environ["XLA_FLAGS"] = "--xla_gpu_deterministic_ops=true"
-
-
 flax.config.update("flax_use_orbax_checkpointing", True)
 logging.set_verbosity(logging.INFO)
 plt.rcParams["savefig.facecolor"] = "white"
@@ -81,40 +70,8 @@ def main(_):
     vae_config = FLAGS.vae_config
 
     if not FLAGS.rerun:
-        pgm_fake_run = wandb.init(
-            mode="disabled",
-            config=pgm_config.to_dict(),
-        )
-        vae_fake_run = wandb.init(
-            mode="disabled",
-            config=vae_config.to_dict(),
-        )
-        # ^ we create these fake run to get the config dict in the same format as the existing runs in wandb
-
-        logging.info("Checking if config already exists in wandb.")
-        runs = wandb.Api().runs(f"{FLAGS.wandb_entity}/{FLAGS.wandb_project}")
-        finished_runs = [run for run in runs if run.state == "finished"]
-        pgm_frozen_config = config_dict.FrozenConfigDict(pgm_fake_run.config)
-        vae_frozen_config = config_dict.FrozenConfigDict(vae_fake_run.config)
-        logging.info(f"checking {len(finished_runs)} runs")
-
-        for run in finished_runs:
-            run_config = config_dict.FrozenConfigDict(run.config)
-            if pgm_frozen_config == run_config:
-                logging.info(
-                    f"Found matching config in run with id {run.id} and name {run.name}."
-                    "Skipping training. Use --rerun to rerun the experiment. Config was: \n"
-                    f"{pgm_frozen_config}"
-                )
-                return 0
-
-            if vae_frozen_config == run_config:
-                logging.info(
-                    f"Found matching config in run with id {run.id} and name {run.name}."
-                    "Skipping training. Use --rerun to rerun the experiment. Config was: \n"
-                    f"{vae_frozen_config}"
-                )
-                return 0
+        if duplicated_run(pgm_config) and duplicated_run(vae_config):
+            return 0
 
     with wandb.init(
         mode=FLAGS.wandb_mode,
