@@ -95,14 +95,14 @@ def main(_):
             )
 
         rng = random.PRNGKey(pgm_config.seed)
-        data_rng, init_rng, state_rng = random.split(rng, 3)
+        data_rng, init_rng = random.split(rng)
 
         train_ds, val_ds, _ = get_data(pgm_config, data_rng)
 
         inf_model = TransformationInferenceNet(**pgm_config.model.inference.to_dict())
 
         inf_state = create_transformation_inference_state(
-            inf_model, state_rng, init_rng, pgm_config
+            inf_model, init_rng, pgm_config
         )
 
         train_step, eval_step = make_transformation_inference_train_and_eval(
@@ -189,14 +189,14 @@ def main(_):
             return η
 
         rng = random.PRNGKey(pgm_config.seed)
-        data_rng, init_rng, state_rng = random.split(rng, 3)
+        data_rng, init_rng = random.split(rng)
 
         train_ds, val_ds, _ = get_data(pgm_config, data_rng)
 
         gen_model = TransformationGenerativeNet(**pgm_config.model.generative.to_dict())
 
         gen_state = create_transformation_generative_state(
-            gen_model, state_rng, init_rng, pgm_config
+            gen_model, init_rng, pgm_config
         )
 
         train_step, eval_step = make_transformation_generative_train_and_eval(
@@ -247,7 +247,7 @@ def main(_):
 
         ####### VAE MODEL
         rng = random.PRNGKey(vae_config.seed)
-        data_rng, init_rng, state_rng = random.split(rng, 3)
+        data_rng, init_rng = random.split(rng, 2)
 
         train_ds, val_ds, _ = get_data(vae_config, data_rng)
 
@@ -260,7 +260,6 @@ def main(_):
 
         aug_vae_state = create_aug_vae_state(
             aug_vae_model,
-            state_rng,
             init_rng,
             vae_config,
             inf_final_state,

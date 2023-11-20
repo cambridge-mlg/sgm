@@ -705,7 +705,8 @@ class TransformationInferenceTrainState(train_state.TrainState):
         )
 
 
-def create_transformation_inference_state(model, state_rng, init_rng, config):
+def create_transformation_inference_state(model, rng, config):
+    state_rng, init_rng = random.split(rng, 2)
     variables = model.init(
         {"params": init_rng, "sample": init_rng},
         jnp.empty((28, 28, 1)),

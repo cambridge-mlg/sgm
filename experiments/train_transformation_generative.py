@@ -107,7 +107,7 @@ def main(config, run, prototype_model_dir: str):
 
     # - Set up rng
     rng = random.PRNGKey(config.seed)
-    data_rng, init_rng, state_rng = random.split(rng, 3)
+    data_rng, init_rng = random.split(rng)
 
     # --- Load the prototype model ---
     handlers = {
@@ -144,21 +144,7 @@ def main(config, run, prototype_model_dir: str):
     # --- Network setup ---
     gen_model = TransformationGenerativeNet(**config.model.generative.to_dict())
 
-    gen_init_rng, init_rng = random.split(init_rng)
-    variables = gen_model.init(
-        {"params": gen_init_rng, "sample": gen_init_rng},
-        jnp.empty((64, 64, 1))
-        if "dsprites" in config.dataset
-        else jnp.empty((28, 28, 1)), 
-        η=jnp.empty((5,)),
-        train=False,
-    )
-
-    parameter_overview.log_parameter_overview(variables)
-
-    gen_params = flax.core.freeze(variables["params"])
-
-    gen_state = create_transformation_generative_state(gen_params, state_rng, config)
+    gen_state = create_transformation_generative_state(gen_model, init_rng, config)
 
     train_step, eval_step = make_transformation_generative_train_and_eval(
         config, gen_model, prototype_function=prototype_function

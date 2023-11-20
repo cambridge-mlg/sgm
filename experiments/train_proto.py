@@ -1,8 +1,5 @@
 import os
 
-# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.45"
-
-
 import ciclo
 import flax
 import jax
@@ -43,6 +40,9 @@ from src.utils.proto_plots import (
 )
 from src.utils.training import custom_wandb_logger
 
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.45"
+
+
 flax.config.update("flax_use_orbax_checkpointing", True)
 logging.set_verbosity(logging.INFO)
 plt.rcParams["savefig.facecolor"] = "white"
@@ -76,6 +76,7 @@ def main_with_wandb(_):
         # Run main:
         main(config, run)
 
+
 def main(config, run):
     # --- Make directories for saving ckeckpoints/logs ---
     output_dir = config.get(
@@ -90,7 +91,7 @@ def main(config, run):
     run.summary.update({"checkpoint_dir": str(checkpoint_dir)})
 
     rng = random.PRNGKey(config.seed)
-    data_rng, init_rng, state_rng = random.split(rng, 3)
+    data_rng, init_rng = random.split(rng)
 
     if config.dataset == "aug_dsprites":
         fig, _ = visualise_latent_distribution_from_config(config.aug_dsprites)
@@ -104,23 +105,7 @@ def main(config, run):
     # --- Network setup ---
     proto_model = TransformationInferenceNet(**config.model.inference.to_dict())
 
-    proto_init_rng, init_rng = random.split(init_rng)
-
-    logging.info("Initialise the model")
-    variables = proto_model.init(
-        {"params": proto_init_rng, "sample": proto_init_rng},
-        jnp.empty((64, 64, 1))
-        if "dsprites" in config.dataset
-        else jnp.empty((28, 28, 1)),
-        train=False,
-    )
-
-    parameter_overview.log_parameter_overview(variables)
-
-    proto_params = flax.core.freeze(variables["params"])
-
-    proto_state_rng, state_rng = random.split(state_rng)
-    proto_state = create_transformation_inference_state(proto_params, proto_state_rng, config)
+    proto_state = create_transformation_inference_state(proto_model, init_rng, config)
 
     train_step_proto, eval_step_proto = make_transformation_inference_train_and_eval(
         config, proto_model
@@ -134,10 +119,8 @@ def main(config, run):
         xhat = transform_image(x, -η, order=config.interpolation_order)
         return xhat
 
-    plot_data_samples_canonicalizations = (
-        construct_plot_data_samples_canonicalizations(
-            get_prototype_fn=get_prototype
-        )
+    plot_data_samples_canonicalizations = construct_plot_data_samples_canonicalizations(
+        get_prototype_fn=get_prototype
     )
 
     def plot_and_log_data_samples_canonicalizations(state, batch):
@@ -153,9 +136,7 @@ def main(config, run):
 
     def plot_and_log_data_augmented_samples_canonicalizations(state, batch):
         fig = plot_augmented_data_samples_canonicalizations(state, batch)
-        wandb.log(
-            {"prototypes_on_augmented": wandb.Image(fig)}, step=state.step
-        )
+        wandb.log({"prototypes_on_augmented": wandb.Image(fig)}, step=state.step)
         plt.close(fig)
 
     plot_training_augmented_samples = construct_plot_training_augmented_samples(
@@ -166,7 +147,7 @@ def main(config, run):
         fig = plot_training_augmented_samples(state, batch)
         wandb.log({"training_samples_augmented": wandb.Image(fig)}, step=state.step)
         plt.close(fig)
-    
+
     def plot_and_log_training_samples(state, batch):
         fig = plot_training_samples(state, batch)
         wandb.log({"training_samples": wandb.Image(fig)}, step=state.step)
@@ -213,7 +194,9 @@ def main(config, run):
     def prototype_function(x, rng):
         η = proto_model.apply(
             {"params": proto_final_state.params}, x, train=False
-        ).sample(seed=rng)  # type: ignore
+        ).sample(
+            seed=rng
+        )  # type: ignore
         return η
 
     if config.dataset == "aug_dsprites":

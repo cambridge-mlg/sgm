@@ -90,13 +90,13 @@ def main(_):
             )
 
         rng = random.PRNGKey(config.seed)
-        data_rng, init_rng, state_rng = random.split(rng, 3)
+        data_rng, init_rng = random.split(rng)
 
         train_ds, val_ds, test_ds = get_data(config, data_rng)
 
         model = VAE(**config.model.to_dict())
 
-        state = create_vae_state(model, state_rng, init_rng, config)
+        state = create_vae_state(model, init_rng, config)
 
         train_step, eval_step = make_vae_train_and_eval(model, config)
         x = next(deterministic_data.start_input_pipeline(val_ds))["image"][0]

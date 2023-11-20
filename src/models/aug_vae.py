@@ -15,10 +15,11 @@ import jax
 import numpy as np
 import optax
 from chex import Array
+from clu import parameter_overview
 from flax import linen as nn
 from flax import traverse_util
 from jax import numpy as jnp
-from clu import parameter_overview
+from jax import random
 
 from src.models.transformation_generative_model import TransformationGenerativeNet
 from src.models.transformation_inference_model import TransformationInferenceNet
@@ -151,9 +152,8 @@ def create_aug_vae_optimizer(params, config):
     return optax.multi_transform(partition_optimizers, param_partitions)
 
 
-def create_aug_vae_state(
-    model, state_rng, init_rng, config, inf_final_state, gen_final_state
-):
+def create_aug_vae_state(model, rng, config, inf_final_state, gen_final_state):
+    state_rng, init_rng = random.split(rng)
     variables = model.init(
         {"params": init_rng, "sample": init_rng},
         jnp.empty((28, 28, 1)),
