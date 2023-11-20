@@ -1,5 +1,5 @@
-import itertools
 import os
+from itertools import product
 
 import ciclo
 import flax
@@ -144,16 +144,18 @@ def main(_):
             )
             return xhat, η
 
-        for i, (x_, mask) in itertools.product(
-            [
-                val_batch["image"][0][14],
-                val_batch["image"][0][12],
-            ],
-            [
-                jnp.array([0, 0, 1, 0, 0]),
-                jnp.array([1, 1, 0, 0, 0]),
-                jnp.array([1, 1, 1, 1, 1]),
-            ],
+        for i, (x_, mask) in enumerate(
+            product(
+                [
+                    val_batch["image"][0][14],
+                    val_batch["image"][0][12],
+                ],
+                [
+                    jnp.array([0, 0, 1, 0, 0]),
+                    jnp.array([1, 1, 0, 0, 0]),
+                    jnp.array([1, 1, 1, 1, 1]),
+                ],
+            )
         ):
             transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
                 x_,
