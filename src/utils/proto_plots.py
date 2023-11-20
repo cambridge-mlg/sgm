@@ -1,19 +1,19 @@
 """
 Plotting functions and utilities for logging training progress of a transformation inference (prototype inference) model.
 """
+import math
 from typing import Protocol
+
 import distrax
 import jax
 import jax.numpy as jnp
-from jax import random
-import numpy as np
-import math
-
-
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
+from jax import random
 
 from src.transformations import transform_image
+from src.utils.plotting import rescale_for_imshow
 
 
 class GetPrototypeFn(Protocol):
@@ -332,4 +332,31 @@ def plot_proto_model_training_metrics(history):
 
     for ax in axs:
         ax.grid(color=(0.9, 0.9, 0.9))
+    return fig
+
+
+def plot_protos_and_recons(x, bounds, get_prototype):
+    transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
+        x,
+        jnp.linspace(
+            -bounds,
+            bounds,
+            13,
+        ),
+    )
+
+    xhats, _ = jax.vmap(get_prototype)(transformed_xs)
+
+    fig, axs = plt.subplots(2, len(xhats), figsize=(15, 3))
+
+    for ax, x in zip(axs[0], list(transformed_xs)):
+        ax.imshow(rescale_for_imshow(x), cmap="gray")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    for ax, xhat in zip(axs[1], list(xhats)):
+        ax.imshow(rescale_for_imshow(xhat), cmap="gray")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
     return fig
