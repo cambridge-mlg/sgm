@@ -25,7 +25,7 @@ def get_config(params) -> config_dict.ConfigDict:
     )
     config.n_samples = 5
     config.eval_freq = 0.01
-    config.difficulty_weighted_inf_loss = True
+    config.difficulty_weighted_loss = True
     config.interpolation_order = 3
     config.translate_last = False
     config.symmetrised_samples_in_loss = False

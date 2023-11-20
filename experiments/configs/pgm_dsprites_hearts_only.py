@@ -1,8 +1,8 @@
-from ml_collections import config_dict
-from jax import numpy as jnp
 import math
 
 import numpy as np
+from jax import numpy as jnp
+from ml_collections import config_dict
 
 from src.utils.datasets.augmented_dsprites import DistributionConfig
 
@@ -32,7 +32,9 @@ def get_config() -> config_dict.ConfigDict:
     # config.aug_dsprites.heart_distribution.orientation = DistributionConfig(
     #     "delta", {"value": 0.0}
     # )
-    config.aug_dsprites.heart_distribution.orientation = f"uniform(low=0.0, high={2*np.pi})"
+    config.aug_dsprites.heart_distribution.orientation = (
+        f"uniform(low=0.0, high={2*np.pi})"
+    )
     # config.aug_dsprites.heart_distribution.orientation = config_dict.ConfigDict()
     # config.aug_dsprites.heart_distribution.orientation.type = "uniform"
     # config.aug_dsprites.heart_distribution.orientation.kwargs = config_dict.ConfigDict()
@@ -68,7 +70,7 @@ def get_config() -> config_dict.ConfigDict:
     config.n_samples = 5
     config.symmetrised_samples_in_loss = True
     config.eval_freq = 0.01
-    config.difficulty_weighted_inf_loss = False
+    config.difficulty_weighted_loss = False
     config.double_transform = False
     config.interpolation_order = 1
 

@@ -425,7 +425,7 @@ def make_transformation_inference_train_and_eval(
         # (maybe) do a weighted average based on the difficulty of the sample
         weights = (
             difficulty / difficulty.sum()
-            if train and config.difficulty_weighted_inf_loss
+            if train and config.difficulty_weighted_loss
             else jnp.ones((config.n_samples,)) / config.n_samples
         )
         x_mse = (x_mse * weights).sum()
