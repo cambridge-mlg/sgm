@@ -96,7 +96,7 @@ def main(_):
 
         model = VAE(**config.model.to_dict())
 
-        state = create_vae_state(model, init_rng, config)
+        state = create_vae_state(model, config, init_rng)
 
         train_step, eval_step = make_vae_train_and_eval(model, config)
         x = next(deterministic_data.start_input_pipeline(val_ds))["image"][0]

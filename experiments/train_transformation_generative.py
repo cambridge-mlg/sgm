@@ -144,7 +144,7 @@ def main(config, run, prototype_model_dir: str):
     # --- Network setup ---
     gen_model = TransformationGenerativeNet(**config.model.generative.to_dict())
 
-    gen_state = create_transformation_generative_state(gen_model, init_rng, config)
+    gen_state = create_transformation_generative_state(gen_model, config, init_rng)
 
     train_step, eval_step = make_transformation_generative_train_and_eval(
         config, gen_model, prototype_function=prototype_function

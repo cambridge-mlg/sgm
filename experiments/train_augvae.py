@@ -102,7 +102,7 @@ def main(_):
         inf_model = TransformationInferenceNet(**pgm_config.model.inference.to_dict())
 
         inf_state = create_transformation_inference_state(
-            inf_model, init_rng, pgm_config
+            inf_model, pgm_config, init_rng
         )
 
         train_step, eval_step = make_transformation_inference_train_and_eval(
@@ -196,7 +196,7 @@ def main(_):
         gen_model = TransformationGenerativeNet(**pgm_config.model.generative.to_dict())
 
         gen_state = create_transformation_generative_state(
-            gen_model, init_rng, pgm_config
+            gen_model, pgm_config, init_rng
         )
 
         train_step, eval_step = make_transformation_generative_train_and_eval(
@@ -260,8 +260,8 @@ def main(_):
 
         aug_vae_state = create_aug_vae_state(
             aug_vae_model,
-            init_rng,
             vae_config,
+            init_rng,
             inf_final_state,
             gen_final_state,
         )

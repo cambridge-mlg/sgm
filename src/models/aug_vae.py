@@ -152,7 +152,7 @@ def create_aug_vae_optimizer(params, config):
     return optax.multi_transform(partition_optimizers, param_partitions)
 
 
-def create_aug_vae_state(model, rng, config, inf_final_state, gen_final_state):
+def create_aug_vae_state(model, config, rng, inf_final_state, gen_final_state):
     state_rng, init_rng = random.split(rng)
     variables = model.init(
         {"params": init_rng, "sample": init_rng},

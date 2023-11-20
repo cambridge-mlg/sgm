@@ -403,7 +403,7 @@ def create_transformation_generative_optimizer(params, config):
     )
 
 
-def create_transformation_generative_state(model, rng, config):
+def create_transformation_generative_state(model, config, rng):
     state_rng, init_rng = random.split(rng)
     variables = model.init(
         {"params": init_rng, "sample": init_rng},

@@ -105,7 +105,7 @@ def main(config, run):
     # --- Network setup ---
     proto_model = TransformationInferenceNet(**config.model.inference.to_dict())
 
-    proto_state = create_transformation_inference_state(proto_model, init_rng, config)
+    proto_state = create_transformation_inference_state(proto_model, config, init_rng)
 
     train_step_proto, eval_step_proto = make_transformation_inference_train_and_eval(
         config, proto_model

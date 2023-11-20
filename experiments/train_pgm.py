@@ -96,7 +96,7 @@ def main(_):
         params = flax.core.freeze(variables["params"])
         del variables
 
-        state = create_pgm_state(params, state_rng, config)
+        state = create_pgm_state(params, config, state_rng)
 
         train_step, eval_step = make_pgm_train_and_eval(model, config)
 
