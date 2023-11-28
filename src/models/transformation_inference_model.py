@@ -435,7 +435,7 @@ def make_transformation_inference_train_and_eval(
 
         loss = (
             config.x_mse_loss_mult * x_mse
-            + state.η_loss_mult * η_recon_loss
+            + config.η_loss_mult * η_recon_loss
             + config.invertibility_loss_mult * invertibility_loss
         )
 
@@ -485,11 +485,6 @@ def make_transformation_inference_train_and_eval(
             "schedules",
             "lr_σ",
             state.opt_state.inner_states["σ"][0].hyperparams["learning_rate"],
-        )
-        logs.add_entry(
-            "schedules",
-            "η_loss_mult",
-            state.η_loss_mult,
         )
         logs.add_entry(
             "schedules",
@@ -656,8 +651,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
     metrics: TransformationInferenceMetrics
     augment_bounds_mult: float
     augment_bounds_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
-    η_loss_mult: float
-    η_loss_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     blur_sigma: float
     blur_sigma_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     rng: PRNGKey
@@ -671,7 +664,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
             params=new_params,
             opt_state=new_opt_state,
             augment_bounds_mult=self.augment_bounds_mult_schedule(self.step),
-            η_loss_mult=self.η_loss_mult_schedule(self.step),
             blur_sigma=self.blur_sigma_schedule(self.step),
             **kwargs,
         )
@@ -684,7 +676,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
         params,
         tx,
         augment_bounds_mult_schedule,
-        η_loss_mult_schedule,
         blur_sigma_schedule,
         **kwargs,
     ):
@@ -697,8 +688,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
             opt_state=opt_state,
             augment_bounds_mult_schedule=augment_bounds_mult_schedule,
             augment_bounds_mult=augment_bounds_mult_schedule(0),
-            η_loss_mult_schedule=η_loss_mult_schedule,
-            η_loss_mult=η_loss_mult_schedule(0),
             blur_sigma_schedule=blur_sigma_schedule,
             blur_sigma=blur_sigma_schedule(0),
             **kwargs,
@@ -733,25 +722,7 @@ def create_transformation_inference_state(model, config, rng):
                 ),
                 optax.constant_schedule(1.0),
             ],
-            boundaries=[config.inf_steps * config.augment_warmup_end],
-        ),
-        η_loss_mult_schedule=optax.join_schedules(
-            [
-                optax.constant_schedule(config.η_loss_mult_peak),
-                optax.linear_schedule(
-                    init_value=config.η_loss_mult_peak,
-                    end_value=0.0,
-                    transition_steps=(
-                        config.η_loss_decay_end - config.η_loss_decay_start
-                    )
-                    * config.inf_steps,
-                ),
-                optax.constant_schedule(0.0),
-            ],
-            boundaries=[
-                config.η_loss_decay_start * config.inf_steps,
-                config.η_loss_decay_end * config.inf_steps,
-            ],
+            
         ),
         blur_sigma_schedule=optax.join_schedules(
             [

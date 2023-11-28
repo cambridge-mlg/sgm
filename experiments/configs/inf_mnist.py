@@ -31,6 +31,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.symmetrised_samples_in_loss = False
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 0.1
+    config.η_loss_mult = 0.0
 
     config.steps = 15_000
     config.lr = 3e-4
@@ -40,11 +41,8 @@ def get_config(params) -> config_dict.ConfigDict:
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
     config.σ_lr = 1e-2
-    # Schedule of the loss in the η space (rather than the x_mse space) for the "inference" model
-    config.η_loss_mult_peak = 0.0  # No η loss
-    config.η_loss_decay_end = 0.0
-    config.η_loss_decay_start = 0.0
-    config.augment_warmup_end = 0.0  # No augmentation warmup
+    
+    
     # Blur schedule
     config.blur_filter_shape = (15, 15)
     config.blur_sigma_init = 1.0
