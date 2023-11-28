@@ -602,22 +602,22 @@ def create_transformation_inference_optimizer(params, config):
     partition_optimizers = {
         "inference": optax.inject_hyperparams(clipped_adamw)(
             optax.warmup_cosine_decay_schedule(
-                config.inf_init_lr_mult * config.inf_lr,
-                config.inf_lr,
-                config.inf_warmup_steps,
-                config.inf_steps,
-                config.inf_lr * config.inf_final_lr_mult,
+                config.init_lr_mult * config.lr,
+                config.lr,
+                config.steps * config.warmup_steps_pct,
+                config.steps,
+                config.lr * config.final_lr_mult,
             ),
-            config.get("inf_clip_norm", 2.0),
+            config.get("clip_norm", 2.0),
             # Optax WD default: 0.0001 https://optax.readthedocs.io/en/latest/api.html#optax.adamw
-            config.get("inf_weight_decay", 0.0001),
+            config.get("weight_decay", 0.0001),
         ),
         "σ": optax.inject_hyperparams(optax.adam)(
             optax.warmup_cosine_decay_schedule(
                 config.σ_lr,
                 config.σ_lr * 3,
-                config.inf_warmup_steps,
-                config.inf_steps,
+                config.steps * config.warmup_steps_pct,
+                config.steps,
                 config.σ_lr / 3,
             ),
         ),
@@ -718,22 +718,22 @@ def create_transformation_inference_state(model, config, rng):
                 optax.linear_schedule(
                     init_value=0.0,
                     end_value=1.0,
-                    transition_steps=config.inf_steps * config.augment_warmup_end,
+                    transition_steps=config.steps * config.augment_warmup_steps_pct,
                 ),
                 optax.constant_schedule(1.0),
             ],
-            
+            boundaries=[config.steps * config.augment_warmup_steps_pct],
         ),
         blur_sigma_schedule=optax.join_schedules(
             [
                 optax.linear_schedule(
                     init_value=config.blur_sigma_init,
                     end_value=0.0,
-                    transition_steps=config.inf_steps * config.blur_sigma_decay_end,
+                    transition_steps=config.steps * config.blur_sigma_decay_end_pct,
                 ),
                 optax.constant_schedule(0.0),
             ],
-            boundaries=[config.inf_steps * config.blur_sigma_decay_end],
+            boundaries=[config.steps * config.blur_sigma_decay_end_pct],
         ),
         rng=state_rng,
     )

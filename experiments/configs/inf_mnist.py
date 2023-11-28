@@ -37,16 +37,17 @@ def get_config(params) -> config_dict.ConfigDict:
     config.lr = 3e-4
     config.init_lr_mult = 1 / 3
     config.final_lr_mult = 1 / 90
-    config.warmup_steps = config.steps // 10
+    config.warmup_steps_pct = 0.1
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
     config.σ_lr = 1e-2
     
     
+    config.augment_warmup_steps_pct = 0.0  # No augmentation warmup
     # Blur schedule
     config.blur_filter_shape = (15, 15)
     config.blur_sigma_init = 1.0
-    config.blur_sigma_decay_end = 0.5
+    config.blur_sigma_decay_end_pct = 0.5
 
     config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
@@ -58,9 +59,6 @@ def get_config(params) -> config_dict.ConfigDict:
 
     config.model_name = "inference_net"
     config.model = config_dict.ConfigDict()
-    config.model = config_dict.ConfigDict()
-    config.model.offset = config.augment_offset
-    config.model.bounds = config.augment_bounds
     config.model.squash_to_bounds = False
     config.model.hidden_dims = (1024, 512, 256, 128)
 
