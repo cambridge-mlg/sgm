@@ -29,3 +29,9 @@ def duplicated_run(config):
             return True
 
     return False
+
+
+def format_thousand(num):
+    thousands = num // 1000
+    remainder = num % 1000 // 100
+    return f"{thousands}k{remainder if remainder != 0 else ''}"

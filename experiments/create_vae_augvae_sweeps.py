@@ -4,11 +4,12 @@ from pathlib import Path
 import yaml
 
 import wandb
+from experiments.utils import format_thousand
 
 ENTITY = "invariance-learners"
 PROJECT = "iclr2024experiments"
 MAX_NUM_RUNS = 32
-SWEEP_CONFIG_PATH = "vae_angles_hyper_sweep.yaml"
+SWEEP_CONFIG = "vae_angles_hyper_sweep.yaml"
 ANGLES = [0, 15, 90, 180]
 NUM_TRNS = [50_000]
 MODEL_NAMES = [
@@ -17,21 +18,15 @@ MODEL_NAMES = [
 ]
 
 
-def format_thousand(num):
-    thousands = num // 1000
-    remainder = num % 1000 // 100
-    return f"{thousands}k{remainder if remainder != 0 else ''}"
-
-
 parent_path = Path(__file__).parent
-path = parent_path / SWEEP_CONFIG_PATH
+sweep_path = parent_path / SWEEP_CONFIG
 
 for model_name in MODEL_NAMES:
     job_folder = parent_path / f"jobs_{model_name}_sweep"
     job_folder.mkdir(exist_ok=True)
 
     for angle, num_trn in product(ANGLES, NUM_TRNS):
-        with path.open() as file:
+        with sweep_path.open() as file:
             sweep_config = yaml.safe_load(file)
 
         sweep_name = f"{model_name}_sweep_{angle:03}_{format_thousand(num_trn)}_v2"
