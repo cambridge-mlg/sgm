@@ -1,0 +1,103 @@
+command:
+  - ${interpreter}
+  - ${program}
+  - --config=experiments/configs/inf_mnist.py:90,50000
+  - --rerun
+method: random
+metric:
+  goal: minimize
+  name: valid/loss
+name: inf_rand_sweep_90_50k
+parameters:
+  n_samples:
+    distribution: categorical
+    values:
+      - 2
+      - 3
+      - 5
+  difficulty_weighted_loss:
+    distribution: categorical
+    values:
+      - True
+      - False
+  symmetrised_samples_in_loss:
+    distribution: categorical
+    values:
+      - True
+      - False
+  invertibility_loss_mult:
+    distribution: uniform
+    max: 1.0
+    min: 0.0
+  η_loss_mult:
+    distribution: uniform
+    max: 1.0
+    min: 0.0
+  steps:
+    distribution: categorical
+    values:
+      - 15000
+      - 30000
+      - 60000
+  lr:
+    distribution: log_uniform_values
+    max: 0.01
+    min: 0.0001
+  final_lr_mult:
+    distribution: log_uniform_values
+    max: 1
+    min: 0.0001
+  init_lr_mult:
+    distribution: log_uniform_values
+    max: 1
+    min: 0.01
+  warmup_steps_pct:
+    distribution: uniform
+    max: 0.3
+    min: 0
+  clip_norm:
+    distribution: log_uniform_values
+    max: 50
+    min: 1
+  weight_decay:
+    distribution: log_uniform_values
+    max: 0.001
+    min: 0.00001
+  augment_warmup_steps_pct:
+    distribution: uniform
+    max: 0.3
+    min: 0
+  blur_sigma_decay_end_pct:
+    distribution: uniform
+    max: 1.0
+    min: 0
+  blur_sigma_init:
+    distribution: uniform
+    max: 2.0
+    min: 0
+  model:
+    parameters:
+      model_type:
+        distribution: categorical
+        values:
+          - convnext
+          - mlp
+      convnext_type:
+        distribution: categorical
+        values:
+          - tiny
+          - pico
+          - atto
+      hidden_dims:
+        distribution: categorical
+        values:
+          - 4096,2048,512,128
+          - 1024,512,256,128
+          - 512,256,256,128
+      squash_to_bounds:
+        distribution: categorical
+        values:
+          - True
+          - False
+program: experiments/train_inference_model.py
+run_cap: 32
