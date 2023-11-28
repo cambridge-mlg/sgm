@@ -1,13 +1,13 @@
 command:
   - ${interpreter}
   - ${program}
-  - --config=experiments/configs/vae_mnist.py:45,50000
+  - --config=experiments/configs/vae_mnist.py:90,50000
   - --rerun
 method: bayes
 metric:
   goal: minimize
   name: valid/loss
-name: vae_sweep_45_50k
+name: vae_sweep_90_50k
 parameters:
   # clip_norm:
   #   distribution: log_uniform_values

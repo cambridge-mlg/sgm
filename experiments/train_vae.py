@@ -82,12 +82,14 @@ def main(_):
         config = config_dict.ConfigDict(wandb.config)
 
         with config.ignore_type():
-            config.model.conv_dims = tuple(
-                int(x) for x in config.model.conv_dims.split(",")
-            )
-            config.model.dense_dims = tuple(
-                int(x) for x in config.model.dense_dims.split(",")
-            )
+            if isinstance(config.model.conv_dims, str):
+                config.model.conv_dims = tuple(
+                    int(x) for x in config.model.conv_dims.split(",")
+                )
+            if isinstance(config.model.dense_dims, str):
+                config.model.dense_dims = tuple(
+                    int(x) for x in config.model.dense_dims.split(",")
+                )
 
         rng = random.PRNGKey(config.seed)
         data_rng, init_rng = random.split(rng)

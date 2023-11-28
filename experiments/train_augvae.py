@@ -8,13 +8,13 @@ import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 from scipy.stats import gaussian_kde
 
-import wandb
 from experiments.utils import duplicated_run
 from src.models.aug_vae import (
     AUG_VAE,
@@ -69,6 +69,7 @@ flags.DEFINE_bool(
 def main(_):
     pgm_config = FLAGS.pgm_config
     vae_config = FLAGS.vae_config
+    vae_config.model_name = "AugVAE"
 
     if not FLAGS.rerun:
         if duplicated_run(pgm_config) and duplicated_run(vae_config):
@@ -87,12 +88,14 @@ def main(_):
         vae_config = config_dict.ConfigDict(wandb.config)
 
         with vae_config.ignore_type():
-            vae_config.model.conv_dims = tuple(
-                int(x) for x in vae_config.model.conv_dims.split(",")
-            )
-            vae_config.model.dense_dims = tuple(
-                int(x) for x in vae_config.model.dense_dims.split(",")
-            )
+            if isinstance(vae_config.model.conv_dims, str):
+                vae_config.model.conv_dims = tuple(
+                    int(x) for x in vae_config.model.conv_dims.split(",")
+                )
+            if isinstance(vae_config.model.dense_dims, str):
+                vae_config.model.dense_dims = tuple(
+                    int(x) for x in vae_config.model.dense_dims.split(",")
+                )
 
         rng = random.PRNGKey(pgm_config.seed)
         data_rng, init_rng = random.split(rng)

@@ -7,12 +7,12 @@ import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
-import wandb
 from experiments.utils import duplicated_run
 from src.models.transformation_inference_model import (
     TransformationInferenceNet,
@@ -71,12 +71,23 @@ def main(_):
     ) as run:
         config = config_dict.ConfigDict(wandb.config)
 
+        with config.ignore_type():
+            if isinstance(config.model.hidden_dims, str):
+                config.model.hidden_dims = tuple(
+                    int(x) for x in config.model.hidden_dims.split(",")
+                )
+
         rng = random.PRNGKey(config.seed)
         data_rng, init_rng = random.split(rng)
 
         train_ds, val_ds, _ = get_data(config, data_rng)
 
-        model = TransformationInferenceNet(**config.model.to_dict())
+        print(config.model.to_dict())
+        model = TransformationInferenceNet(
+            bounds=config.augment_bounds,
+            offset=config.augment_offset,
+            **config.model.to_dict(),
+        )
 
         state = create_transformation_inference_state(model, config, init_rng)
 
