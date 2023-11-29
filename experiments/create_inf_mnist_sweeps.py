@@ -17,14 +17,14 @@ NUM_TRNS = [25_000, 50_000]
 parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
 
-job_folder = parent_path / f"jobs_inf_rand_sweep"
+job_folder = parent_path / f"jobs_inf_rand_mnist_sweep"
 job_folder.mkdir(exist_ok=True)
 
 for angle, num_trn in product(ANGLES, NUM_TRNS):
     with sweep_path.open() as file:
         sweep_config = yaml.safe_load(file)
 
-    sweep_name = f"inf_rand_sweep_{angle:03}_{format_thousand(num_trn)}"
+    sweep_name = f"inf_rand_mnist_sweep_{angle:03}_{format_thousand(num_trn)}"
     print(sweep_name)
     sweep_config["name"] = sweep_name
     sweep_config["command"][
