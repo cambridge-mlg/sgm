@@ -101,11 +101,12 @@ def main(_):
         data_rng, init_rng = random.split(rng)
 
         train_ds, val_ds, _ = get_data(pgm_config, data_rng)
+        input_shape = train_ds.element_spec["image"].shape[2:]
 
         inf_model = TransformationInferenceNet(**pgm_config.model.inference.to_dict())
 
         inf_state = create_transformation_inference_state(
-            inf_model, pgm_config, init_rng
+            inf_model, pgm_config, init_rng, input_shape
         )
 
         train_step, eval_step = make_transformation_inference_train_and_eval(
@@ -197,11 +198,15 @@ def main(_):
         data_rng, init_rng = random.split(rng)
 
         train_ds, val_ds, _ = get_data(pgm_config, data_rng)
+        input_shape = train_ds.element_spec["image"].shape[2:]
 
         gen_model = TransformationGenerativeNet(**pgm_config.model.generative.to_dict())
 
         gen_state = create_transformation_generative_state(
-            gen_model, pgm_config, init_rng
+            gen_model,
+            pgm_config,
+            init_rng,
+            input_shape,
         )
 
         train_step, eval_step = make_transformation_generative_train_and_eval(
@@ -255,6 +260,7 @@ def main(_):
         data_rng, init_rng = random.split(rng, 2)
 
         train_ds, val_ds, _ = get_data(vae_config, data_rng)
+        input_shape = train_ds.element_spec["image"].shape[2:]
 
         aug_vae_model = AUG_VAE(
             vae=vae_config.model.to_dict(),
@@ -267,6 +273,7 @@ def main(_):
             aug_vae_model,
             vae_config,
             init_rng,
+            input_shape,
             inf_final_state,
             gen_final_state,
         )

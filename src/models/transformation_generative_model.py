@@ -403,11 +403,11 @@ def create_transformation_generative_optimizer(params, config):
     )
 
 
-def create_transformation_generative_state(model, config, rng):
+def create_transformation_generative_state(model, config, rng, input_shape):
     state_rng, init_rng = random.split(rng)
     variables = model.init(
         {"params": init_rng, "sample": init_rng},
-        jnp.empty((28, 28, 1)),
+        jnp.empty(input_shape),
         η=jnp.empty((len(config.augment_bounds),)),
         train=False,
     )

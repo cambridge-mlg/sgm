@@ -460,11 +460,11 @@ class VaeTrainState(train_state.TrainState):
         )
 
 
-def create_vae_state(model, config, rng):
+def create_vae_state(model, config, rng, input_shape):
     state_rng, init_rng = random.split(rng)
     variables = model.init(
         {"params": init_rng, "sample": init_rng},
-        jnp.empty((28, 28, 1)),
+        jnp.empty(input_shape),
         train=False,
     )
 

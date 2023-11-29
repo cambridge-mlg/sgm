@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data, parameter_overview
 from jax.config import config
@@ -17,7 +18,6 @@ from orbax.checkpoint import (
     PyTreeCheckpointHandler,
 )
 
-import wandb
 from src.models.transformation_inference_model import (
     TransformationInferenceNet,
     create_transformation_inference_state,
@@ -101,11 +101,14 @@ def main(config, run):
     # --- Data ---
     logging.info("Constructing the dataset")
     train_ds, val_ds, _ = get_data(config, data_rng)
+    input_shape = train_ds.element_spec["image"].shape[2:]
     logging.info("Finished constructing the dataset")
     # --- Network setup ---
     proto_model = TransformationInferenceNet(**config.model.inference.to_dict())
 
-    proto_state = create_transformation_inference_state(proto_model, config, init_rng)
+    proto_state = create_transformation_inference_state(
+        proto_model, config, init_rng, input_shape
+    )
 
     train_step_proto, eval_step_proto = make_transformation_inference_train_and_eval(
         config, proto_model

@@ -95,10 +95,11 @@ def main(_):
         data_rng, init_rng = random.split(rng)
 
         train_ds, val_ds, test_ds = get_data(config, data_rng)
+        input_shape = train_ds.element_spec["image"].shape[2:]
 
         model = VAE(**config.model.to_dict())
 
-        state = create_vae_state(model, config, init_rng)
+        state = create_vae_state(model, config, init_rng, input_shape)
 
         train_step, eval_step = make_vae_train_and_eval(model, config)
         x = next(deterministic_data.start_input_pipeline(val_ds))["image"][0]

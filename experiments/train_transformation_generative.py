@@ -140,11 +140,12 @@ def main(config, run, prototype_model_dir: str):
     # --- Data ---
     logging.info("Constructing the dataset")
     train_ds, val_ds, _ = get_data(config, data_rng)
+    input_shape = train_ds.element_spec["image"].shape[2:]
     logging.info("Finished constructing the dataset")
     # --- Network setup ---
     gen_model = TransformationGenerativeNet(**config.model.generative.to_dict())
 
-    gen_state = create_transformation_generative_state(gen_model, config, init_rng)
+    gen_state = create_transformation_generative_state(gen_model, config, init_rng, input_shape)
 
     train_step, eval_step = make_transformation_generative_train_and_eval(
         config, gen_model, prototype_function=prototype_function

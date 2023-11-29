@@ -88,8 +88,11 @@ def main(_):
             offset=config.augment_offset,
             **config.model.to_dict(),
         )
-
-        state = create_transformation_inference_state(model, config, init_rng)
+        #
+        input_shape = train_ds.element_spec["image"].shape[2:]
+        state = create_transformation_inference_state(
+            model, config, init_rng, input_shape=input_shape
+        )
 
         train_step, eval_step = make_transformation_inference_train_and_eval(
             model, config
