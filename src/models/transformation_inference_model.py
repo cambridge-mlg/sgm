@@ -262,8 +262,6 @@ def make_transformation_inference_train_and_eval(
                 ),
             ).mean()
 
-            difficulty = optax.squared_error(x_rand1, x_rand2).mean()
-
             # This loss regularises for the applied sequence of transformations to be identity, but directly in η space.
             # However, it is possible for it to be non-0 while the MSE is perfect due to self-symmetric objects
             # (multiple orbit stabilizers). Ultimately, we care about low MSE. The loss is chosen to be more-or-less
@@ -289,23 +287,13 @@ def make_transformation_inference_train_and_eval(
                 affine_mat_inv=η_x_rand1_aff_mat,
             )
 
-            return x_mse, η_recon_loss, invertibility_loss, difficulty
+            return x_mse, η_recon_loss, invertibility_loss
 
         rngs = random.split(rng_local, config.n_samples)
-        x_mse, η_recon_loss, invertibility_loss, difficulty = jax.vmap(per_sample_loss)(
-            rngs
+        x_mse, η_recon_loss, invertibility_loss = jax.vmap(per_sample_loss)(rngs)
+        x_mse, η_recon_loss, invertibility_loss = jax.tree_map(
+            lambda x: x.mean(), (x_mse, η_recon_loss, invertibility_loss)
         )
-
-        # (maybe) do a weighted average based on the difficulty of the sample
-        weights = (
-            difficulty / difficulty.sum()
-            if train and config.difficulty_weighted_loss
-            else jnp.ones((config.n_samples,)) / config.n_samples
-        )
-        x_mse = (x_mse * weights).sum()
-        η_recon_loss = η_recon_loss.mean()
-
-        invertibility_loss = invertibility_loss.mean()
 
         loss = (
             config.x_mse_loss_mult * x_mse
