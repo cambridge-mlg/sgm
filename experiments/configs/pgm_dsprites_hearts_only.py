@@ -68,9 +68,7 @@ def get_config() -> config_dict.ConfigDict:
 
     # --- Training ---
     config.n_samples = 5
-    config.symmetrised_samples_in_loss = True
     config.eval_freq = 0.01
-    config.difficulty_weighted_loss = False
     config.double_transform = False
     config.interpolation_order = 1
 

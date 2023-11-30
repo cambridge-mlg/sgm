@@ -183,148 +183,40 @@ def make_transformation_inference_train_and_eval(
                 x,
             )
 
-        def nonsymmetrised_per_sample_loss(rng):
-            """
-            The self-supervised loss for the generative network can be summarised with the following diagram
-
-                    x ------- -η_x -----> x_hat
-                    |                       |
-                    |                       v
-                η_rand                    mse
-                    |                       ∧
-                    ∨                       |
-                x_rand --- -η_x_rand ---> x_hat'.
-
-            However, implementing this directly requires doing 3 affine transformations, which adds 'blur' to the image.
-            So instead we note that the diagram above is equivalent to
-
-                    x --------> mse <------- x'
-                    |                        ∧
-                    |                        |
-                η_rand                     η_x
-                    |                        |
-                    v                        |
-                x_rand --- -η_x_rand ---> x_hat'.
-
-            Finally, this computation can be simplified to
-
-                    x --------> mse <-------- x'
-                    |                         ∧
-                    └ η_rand - η_x_rand + η_x ┘
-
-            which contains only a single transformation.
-
-            """
-
-            (
-                rng_sample1,
-                rng_sample2,
-                rng_η_rand1,
-            ) = random.split(rng, 3)
-
-            augment_bounds_mult = state.augment_bounds_mult if train else 1
-            Η_rand = distrax.Uniform(
-                # Separate model bounds and augment bounds
-                low=-jnp.array(config.augment_bounds) * augment_bounds_mult
-                + jnp.array(config.augment_offset),
-                high=jnp.array(config.augment_bounds) * augment_bounds_mult
-                + jnp.array(config.augment_offset),
-            )
-
-            η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
-            η_rand1_aff_mat = gen_affine_augment(η_rand1)
-
-            x_rand1 = transform_image_fn(x, η_rand1_aff_mat)
-            q_H_x_rand1 = model.apply({"params": params}, x_rand1, train)
-            q_H_x = model.apply({"params": params}, x, train)
-
-            η_x_rand1 = q_H_x_rand1.sample(seed=rng_sample1)
-            η_x = q_H_x.sample(seed=rng_sample2)
-            # Get the affine matrices
-            η_x_rand1_aff_mat = gen_affine_model(η_x_rand1)
-            η_x_rand1_inv_aff_mat = linalg.inv(
-                η_x_rand1_aff_mat
-            )  # Inv. faster than matrix exponential
-            η_x_aff_mat = gen_affine_model(η_x)
-            η_x_inv_aff_mat = linalg.inv(η_x_aff_mat)
-
-            x_mse = optax.squared_error(
-                x,
-                transform_image_fn(
-                    x,
-                    η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_aff_mat,
-                ),
-            ).mean()
-
-            difficulty = optax.squared_error(x_rand1, x).mean()
-
-            # This loss regularises for the applied sequence of transformations to be identity, but directly in η space
-            # This is a useful proxy and can provide a helpful learning signal.
-            # However, it is possible for it to be non-0 while the MSE is perfect due to
-            # self-symmetric objects (multiple orbit stabilizers). Ultimately, we care about
-            # low MSE.
-            # The loss is chosen to be more-or-less linear in the difference (hence the Huber loss)
-            # because we expect the error distribution to be multimodal, and we want the model
-            # to settle on one of the modes. The square loss would make the model settle inbetween
-            # the modes (at the mean of the modes)
-            η_recon_loss = huber_loss(
-                # Measure how close the transformation is to identity
-                (η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_aff_mat)[:2, :].ravel(),
-                jnp.eye(3, dtype=η_rand1_aff_mat.dtype)[:2, :].ravel(),
-                slope=1,
-                radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
-            ).mean()
-
-            invertibility_loss = invertibility_loss_fn(
-                x_rand1,
-                affine_mat=η_x_rand1_inv_aff_mat,
-                affine_mat_inv=η_x_rand1_aff_mat,
-            )
-
-            return x_mse, η_recon_loss, invertibility_loss, difficulty
-
-        def symmetrised_per_sample_loss(rng):
+        def per_sample_loss(rng):
             """
             The self-supervised loss for the generative network can be summarised with the following diagram:
-
                       ┌───────┐            ┌─────────────┐
-                ┌─────┤n_rand1├──►x_rand1──┤n_x_rand1.inv├───┐
-                │     └───────┘            └─────────────┘   │
-                │                                            ▼
-                x                                          x_hat
-                │                                            ▲
-                │     ┌───────┐            ┌─────────────┐   │
-                └─────┤n_rand2├──►x_rand2──┤n_x_rand2.inv├───┘
+                ┌────►│n_rand1├──x_rand1──►│n_x_rand1.inv├───x_hat1──┐
+                │     └───────┘            └─────────────┘           │
+                │                                                    ▼
+                x                                                   mse
+                │                                                    ▲
+                │     ┌───────┐            ┌─────────────┐           │
+                └────►│n_rand2├──x_rand2──►│n_x_rand2.inv├───x_hat2──┘
                       └───────┘            └─────────────┘
-
-            Instead of computing the MSE loss between two different reconstruction of x_hat, we instead
-            compute the MSE loss between x and the re-reconstruction of x as shown below:
-
-
+            However, implementing this directly requires doing 4 affine transformations, which adds 'blur' to the image.
+            Instead, we note the equivalence between computing the MSE loss between two different reconstruction of
+            x_hat and the MSE loss between x and the re-reconstruction of x as shown below.
                       ┌───────┐             ┌─────────────┐
-                x─────┤n_rand1├───►x_rand1──┤n_x_rand1.inv├───┐
+                x ───►│n_rand1├───x_rand1──►│n_x_rand1.inv├───┐
                 │     └───────┘             └─────────────┘   │
-                ▼                                             ▼
-               mse                                           x_hat
+                ▼                                             │
+               mse                                          x_hat
                 ▲                                             │
-                │   ┌───────────┐              ┌─────────┐    │
-                x'◄─┤n_rand2.inv├──x_rand2◄────┤n_x_rand2├────┘
-                    └───────────┘              └─────────┘
-
-            However, implementing this directly requires doing 3 affine transformations, which adds 'blur' to the image.
-            So instead we note that the diagram above is equivalent to (assuming invertible group actions):
-
-
-                x'◄────────────────────────────┐
+                │   ┌───────────┐             ┌─────────┐     │
+                x'──┤n_rand2.inv│◄───x_rand2──┤n_x_rand2│◄────┘
+                    └───────────┘             └─────────┘
+            Finally, we note that the diagram above is equivalent to (assuming invertible group actions):
+                x──────────────────────────────┐
                 │                              │
-                ▼     ┌────────────────────────┴────────────────────────┐
+                │                              ▼
+                ▼     ┌─────────────────────────────────────────────────┐
                mse    │n_rand2.inv ∘ n_x_rand2 ∘ n_x_rand1.inv ∘ n_rand1│
                 ▲     └────────────────────────┬────────────────────────┘
                 │                              │
-                x──────────────────────────────┘
-
-            Where ∘ denotes composition of group actions. In all of the above, we assume we have group action representations
-            for which negation yields the inverse.
+                x'─────────────────────────────┘
+            Where ∘ denotes composition of group actions.
             """
             (
                 rng_sample1,
@@ -334,7 +226,6 @@ def make_transformation_inference_train_and_eval(
             ) = random.split(rng, 4)
 
             Η_rand = distrax.Uniform(
-                # Separate model bounds and augment bounds
                 low=-jnp.array(config.augment_bounds) * state.augment_bounds_mult
                 + jnp.array(config.augment_offset),
                 high=jnp.array(config.augment_bounds) * state.augment_bounds_mult
@@ -343,9 +234,7 @@ def make_transformation_inference_train_and_eval(
             η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
             η_rand2 = Η_rand.sample(seed=rng_η_rand2, sample_shape=())
 
-            # Get the affine matrices
             η_rand1_aff_mat = gen_affine_augment(η_rand1)
-            η_rand1_inv_aff_mat = linalg.inv(η_rand1_aff_mat)
             η_rand2_aff_mat = gen_affine_augment(η_rand2)
             η_rand2_inv_aff_mat = linalg.inv(η_rand2_aff_mat)
 
@@ -358,16 +247,10 @@ def make_transformation_inference_train_and_eval(
             η_x_rand1 = q_H_x_rand1.sample(seed=rng_sample1)
             η_x_rand2 = q_H_x_rand2.sample(seed=rng_sample2)
 
-            # Get the affine matrices
             η_x_rand1_aff_mat = gen_affine_model(η_x_rand1)
-            η_x_rand1_inv_aff_mat = linalg.inv(
-                η_x_rand1_aff_mat
-            )  # Inv. faster than matrix exponential
+            η_x_rand1_inv_aff_mat = linalg.inv(η_x_rand1_aff_mat)
             η_x_rand2_aff_mat = gen_affine_model(η_x_rand2)
-            η_x_rand2_inv_aff_mat = linalg.inv(η_x_rand2_aff_mat)
 
-            # Consider transforming x twice (first into latent space, and then untransforming) as a
-            # way to regularise for invertibility
             x_mse = optax.squared_error(
                 x,
                 transform_image_fn(
@@ -382,14 +265,11 @@ def make_transformation_inference_train_and_eval(
             difficulty = optax.squared_error(x_rand1, x_rand2).mean()
 
             # This loss regularises for the applied sequence of transformations to be identity, but directly in η space.
-            # It can be a useful proxy provides a helpful learning signal.
-            # However, it is possible for it to be non-0 while the MSE is perfect due to
-            # self-symmetric objects (multiple orbit stabilizers). Ultimately, we care about
-            # low MSE.
-            # The loss is chosen to be more-or-less linear in the difference (hence the Huber loss)
-            # because we expect the error distribution to be multimodal, and we want the model
-            # to settle on one of the modes. The square loss would make the model settle inbetween
-            # the modes (at the mean of the modes)
+            # However, it is possible for it to be non-0 while the MSE is perfect due to self-symmetric objects
+            # (multiple orbit stabilizers). Ultimately, we care about low MSE. The loss is chosen to be more-or-less
+            # linear in the difference (hence the Huber loss) because we expect the error distribution to be multimodal,
+            # and we want the model to settle on one of the modes. The square loss would make the model settle inbetween
+            # the modes (at the mean of the modes).
             η_recon_loss = huber_loss(
                 # Measure how close the transformation is to identity
                 (
@@ -400,7 +280,7 @@ def make_transformation_inference_train_and_eval(
                 )[:2, :].ravel(),
                 jnp.eye(3, dtype=η_rand2_aff_mat.dtype)[:2, :].ravel(),
                 slope=1,
-                radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
+                radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear.
             ).mean()
 
             invertibility_loss = invertibility_loss_fn(
@@ -410,12 +290,6 @@ def make_transformation_inference_train_and_eval(
             )
 
             return x_mse, η_recon_loss, invertibility_loss, difficulty
-
-        per_sample_loss = (
-            symmetrised_per_sample_loss
-            if config.symmetrised_samples_in_loss
-            else nonsymmetrised_per_sample_loss
-        )
 
         rngs = random.split(rng_local, config.n_samples)
         x_mse, η_recon_loss, invertibility_loss, difficulty = jax.vmap(per_sample_loss)(
@@ -448,7 +322,6 @@ def make_transformation_inference_train_and_eval(
 
     @jax.jit
     def train_step(state, batch):
-        # --- Update the model ---
         step_rng = random.fold_in(state.rng, state.step)
 
         def batch_loss_fn(params):
@@ -468,7 +341,7 @@ def make_transformation_inference_train_and_eval(
         state = state.apply_gradients(grads=grads)
 
         metrics = state.metrics.update(**metrics)
-        # --- Log the metrics
+
         logs = ciclo.logs()
         logs.add_stateful_metrics(**metrics.compute())
         logs.add_entry(

@@ -28,7 +28,6 @@ def get_config(params) -> config_dict.ConfigDict:
     config.difficulty_weighted_loss = True
     config.interpolation_order = 3
     config.translate_last = False
-    config.symmetrised_samples_in_loss = False
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 0.1
     config.η_loss_mult = 0.0
