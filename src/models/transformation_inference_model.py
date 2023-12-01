@@ -44,12 +44,6 @@ class TransformationInferenceNet(nn.Module):
     offset: Optional[Sequence[int]] = None
     σ_init: Callable = init.constant(jnp.log(jnp.exp(0.01) - 1.0))
     squash_to_bounds: bool = False
-    model_type: str = "mlp"  # "mlp" or "convnext"
-    convnext_type: str = "tiny"
-    convnext_depths: Optional[Sequence[int]] = None
-    convnext_dims: Optional[Sequence[int]] = None
-    # default factory kwargs for convnext
-    convnext_kwargs: Optional[KwArgs] = None
     use_layernorm: bool = True
 
     def setup(self) -> None:
@@ -63,42 +57,13 @@ class TransformationInferenceNet(nn.Module):
 
     @nn.compact
     def __call__(self, x, train: bool = False) -> distrax.Transformed:
-        match self.model_type:
-            case "mlp":
-                h = x.flatten()
+        h = x.flatten()
 
-                for hidden_dim in self.hidden_dims:
-                    h = nn.Dense(hidden_dim)(h)
-                    h = nn.gelu(h)
-                    if self.use_layernorm:
-                        h = nn.LayerNorm()(h)
-
-            case "convnext":
-                constructor_kwargs = dict(
-                    num_outputs=1024,
-                    in_channels=1,
-                    init_downsample=1,
-                    **(self.convnext_kwargs or {}),
-                )
-                match self.convnext_type:
-                    case "custom":
-                        assert self.convnext_depths is not None
-                        assert self.convnext_dims is not None
-                        convnext = ConvNeXt(
-                            dims=self.convnext_dims,
-                            depths=self.convnext_depths,
-                            **constructor_kwargs,
-                        )
-                    case _:
-                        convnext = get_convnext_constructor(self.convnext_type)(
-                            **constructor_kwargs
-                        )
-                h = convnext(x)
-                h = nn.LayerNorm()(
-                    h
-                )  # no layer norm might actually help with scaling the right way?
-            case _:
-                raise ValueError(f"Unknown model type {self.model_type}")
+        for hidden_dim in self.hidden_dims:
+            h = nn.Dense(hidden_dim)(h)
+            h = nn.gelu(h)
+            if self.use_layernorm:
+                h = nn.LayerNorm()(h)
 
         output_dim = np.prod(self.event_shape)
         μ = nn.Dense(

@@ -106,8 +106,6 @@ def get_config() -> config_dict.ConfigDict:
 
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
-    config.model.inference.model_type = "mlp"
-    config.model.inference.convnext_type = "atto"
 
     config.model.inference.bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
     config.model.inference.offset = (0.0, 0.0, 0.0, 0.0, 0.0)

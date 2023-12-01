@@ -106,10 +106,7 @@ def get_config() -> config_dict.ConfigDict:
     config.model_name = "PGM"
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
-    config.model.inference.model_type = "mlp"
     config.model.inference.use_layernorm = True
-    # config.model.inference.model_type = "convnext"
-    # config.model.inference.convnext_type = "tiny"
     config.model.inference.bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
     config.model.inference.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
     config.model.inference.hidden_dims = (4096, 2048, 512, 128)
