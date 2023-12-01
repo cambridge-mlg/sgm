@@ -80,12 +80,12 @@ def construct_plot_data_samples_canonicalizations(
 
 def get_aug_image_fn(config):
     @jax.jit
-    def aug_image(image, img_rng, augment_bounds_mult: float):
+    def aug_image(image, img_rng):
         Η_rand = distrax.Uniform(
             # Separate model bounds and augment bounds
-            low=-jnp.array(config.augment_bounds) * augment_bounds_mult
+            low=-jnp.array(config.augment_bounds)
             + jnp.array(config.augment_offset),
-            high=jnp.array(config.augment_bounds) * augment_bounds_mult
+            high=jnp.array(config.augment_bounds)
             + jnp.array(config.augment_offset),
         )
         η_rand = Η_rand.sample(seed=img_rng, sample_shape=())
@@ -113,11 +113,10 @@ def construct_plot_augmented_data_samples_canonicalizations(
         images_to_plot = jax.vmap(
             lambda rng: jax.vmap(
                 aug_image,
-                in_axes=(0, 0, None),
+                in_axes=(0, 0),
             )(
                 base_images_to_plot,
                 random.split(rng, n_images),
-                state.augment_bounds_mult,
             ),
             in_axes=(0),
         )(
@@ -184,8 +183,8 @@ def construct_plot_training_augmented_samples(config, n_images: int = 49):
         # Group the images by labels:
         images = batch["image"][0, :n_images]
 
-        images_augmented = jax.vmap(aug_image, in_axes=(0, 0, None))(
-            images, random.split(step_rng, n_images), state.augment_bounds_mult
+        images_augmented = jax.vmap(aug_image, in_axes=(0, 0))(
+            images, random.split(step_rng, n_images)
         )
         return images, images_augmented
 
@@ -246,7 +245,6 @@ def plot_proto_model_training_metrics(history):
         "lr_σ",
     )
     sigma = history.collect("σ")
-    augment_bounds_mult = history.collect("augment_bounds_mult")
     blur_sigma = history.collect("blur_sigma")
     steps_test, loss_test, x_mse_test = history.collect(
         "steps", "loss_test", "x_mse_test"
@@ -299,19 +297,12 @@ def plot_proto_model_training_metrics(history):
     )
     (p3,) = multiplier_axis.plot(
         steps,
-        augment_bounds_mult,
-        "-",
-        label=f"augment_bounds_mult {augment_bounds_mult[-1]:.4f}",
-        color=colors[1],
-    )
-    (p4,) = multiplier_axis.plot(
-        steps,
         blur_sigma,
         "--",
         label=f"blur sigma {blur_sigma[-1]:.4f}",
         color=colors[1],
     )
-    lines = [p1, p2, p3, p4]
+    lines = [p1, p2, p3]
     lr_axis.legend(lines, [l.get_label() for l in lines])
 
     lr_axis.set_yscale("log")

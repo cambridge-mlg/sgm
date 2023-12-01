@@ -226,9 +226,9 @@ def make_transformation_inference_train_and_eval(
             ) = random.split(rng, 4)
 
             Η_rand = distrax.Uniform(
-                low=-jnp.array(config.augment_bounds) * state.augment_bounds_mult
+                low=-jnp.array(config.augment_bounds)
                 + jnp.array(config.augment_offset),
-                high=jnp.array(config.augment_bounds) * state.augment_bounds_mult
+                high=jnp.array(config.augment_bounds)
                 + jnp.array(config.augment_offset),
             )
             η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
@@ -346,11 +346,6 @@ def make_transformation_inference_train_and_eval(
             "schedules",
             "lr_σ",
             state.opt_state.inner_states["σ"][0].hyperparams["learning_rate"],
-        )
-        logs.add_entry(
-            "schedules",
-            "augment_bounds_mult",
-            state.augment_bounds_mult,
         )
         logs.add_entry("parameters", "σ", jax.nn.softplus(state.params["σ_"]).mean())
         logs.add_entry("gradients", "grad_norm", optax.global_norm(grads))
@@ -510,8 +505,6 @@ class TransformationInferenceMetrics(metrics.Collection):
 
 class TransformationInferenceTrainState(train_state.TrainState):
     metrics: TransformationInferenceMetrics
-    augment_bounds_mult: float
-    augment_bounds_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     blur_sigma: float
     blur_sigma_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     rng: PRNGKey
@@ -524,7 +517,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
             step=self.step + 1,
             params=new_params,
             opt_state=new_opt_state,
-            augment_bounds_mult=self.augment_bounds_mult_schedule(self.step),
             blur_sigma=self.blur_sigma_schedule(self.step),
             **kwargs,
         )
@@ -536,7 +528,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
         apply_fn,
         params,
         tx,
-        augment_bounds_mult_schedule,
         blur_sigma_schedule,
         **kwargs,
     ):
@@ -547,8 +538,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
             params=params,
             tx=tx,
             opt_state=opt_state,
-            augment_bounds_mult_schedule=augment_bounds_mult_schedule,
-            augment_bounds_mult=augment_bounds_mult_schedule(0),
             blur_sigma_schedule=blur_sigma_schedule,
             blur_sigma=blur_sigma_schedule(0),
             **kwargs,
@@ -574,17 +563,6 @@ def create_transformation_inference_state(model, config, rng, input_shape):
         params=params,
         tx=opt,
         metrics=TransformationInferenceMetrics.empty(),
-        augment_bounds_mult_schedule=optax.join_schedules(
-            [
-                optax.linear_schedule(
-                    init_value=0.0,
-                    end_value=1.0,
-                    transition_steps=config.steps * config.augment_warmup_steps_pct,
-                ),
-                optax.constant_schedule(1.0),
-            ],
-            boundaries=[config.steps * config.augment_warmup_steps_pct],
-        ),
         blur_sigma_schedule=optax.join_schedules(
             [
                 optax.linear_schedule(

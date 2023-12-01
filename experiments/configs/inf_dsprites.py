@@ -73,7 +73,6 @@ def get_config() -> config_dict.ConfigDict:
     config.weight_decay = 1e-4
     config.σ_lr = 1e-2
 
-    config.augment_warmup_steps_pct = 0.0  # No augmentation warmup
     # Blur schedule
     config.blur_filter_shape = (15, 15)
     config.blur_sigma_init = 1.0
