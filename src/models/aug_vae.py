@@ -7,7 +7,7 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.a `p_x_given_z`.
 """
 
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 import distrax
 import flax
@@ -40,11 +40,17 @@ class AUG_VAE(nn.Module):
     inference: Optional[KwArgs] = None
     generative: Optional[KwArgs] = None
     interpolation_order: int = 3
+    bounds: Optional[Sequence[float]] = None
+    offset: Optional[Sequence[float]] = None
 
     def setup(self):
         self.vae_model = VAE(**(self.vae or {}))
-        self.inference_model = TransformationInferenceNet(**(self.inference or {}))
-        self.generative_model = TransformationGenerativeNet(**(self.generative or {}))
+        self.inference_model = TransformationInferenceNet(
+            bounds=self.bounds, offset=self.offset, **(self.inference or {})
+        )
+        self.generative_model = TransformationGenerativeNet(
+            bounds=self.bounds, offset=self.offset, **(self.generative or {})
+        )
 
     def __call__(
         self, x: Array, train: bool = True

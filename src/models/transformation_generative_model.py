@@ -98,14 +98,18 @@ class TransformationGenerativeNet(nn.Module):
     hidden_dims: Sequence[int]
     num_flows: int
     num_bins: int
-    bounds: Sequence[int]
-    offset: Optional[Sequence[int]] = None
+    bounds: Optional[Sequence[float]] = None
+    offset: Optional[Sequence[float]] = None
     conditioner: Optional[KwArgs] = None
     ε: float = 1e-6
     squash_to_bounds: bool = False
 
     def setup(self) -> None:
-        self.bounds_array = jnp.array(self.bounds)
+        self.bounds_array = (
+            jnp.array(self.bounds)
+            if self.bounds is not None
+            else jnp.ones_like(self.offset_array)
+        )
         self.offset_array = (
             jnp.array(self.offset)
             if self.offset is not None
@@ -182,25 +186,21 @@ class TransformationGenerativeNet(nn.Module):
             layers.append(layer)
             mask = ~mask
 
-        bijector = distrax.Chain(
-            [
-                distrax.Block(
-                    distrax.ScalarAffine(
-                        shift=self.offset_array, scale=self.bounds_array + self.ε
-                    ),
-                    len(self.event_shape),
-                )
-            ]
-            + (
-                [distrax.Block(distrax.Tanh(), len(self.event_shape))]
-                if self.squash_to_bounds
-                else []
+        bijectors = [
+            distrax.Block(
+                distrax.ScalarAffine(
+                    shift=self.offset_array, scale=self.bounds_array + self.ε
+                ),
+                len(self.event_shape),
             )
-            + [
-                # We invert the flow so that the `forward` method is called with `log_prob`.
-                distrax.Inverse(distrax.Chain(layers)),
-            ]
-        )
+        ]
+
+        if self.squash_to_bounds:
+            bijectors.append(distrax.Block(distrax.Tanh(), len(self.event_shape)))
+
+        bijectors.append(distrax.Inverse(distrax.Chain(layers)))
+
+        bijector = distrax.Chain(bijectors)
 
         transformed = distrax.Transformed(base, bijector)
 

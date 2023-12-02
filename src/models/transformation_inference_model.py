@@ -28,26 +28,28 @@ from jax import lax
 from jax.scipy import linalg
 from ml_collections import config_dict
 
-from src.models.convnext import ConvNeXt, get_convnext_constructor
 from src.models.utils import clipped_adamw, huber_loss
 from src.transformations.affine import (
     gen_affine_matrix_no_shear,
     transform_image_with_affine_matrix,
 )
 from src.utils.blur import gaussian_filter2d
-from src.utils.types import KwArgs
 
 
 class TransformationInferenceNet(nn.Module):
     hidden_dims: Sequence[int]
-    bounds: Sequence[int]
-    offset: Optional[Sequence[int]] = None
+    bounds: Optional[Sequence[float]] = None
+    offset: Optional[Sequence[float]] = None
     σ_init: Callable = init.constant(jnp.log(jnp.exp(0.01) - 1.0))
     squash_to_bounds: bool = False
     use_layernorm: bool = True
 
     def setup(self) -> None:
-        self.bounds_array = jnp.array(self.bounds)
+        self.bounds_array = (
+            jnp.array(self.bounds)
+            if self.bounds is not None
+            else jnp.ones_like(self.offset_array)
+        )
         self.offset_array = (
             jnp.array(self.offset)
             if self.offset is not None
@@ -77,21 +79,17 @@ class TransformationInferenceNet(nn.Module):
             distrax.Normal(loc=μ, scale=σ), len(self.event_shape)
         )
 
-        bijector = distrax.Chain(
-            [
-                distrax.Block(
-                    distrax.ScalarAffine(
-                        shift=self.offset_array, scale=self.bounds_array
-                    ),
-                    len(self.event_shape),
-                ),
-            ]
-            + (
-                [distrax.Block(distrax.Tanh(), len(self.event_shape))]
-                if self.squash_to_bounds
-                else []
+        bijectors = [
+            distrax.Block(
+                distrax.ScalarAffine(shift=self.offset_array, scale=self.bounds_array),
+                len(self.event_shape),
             )
-        )
+        ]
+
+        if self.squash_to_bounds:
+            bijectors.append(distrax.Block(distrax.Tanh(), len(self.event_shape)))
+
+        bijector = distrax.Chain(bijectors)
 
         return distrax.Transformed(base, bijector)
 

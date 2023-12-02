@@ -101,20 +101,15 @@ def get_config() -> config_dict.ConfigDict:
     # training objective:
     config.augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
-    config.eval_augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
 
     config.model_name = "PGM"
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
     config.model.inference.use_layernorm = True
-    config.model.inference.bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
-    config.model.inference.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
     config.model.inference.hidden_dims = (4096, 2048, 512, 128)
     config.model.inference.squash_to_bounds = False
 
     config.model.generative = config_dict.ConfigDict()
-    config.model.generative.bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
-    config.model.generative.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
     config.model.generative.hidden_dims = (2048, 512, 512)
     config.model.generative.squash_to_bounds = False
     config.model.generative.num_flows = 6

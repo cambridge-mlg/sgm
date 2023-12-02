@@ -1,9 +1,6 @@
 import os
 from pathlib import Path
 
-# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.45"
-
-
 import ciclo
 import flax
 import jax
@@ -28,7 +25,6 @@ from src.models.transformation_generative_model import (
     make_transformation_generative_train_and_eval,
 )
 from src.models.transformation_inference_model import TransformationInferenceNet
-
 from src.models.utils import reset_metrics
 from src.transformations import transform_image
 from src.utils.datasets.augmented_dsprites import (
@@ -49,6 +45,9 @@ from src.utils.transform_generative_plots import (
     plot_generative_histograms,
     plot_transform_gen_model_training_metrics,
 )
+
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.45"
+
 
 flax.config.update("flax_use_orbax_checkpointing", True)
 logging.set_verbosity(logging.INFO)
@@ -123,7 +122,11 @@ def main(config, run, prototype_model_dir: str):
     proto_config = proto_ckpt_restored["config"]
     proto_state = proto_ckpt_restored["state"]
 
-    proto_model = TransformationInferenceNet(**proto_config["model"]["inference"])
+    proto_model = TransformationInferenceNet(
+        bounds=proto_config.get("augment_bounds", None),
+        offset=proto_config.get("augment_offset", None),
+        **proto_config["model"]["inference"],
+    )
 
     def prototype_function(x, rng):
         η = proto_model.apply({"params": proto_state["params"]}, x, train=False).sample(
@@ -143,9 +146,15 @@ def main(config, run, prototype_model_dir: str):
     input_shape = train_ds.element_spec["image"].shape[2:]
     logging.info("Finished constructing the dataset")
     # --- Network setup ---
-    gen_model = TransformationGenerativeNet(**config.model.generative.to_dict())
+    gen_model = TransformationGenerativeNet(
+        bounds=config.get("augment_bounds", None),
+        offset=config.get("augment_offset", None),
+        **config.model.generative.to_dict(),
+    )
 
-    gen_state = create_transformation_generative_state(gen_model, config, init_rng, input_shape)
+    gen_state = create_transformation_generative_state(
+        gen_model, config, init_rng, input_shape
+    )
 
     train_step, eval_step = make_transformation_generative_train_and_eval(
         config, gen_model, prototype_function=prototype_function

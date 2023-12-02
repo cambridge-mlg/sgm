@@ -107,14 +107,15 @@ def get_config() -> config_dict.ConfigDict:
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
 
-    config.model.inference.bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
-    config.model.inference.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
+    # NOTE: seems like a potential bug that the model bounds are so different from the augmentations?
+    # config.model.inference.bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
+    # config.model.inference.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
     config.model.inference.hidden_dims = (4096, 2048, 512, 128)
     config.model.inference.squash_to_bounds = False
     # config.model.inference.σ_init = 1.
     config.model.generative = config_dict.ConfigDict()
-    config.model.generative.bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
-    config.model.generative.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
+    # config.model.generative.bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
+    # config.model.generative.offset = (0.0, 0.0, 0.0, 0.0, 0.0)
     config.model.generative.hidden_dims = (1024, 512, 256)
     config.model.generative.num_flows = 2
     config.model.generative.num_bins = 4

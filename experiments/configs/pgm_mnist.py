@@ -68,14 +68,10 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model_name = "PGM"
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
-    config.model.inference.offset = config.augment_offset
-    config.model.inference.bounds = config.augment_bounds
     config.model.inference.squash_to_bounds = False
     config.model.inference.hidden_dims = (1024, 512, 256, 128)
 
     config.model.generative = config_dict.ConfigDict()
-    config.model.generative.bounds = config.augment_bounds
-    config.model.generative.offset = config.augment_offset
     config.model.generative.hidden_dims = (1024, 512, 256)
     config.model.generative.num_flows = 2
     config.model.generative.num_bins = 4

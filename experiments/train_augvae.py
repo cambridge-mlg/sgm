@@ -8,13 +8,13 @@ import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
-import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 from scipy.stats import gaussian_kde
 
+import wandb
 from experiments.utils import duplicated_run
 from src.models.aug_vae import (
     AUG_VAE,
@@ -103,7 +103,11 @@ def main(_):
         train_ds, val_ds, _ = get_data(pgm_config, data_rng)
         input_shape = train_ds.element_spec["image"].shape[2:]
 
-        inf_model = TransformationInferenceNet(**pgm_config.model.inference.to_dict())
+        inf_model = TransformationInferenceNet(
+            bounds=pgm_config.get("augment_bounds", None),
+            offset=pgm_config.get("augment_offset", None),
+            **pgm_config.model.inference.to_dict(),
+        )
 
         inf_state = create_transformation_inference_state(
             inf_model, pgm_config, init_rng, input_shape
@@ -200,7 +204,11 @@ def main(_):
         train_ds, val_ds, _ = get_data(pgm_config, data_rng)
         input_shape = train_ds.element_spec["image"].shape[2:]
 
-        gen_model = TransformationGenerativeNet(**pgm_config.model.generative.to_dict())
+        gen_model = TransformationGenerativeNet(
+            bounds=pgm_config.get("augment_bounds", None),
+            offset=pgm_config.get("augment_offset", None),
+            **pgm_config.model.generative.to_dict(),
+        )
 
         gen_state = create_transformation_generative_state(
             gen_model,
@@ -267,6 +275,8 @@ def main(_):
             inference=pgm_config.model.inference.to_dict(),
             generative=pgm_config.model.generative.to_dict(),
             interpolation_order=pgm_config.interpolation_order,
+            bounds=pgm_config.get("augment_bounds", None),
+            offset=pgm_config.get("augment_offset", None),
         )
 
         aug_vae_state = create_aug_vae_state(

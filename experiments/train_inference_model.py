@@ -84,8 +84,8 @@ def main(_):
 
         print(config.model.to_dict())
         model = TransformationInferenceNet(
-            bounds=config.augment_bounds,
-            offset=config.augment_offset,
+            bounds=config.get("augment_bounds", None),
+            offset=config.get("augment_offset", None),
             **config.model.to_dict(),
         )
         #
