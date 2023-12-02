@@ -45,35 +45,6 @@ class Conditioner(nn.Module):
     train: Optional[bool] = None
 
     @nn.compact
-    def __call__(self, x: Array, train: Optional[bool] = None) -> Array:
-        train = nn.merge_param("train", self.train, train)
-
-        h = x.flatten()
-
-        for hidden_dim in self.hidden_dims:
-            h = nn.Dense(hidden_dim)(h)
-            h = nn.relu(h)
-
-        # We initialize this dense layer to zero so that the flow is initialized to the identity function.
-        y = nn.Dense(
-            np.prod(self.event_shape) * self.num_bijector_params,
-            kernel_init=init.zeros,
-            bias_init=init.zeros,
-        )(h)
-        y = y.reshape(tuple(self.event_shape) + (self.num_bijector_params,))
-
-        return y
-
-
-class ConditionedConditioner(nn.Module):
-    """A neural network that predicts the parameters of a flow given an input."""
-
-    event_shape: Sequence[int]
-    num_bijector_params: int
-    hidden_dims: Sequence[int]
-    train: Optional[bool] = None
-
-    @nn.compact
     def __call__(self, x: Array, h: Array, train: Optional[bool] = None) -> Array:
         train = nn.merge_param("train", self.train, train)
 
@@ -157,20 +128,8 @@ class TransformationGenerativeNet(nn.Module):
                 params, range_min=-3.0, range_max=3.0
             )
 
-        for i in range(self.num_flows):
-            # params_rational_quadratic = Conditioner(
-            #     event_shape=self.event_shape,
-            #     num_bijector_params=num_bijector_params,
-            #     train=train,
-            #     **(self.conditioner or {}),
-            # )(h)
-            # layer = distrax.Block(
-            #     distrax.RationalQuadraticSpline(params_rational_quadratic, range_min=-3.0, range_max=3.0),
-            #     len(self.event_shape),
-            # )
-            # layers.append(layer)
-
-            conditioner = ConditionedConditioner(
+        for _ in range(self.num_flows):
+            conditioner = Conditioner(
                 event_shape=self.event_shape,
                 num_bijector_params=num_bijector_params,
                 train=train,
