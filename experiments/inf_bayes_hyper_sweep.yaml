@@ -1,0 +1,79 @@
+command:
+  - ${interpreter}
+  - ${program}
+  - --config=experiments/configs/inf_mnist.py:0,50000
+  - --rerun
+method: bayes
+metric:
+  goal: minimize
+  name: valid/loss
+name: inf_bayes_sweep_0_50k
+parameters:
+  blur_end_pct:
+    distribution: categorical
+    values:
+      - 0
+      - 0.001
+      - 0.01
+      - 0.1
+  blur_sigma_init:
+    distribution: categorical
+    values:
+      - 1.
+      - 3.
+      - 10.
+  blur_filter_size:
+    distribution: categorical
+    values:
+      - 3
+      - 5
+      - 7
+  clip_norm:
+    distribution: log_uniform_values
+    max: 50
+    min: 1
+  final_lr_mult:
+    distribution: log_uniform_values
+    max: 0.03
+    min: 0.0001
+  init_lr_mult:
+    distribution: log_uniform_values
+    max: 0.1
+    min: 0.01
+  lr:
+    distribution: log_uniform_values
+    max: 0.003
+    min: 0.0001
+  model:
+    parameters:
+      use_layernorm:
+        distribution: categorical
+        values:
+          - True
+          - False
+      σ_init:
+        distribution: categorical
+        values:
+          - -2.252168
+          - -4.600165
+  n_samples:
+    distribution: categorical
+    values:
+      - 1
+      - 5
+  steps:
+    distribution: categorical
+    values:
+      - 15000
+      - 30000
+      - 60000
+  warmup_steps_pct:
+    distribution: uniform
+    max: 0.2
+    min: 0
+  weight_decay:
+    distribution: log_uniform_values
+    max: 0.0003
+    min: 0.00001
+program: experiments/train_inference_model.py
+run_cap: 64
