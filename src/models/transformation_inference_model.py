@@ -40,7 +40,7 @@ class TransformationInferenceNet(nn.Module):
     hidden_dims: Sequence[int]
     bounds: Optional[Sequence[float]] = None
     offset: Optional[Sequence[float]] = None
-    σ_init: float = jnp.log(jnp.exp(0.01) - 1.0)  # softplus(σ_init) = 0.01
+    σ_init: float = np.log(np.exp(0.01) - 1.0)  # softplus(σ_init) = 0.01
     squash_to_bounds: bool = False
     use_layernorm: bool = True
 

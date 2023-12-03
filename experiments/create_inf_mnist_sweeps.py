@@ -7,7 +7,7 @@ import yaml
 from experiments.utils import format_thousand
 
 ENTITY = "invariance-learners"
-PROJECT = "iclr2024experiments"
+PROJECT = "icml2024"
 MAX_NUM_RUNS = 32
 ANGLES = [0]
 NUM_TRNS = [25_000, 50_000]
