@@ -55,6 +55,13 @@ parameters:
         values:
           - True
           - False
+      hidden_dims:
+        distribution: categorical
+        values:
+          - 2048,1024,512,256
+      squash_to_bounds:
+        distribution: constant
+        value: False
   n_samples:
     distribution: categorical
     values:
