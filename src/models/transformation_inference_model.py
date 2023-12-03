@@ -135,12 +135,14 @@ def make_transformation_inference_train_and_eval(
         rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
 
         if train and config.blur_sigma_init > 0.0:
-            # Possibly blur the sample (lax.select useful for defining schedules that go to 0.):
+            # Possibly blur the sample (lax.cond useful for defining schedules that go to 0.):
             x = jax.lax.cond(
                 state.blur_sigma
                 > 1e-5,  # A small value to avoid numerical issues with a very narrow kernel
                 lambda im: gaussian_filter2d(
-                    im, sigma=state.blur_sigma, filter_shape=config.blur_filter_shape
+                    im,
+                    sigma=state.blur_sigma,
+                    filter_shape=(config.blur_filter_size,) * 2,
                 ),
                 lambda im: im,
                 x,

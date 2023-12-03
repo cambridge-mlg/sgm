@@ -39,10 +39,9 @@ def get_config(params) -> config_dict.ConfigDict:
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
     config.σ_lr = 1e-2
-    
-    
+
     # Blur schedule
-    config.blur_filter_shape = (15, 15)
+    config.blur_filter_size = 15
     config.blur_sigma_init = 1.0
     config.blur_sigma_decay_end_pct = 0.5
 
@@ -57,6 +56,6 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model_name = "inference_net"
     config.model = config_dict.ConfigDict()
     config.model.squash_to_bounds = False
-    config.model.hidden_dims = (1024, 512, 256, 128)
+    config.model.hidden_dims = (2048, 1024, 512, 256)
 
     return config
