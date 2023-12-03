@@ -16,8 +16,8 @@ def get_config() -> config_dict.ConfigDict:
     config.train_split = ""  # Doesn't matter for augmentedDsprites
     config.val_split = ""  # Doesn't matter for augmentedDsprites
 
-    config.pp_train = f'resize(30, "bicubic")|value_range(-1, 1, 0, 1)|move_key("label_shape", "label")|keep(["image", "label"])'
-    config.pp_eval = f'resize(30, "bicubic")|value_range(-1, 1, 0, 1)|move_key("label_shape", "label")|keep(["image", "mask", "label"])'
+    config.pp_train = f'value_range(-1, 1, 0, 1)|move_key("label_shape", "label")|keep(["image", "label"])'
+    config.pp_eval = f'value_range(-1, 1, 0, 1)|move_key("label_shape", "label")|keep(["image", "mask", "label"])'
 
     config.aug_dsprites = config_dict.ConfigDict()
 
