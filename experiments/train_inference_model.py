@@ -77,6 +77,11 @@ def main(_):
                     int(x) for x in config.model.hidden_dims.split(",")
                 )
 
+        # NOTE: the following is necessary because of a bug in wandb, which prevents sweeping over
+        # nested parameters containing non-unicode characters.
+        if config.get("pred_σ_init", None) is not None:
+            config.model.σ_init = config.pred_σ_init
+
         rng = random.PRNGKey(config.seed)
         data_rng, init_rng = random.split(rng)
 

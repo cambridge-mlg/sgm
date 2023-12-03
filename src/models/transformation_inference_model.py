@@ -40,7 +40,7 @@ class TransformationInferenceNet(nn.Module):
     hidden_dims: Sequence[int]
     bounds: Optional[Sequence[float]] = None
     offset: Optional[Sequence[float]] = None
-    σ_init: float = jnp.log(jnp.exp(0.01) - 1.0)
+    σ_init: float = jnp.log(jnp.exp(0.01) - 1.0)  # softplus(σ_init) = 0.01
     squash_to_bounds: bool = False
     use_layernorm: bool = True
 
@@ -73,6 +73,7 @@ class TransformationInferenceNet(nn.Module):
             kernel_init=nn.initializers.zeros_init(),
             bias_init=nn.initializers.zeros_init(),
         )(h)
+
         σ = jax.nn.softplus(
             self.param("σ_", init.constant(self.σ_init), self.event_shape)
         )
