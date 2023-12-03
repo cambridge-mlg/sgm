@@ -42,7 +42,7 @@ def get_config(params) -> config_dict.ConfigDict:
 
     # Blur schedule
     config.blur_filter_size = 15
-    config.blur_sigma_init = 1.0
+    config.blur_σ_init = 1.0
     config.blur_end_pct = 0.5
 
     config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)

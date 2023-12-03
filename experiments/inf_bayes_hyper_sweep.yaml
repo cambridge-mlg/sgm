@@ -16,7 +16,7 @@ parameters:
       - 0.001
       - 0.01
       - 0.1
-  blur_sigma_init:
+  blur_σ_init:
     distribution: categorical
     values:
       - 1.

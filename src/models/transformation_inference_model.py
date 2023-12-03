@@ -136,7 +136,7 @@ def make_transformation_inference_train_and_eval(
     ):
         rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
 
-        if train and config.blur_sigma_init > 0.0:
+        if train and config.blur_σ_init > 0.0:
             # Possibly blur the sample (lax.cond useful for defining schedules that go to 0.):
             x = jax.lax.cond(
                 state.blur_sigma
@@ -533,7 +533,7 @@ def create_transformation_inference_state(model, config, rng, input_shape):
         blur_sigma_schedule=optax.join_schedules(
             [
                 optax.linear_schedule(
-                    init_value=config.blur_sigma_init,
+                    init_value=config.blur_σ_init,
                     end_value=0.0,
                     transition_steps=config.steps * config.blur_end_pct,
                 ),

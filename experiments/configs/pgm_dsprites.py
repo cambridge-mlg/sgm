@@ -91,7 +91,7 @@ def get_config() -> config_dict.ConfigDict:
 
     # Blur schedule
     config.blur_filter_size = 21
-    config.blur_sigma_init = 1.0
+    config.blur_σ_init = 1.0
     config.blur_sigma_decay_end = 0.5
 
     config.x_mse_loss_mult = 1.0
