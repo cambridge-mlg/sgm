@@ -87,7 +87,6 @@ def main(_):
 
         train_ds, val_ds, _ = get_data(config, data_rng)
 
-        print(config.model.to_dict())
         model = TransformationInferenceNet(
             bounds=config.get("augment_bounds", None),
             offset=config.get("augment_offset", None),
