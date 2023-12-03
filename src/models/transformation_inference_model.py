@@ -40,7 +40,7 @@ class TransformationInferenceNet(nn.Module):
     hidden_dims: Sequence[int]
     bounds: Optional[Sequence[float]] = None
     offset: Optional[Sequence[float]] = None
-    σ_init: Callable = init.constant(jnp.log(jnp.exp(0.01) - 1.0))
+    σ_init: float = jnp.log(jnp.exp(0.01) - 1.0)
     squash_to_bounds: bool = False
     use_layernorm: bool = True
 
@@ -73,7 +73,9 @@ class TransformationInferenceNet(nn.Module):
             kernel_init=nn.initializers.zeros_init(),
             bias_init=nn.initializers.zeros_init(),
         )(h)
-        σ = jax.nn.softplus(self.param("σ_", self.σ_init, self.event_shape))
+        σ = jax.nn.softplus(
+            self.param("σ_", init.constant(self.σ_init), self.event_shape)
+        )
 
         base = distrax.Independent(
             distrax.Normal(loc=μ, scale=σ), len(self.event_shape)
@@ -533,11 +535,11 @@ def create_transformation_inference_state(model, config, rng, input_shape):
                 optax.linear_schedule(
                     init_value=config.blur_sigma_init,
                     end_value=0.0,
-                    transition_steps=config.steps * config.blur_sigma_decay_end_pct,
+                    transition_steps=config.steps * config.blur_end_pct,
                 ),
                 optax.constant_schedule(0.0),
             ],
-            boundaries=[config.steps * config.blur_sigma_decay_end_pct],
+            boundaries=[config.steps * config.blur_end_pct],
         ),
         rng=state_rng,
     )

@@ -67,7 +67,7 @@ parameters:
     distribution: uniform
     max: 0.3
     min: 0
-  blur_sigma_decay_end_pct:
+  blur_end_pct:
     distribution: uniform
     max: 1.0
     min: 0

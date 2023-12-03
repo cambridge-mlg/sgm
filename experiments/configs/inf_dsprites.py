@@ -76,7 +76,7 @@ def get_config() -> config_dict.ConfigDict:
     # Blur schedule
     config.blur_filter_size = 15
     config.blur_sigma_init = 1.0
-    config.blur_sigma_decay_end_pct = 0.5
+    config.blur_end_pct = 0.5
 
     config.augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
