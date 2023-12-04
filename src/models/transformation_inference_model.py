@@ -562,11 +562,14 @@ def create_transformation_inference_state(model, config, rng, input_shape):
                         "invertibility_loss_mult_init", config.invertibility_loss_mult
                     ),
                     end_value=config.invertibility_loss_mult,
-                    transition_steps=config.steps * config.invertibility_loss_mult_pct,
+                    transition_steps=config.steps
+                    * config.get("invertibility_loss_mult_schedule_pct", 0.1),
                 ),
                 optax.constant_schedule(config.invertibility_loss_mult),
             ],
-            boundaries=[config.steps * config.invertibility_loss_mult_schedule_pct],
+            boundaries=[
+                config.steps * config.get("invertibility_loss_mult_schedule_pct", 0.1)
+            ],
         ),
         rng=state_rng,
     )
