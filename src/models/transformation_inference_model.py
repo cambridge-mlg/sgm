@@ -265,8 +265,8 @@ def make_transformation_inference_train_and_eval(
 
         loss = (
             config.x_mse_loss_mult * x_mse
-            + config.η_loss_mult * η_recon_loss
-            + state.invertibility_loss_mult * invertibility_loss
+            + (config.η_loss_mult * η_recon_loss if config.η_loss_mult != 0.0 else 0.0)
+            + config.invertibility_loss_mult * invertibility_loss
         )
 
         return loss, {
@@ -309,11 +309,6 @@ def make_transformation_inference_train_and_eval(
             "schedules",
             "blur_sigma",
             state.blur_sigma,
-        )
-        logs.add_entry(
-            "schedules",
-            "invertibility_loss_mult",
-            state.invertibility_loss_mult,
         )
         logs.add_entry(
             "schedules",
@@ -469,7 +464,6 @@ class TransformationInferenceMetrics(metrics.Collection):
     loss: metrics.Average.from_output("loss")
     x_mse: metrics.Average.from_output("x_mse")
     η_recon_loss: metrics.Average.from_output("η_recon_loss")
-    invertibility_loss: metrics.Average.from_output("invertibility_loss")
 
     def update(self, **kwargs) -> "TransformationInferenceMetrics":
         updates = self.single_from_model_output(**kwargs)
@@ -480,10 +474,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
     metrics: TransformationInferenceMetrics
     blur_sigma: float
     blur_sigma_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
-    invertibility_loss_mult: float
-    invertibility_loss_mult_schedule: optax.Schedule = flax.struct.field(
-        pytree_node=False
-    )
     rng: PRNGKey
 
     def apply_gradients(self, *, grads, **kwargs):
@@ -495,7 +485,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
             params=new_params,
             opt_state=new_opt_state,
             blur_sigma=self.blur_sigma_schedule(self.step),
-            invertibility_loss_mult=self.invertibility_loss_mult_schedule(self.step),
             **kwargs,
         )
 
@@ -507,7 +496,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
         params,
         tx,
         blur_sigma_schedule,
-        invertibility_loss_mult_schedule,
         **kwargs,
     ):
         opt_state = tx.init(params)
@@ -519,8 +507,6 @@ class TransformationInferenceTrainState(train_state.TrainState):
             opt_state=opt_state,
             blur_sigma_schedule=blur_sigma_schedule,
             blur_sigma=blur_sigma_schedule(0),
-            invertibility_loss_mult_schedule=invertibility_loss_mult_schedule,
-            invertibility_loss_mult=invertibility_loss_mult_schedule(0),
             **kwargs,
         )
 
@@ -554,22 +540,6 @@ def create_transformation_inference_state(model, config, rng, input_shape):
                 optax.constant_schedule(0.0),
             ],
             boundaries=[config.steps * config.blur_end_pct],
-        ),
-        invertibility_loss_mult_schedule=optax.join_schedules(
-            [
-                optax.linear_schedule(
-                    init_value=config.get(
-                        "invertibility_loss_mult_init", config.invertibility_loss_mult
-                    ),
-                    end_value=config.invertibility_loss_mult,
-                    transition_steps=config.steps
-                    * config.get("invertibility_loss_mult_schedule_pct", 0.1),
-                ),
-                optax.constant_schedule(config.invertibility_loss_mult),
-            ],
-            boundaries=[
-                config.steps * config.get("invertibility_loss_mult_schedule_pct", 0.1)
-            ],
         ),
         rng=state_rng,
     )
