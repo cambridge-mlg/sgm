@@ -42,7 +42,6 @@ class TransformationInferenceNet(nn.Module):
     offset: Optional[Sequence[float]] = None
     σ_init: float = np.log(np.exp(0.01) - 1.0)  # softplus(σ_init) = 0.01
     squash_to_bounds: bool = False
-    use_layernorm: bool = True
 
     def setup(self) -> None:
         self.bounds_array = (
@@ -64,8 +63,7 @@ class TransformationInferenceNet(nn.Module):
         for hidden_dim in self.hidden_dims:
             h = nn.Dense(hidden_dim)(h)
             h = nn.gelu(h)
-            if self.use_layernorm:
-                h = nn.LayerNorm()(h)
+            h = nn.LayerNorm()(h)
 
         output_dim = np.prod(self.event_shape)
         μ = nn.Dense(
