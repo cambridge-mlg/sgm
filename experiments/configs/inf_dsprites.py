@@ -16,7 +16,7 @@ def get_config() -> config_dict.ConfigDict:
     config.interpolation_order = 3
     config.translate_last = False
     config.x_mse_loss_mult = 1.0
-    config.invertibility_loss_mult = 0.1
+    config.invertibility_loss_mult = 1.0
     config.η_loss_mult = 0.0
 
     config.steps = 30_000
