@@ -8,14 +8,15 @@ def get_config(params) -> config_dict.ConfigDict:
     config.seed = 0
 
     config.eval_freq = 0.01
-    config.n_samples = 5
+
     config.interpolation_order = 3
     config.translate_last = False
+
+    config.n_samples = 5
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 0.1
     config.η_loss_mult = 0.0
-
-    config.steps = 60_000
+    config.steps = 15_000
     config.lr = 3e-4
     config.init_lr_mult = 1e-2
     config.final_lr_mult = 1e-4
@@ -23,7 +24,6 @@ def get_config(params) -> config_dict.ConfigDict:
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
     config.σ_lr = 3e-3
-
     config.blur_filter_size = 5
     config.blur_σ_init = 3.0
     config.blur_end_pct = 0.01
