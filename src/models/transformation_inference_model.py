@@ -462,6 +462,7 @@ class TransformationInferenceMetrics(metrics.Collection):
     loss: metrics.Average.from_output("loss")
     x_mse: metrics.Average.from_output("x_mse")
     η_recon_loss: metrics.Average.from_output("η_recon_loss")
+    invertibility_loss: metrics.Average.from_output("invertibility_loss")
 
     def update(self, **kwargs) -> "TransformationInferenceMetrics":
         updates = self.single_from_model_output(**kwargs)
