@@ -1,0 +1,40 @@
+command:
+  - ${interpreter}
+  - ${program}
+  - --config=experiments/configs/inf_mnist.py:0,50000
+  - --rerun
+method: grid
+metric:
+  goal: minimize
+  name: valid/loss
+name: inf_grid_sweep_0_50k
+parameters:
+  blur_σ_init:
+    values:
+      - 0.
+      - 3.
+  clip_norm:
+    values:
+      - 3
+      - 10
+  final_lr_mult:
+    values:
+      - 0.0003
+      - 0.001
+  init_lr_mult:
+    values:
+      - 0.01
+      - 0.03
+  lr:
+    values:
+      - 0.0001
+      - 0.0003
+      - 0.001
+  warmup_steps_pct:
+    values:
+      - 0.05
+      - 0.1
+      - 0.2
+  seed:
+    value: 1
+program: experiments/train_inference_model.py
