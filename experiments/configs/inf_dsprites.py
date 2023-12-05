@@ -27,7 +27,7 @@ def get_config() -> config_dict.ConfigDict:
     config.σ_lr = 3e-3
 
     config.blur_filter_size = 5
-    config.blur_σ_init = 1.0
+    config.blur_σ_init = 3.0
     config.blur_end_pct = 0.01
 
     config.augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
