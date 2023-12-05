@@ -362,14 +362,14 @@ class TransformationGenerativeTrainState(train_state.TrainState):
 def create_transformation_generative_optimizer(params, config):
     return optax.inject_hyperparams(clipped_adamw)(
         optax.warmup_cosine_decay_schedule(
-            config.gen_init_lr_mult * config.gen_lr,
-            config.gen_lr,
-            config.gen_warmup_steps,
-            config.gen_steps,
-            config.gen_lr * config.gen_final_lr_mult,
+            config.init_lr_mult * config.lr,
+            config.lr,
+            config.steps * config.warmup_steps_pct,
+            config.steps,
+            config.lr * config.final_lr_mult,
         ),
-        config.get("gen_clip_norm", 2.0),
-        config.get("gen_weight_decay", 1e-4),
+        config.get("clip_norm", 2.0),
+        config.get("weight_decay", 1e-4),
     )
 
 
@@ -396,7 +396,7 @@ def create_transformation_generative_state(model, config, rng, input_shape):
         mae_loss_mult_schedule=optax.linear_schedule(
             init_value=config.mae_loss_mult_initial,
             end_value=config.mae_loss_mult_final,
-            transition_steps=config.gen_steps,
+            transition_steps=config.steps,
         ),
         rng=state_rng,
     )
