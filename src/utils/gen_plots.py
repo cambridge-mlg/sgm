@@ -118,11 +118,15 @@ def plot_gen_dists(x, prototype_function, rng, gen_model, gen_params, config, n=
 
     for i, ax in enumerate(axs[2:]):
         kde_ = gaussian_kde(ηs_p[:, i])
-        THRESHOLD = 0.001
-        ηs_p_ = ηs_p[kde_(ηs_p[:, i]) > THRESHOLD, i]
-
-        # plot p(η|x_hat)
-        kde = gaussian_kde(ηs_p_)
+        THRESHOLD = 0.01
+        try:
+            ηs_p_ = ηs_p[kde_(ηs_p[:, i]) > THRESHOLD, i]
+            # plot p(η|x_hat)
+            kde = gaussian_kde(ηs_p_)
+        except:
+            ηs_p_ = ηs_p[:, i]
+            # plot p(η|x_hat)
+            kde = gaussian_kde(ηs_p_)
 
         x = np.linspace(ηs_p_.min(), ηs_p_.max(), 1000)
 
