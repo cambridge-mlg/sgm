@@ -8,13 +8,13 @@ import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 from scipy.stats import gaussian_kde
 
-import wandb
 from experiments.utils import duplicated_run
 from src.models.aug_vae import (
     AUG_VAE,
@@ -33,15 +33,14 @@ from src.models.transformation_inference_model import (
     make_transformation_inference_train_and_eval,
 )
 from src.models.utils import reset_metrics
-from src.transformations import transform_image
-from src.transformations.affine import (
-    gen_affine_matrix_no_shear,
-    transform_image_with_affine_matrix,
-)
+from src.transformations.affine import gen_affine_matrix_no_shear
 from src.utils.gen_plots import plot_gen_dists, plot_gen_model_training_metrics
 from src.utils.input import get_data
-from src.utils.plotting import rescale_for_imshow
-from src.utils.proto_plots import plot_proto_model_training_metrics
+from src.utils.proto_plots import (
+    make_get_prototype_fn,
+    plot_proto_model_training_metrics,
+    plot_protos_and_recons,
+)
 from src.utils.training import custom_wandb_logger
 
 flax.config.update("flax_use_orbax_checkpointing", True)
@@ -66,6 +65,7 @@ flags.DEFINE_bool(
 )
 
 
+# TODO: update since we don't use a shared pgm config any more
 def main(_):
     pgm_config = FLAGS.pgm_config
     vae_config = FLAGS.vae_config
@@ -141,16 +141,13 @@ def main(_):
         val_iter = deterministic_data.start_input_pipeline(val_ds)
         val_batch = next(val_iter)
 
-        @jax.jit
-        def get_prototype(x):
-            p_η = inf_model.apply({"params": inf_final_state.params}, x, train=False)
-            η = p_η.sample(seed=rng)
-            affine_matrix = gen_affine_matrix_no_shear(η)
-            affine_matrix_inv = jnp.linalg.inv(affine_matrix)
-            xhat = transform_image_with_affine_matrix(
-                x, affine_matrix_inv, order=pgm_config.interpolation_order
-            )
-            return xhat, η
+        get_prototype = make_get_prototype_fn(
+            inf_model,
+            inf_final_state,
+            rng,
+            pgm_config.interpolation_order,
+            gen_affine_matrix_no_shear,
+        )
 
         for i, (x_, mask) in enumerate(
             product(
@@ -165,29 +162,9 @@ def main(_):
                 ],
             )
         ):
-            transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
-                x_,
-                jnp.linspace(
-                    -jnp.array(pgm_config.augment_bounds[:5]) * mask,
-                    jnp.array(pgm_config.augment_bounds[:5]) * mask,
-                    13,
-                ),
+            fig = plot_protos_and_recons(
+                x_, jnp.array(config.augment_bounds[:5]) * mask, get_prototype
             )
-
-            xhats, _ = jax.vmap(get_prototype)(transformed_xs)
-
-            fig, axs = plt.subplots(2, len(xhats), figsize=(15, 3))
-
-            for ax, x in zip(axs[0], list(transformed_xs)):
-                ax.imshow(rescale_for_imshow(x), cmap="gray")
-                ax.set_xticks([])
-                ax.set_yticks([])
-
-            for ax, xhat in zip(axs[1], list(xhats)):
-                ax.imshow(rescale_for_imshow(xhat), cmap="gray")
-                ax.set_xticks([])
-                ax.set_yticks([])
-
             run.summary[f"inf_plots_{i}"] = wandb.Image(fig)
             plt.close(fig)
 

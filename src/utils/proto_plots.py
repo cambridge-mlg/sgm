@@ -13,6 +13,7 @@ import seaborn as sns
 from jax import random
 
 from src.transformations import transform_image
+from src.transformations.affine import transform_image_with_affine_matrix
 from src.utils.plotting import rescale_for_imshow
 
 
@@ -83,10 +84,8 @@ def get_aug_image_fn(config):
     def aug_image(image, img_rng):
         Η_rand = distrax.Uniform(
             # Separate model bounds and augment bounds
-            low=-jnp.array(config.augment_bounds)
-            + jnp.array(config.augment_offset),
-            high=jnp.array(config.augment_bounds)
-            + jnp.array(config.augment_offset),
+            low=-jnp.array(config.augment_bounds) + jnp.array(config.augment_offset),
+            high=jnp.array(config.augment_bounds) + jnp.array(config.augment_offset),
         )
         η_rand = Η_rand.sample(seed=img_rng, sample_shape=())
 
@@ -351,3 +350,21 @@ def plot_protos_and_recons(x, bounds, get_prototype):
         ax.set_yticks([])
 
     return fig
+
+
+# TODO: this will have to be rewritten to work automatically with other transformations:
+def make_get_prototype_fn(
+    inf_model, inf_state, rng, interpolation_order, gen_affine_matrix
+):
+    @jax.jit
+    def get_prototype(x):
+        p_η = inf_model.apply({"params": inf_state.params}, x, train=False)
+        η = p_η.sample(seed=rng)
+        affine_matrix = gen_affine_matrix(η)
+        affine_matrix_inv = jnp.linalg.inv(affine_matrix)
+        xhat = transform_image_with_affine_matrix(
+            x, affine_matrix_inv, order=interpolation_order
+        )
+        return xhat, η
+
+    return get_prototype

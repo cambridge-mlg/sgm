@@ -99,5 +99,5 @@ parameters:
         values:
           - True
           - False
-program: experiments/train_inference_model.py
+program: experiments/train/train_inference_model.py
 run_cap: 32

@@ -88,5 +88,5 @@ parameters:
     distribution: log_uniform_values
     max: 0.0003
     min: 0.00001
-program: experiments/train_inference_model.py
+program: experiments/train/train_inference_model.py
 run_cap: 64
