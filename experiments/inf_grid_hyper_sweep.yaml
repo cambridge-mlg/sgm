@@ -35,6 +35,4 @@ parameters:
       - 0.05
       - 0.1
       - 0.2
-  seed:
-    value: 1
 program: experiments/train_inference_model.py
