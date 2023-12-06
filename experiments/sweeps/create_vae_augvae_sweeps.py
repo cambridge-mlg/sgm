@@ -1,9 +1,9 @@
 from itertools import product
 from pathlib import Path
 
+import wandb
 import yaml
 
-import wandb
 from experiments.utils import format_thousand
 
 ENTITY = "invariance-learners"
@@ -22,7 +22,7 @@ parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
 
 for model_name in MODEL_NAMES:
-    job_folder = parent_path / f"jobs_{model_name}_sweep"
+    job_folder = parent_path.parent / "jobs" / f"jobs_{model_name}_sweep"
     job_folder.mkdir(exist_ok=True)
 
     for angle, num_trn in product(ANGLES, NUM_TRNS):

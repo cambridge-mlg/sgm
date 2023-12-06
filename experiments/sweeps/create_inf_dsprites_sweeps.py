@@ -17,7 +17,7 @@ SWEEP_CONFIG = f"inf_{SWEEP_TYPE}_hyper_sweep.yaml"
 parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
 
-job_folder = parent_path / f"jobs_inf_{SWEEP_TYPE}_dsprites_sweep"
+job_folder = parent_path.parent / "jobs" / f"jobs_inf_{SWEEP_TYPE}_dsprites_sweep"
 job_folder.mkdir(exist_ok=True)
 
 for (seed,) in product(
