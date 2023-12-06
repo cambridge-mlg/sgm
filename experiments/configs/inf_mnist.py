@@ -16,7 +16,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 0.1
     config.η_loss_mult = 0.0
-    config.steps = 15_000
+    config.steps = 60_000
     config.lr = 3e-4
     config.init_lr_mult = 1e-2
     config.final_lr_mult = 1e-4
