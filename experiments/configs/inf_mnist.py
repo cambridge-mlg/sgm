@@ -1,9 +1,16 @@
 from jax import numpy as jnp
 from ml_collections import config_dict
 
+from experiments.configs.datasets import add_mnist_config
+
 
 def get_config(params) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
+
+    params = params.split(",")
+    config.angle = float(params[0])
+    if len(params) > 1:
+        config.num_trn = int(params[1])
 
     config.seed = 0
 
@@ -38,25 +45,12 @@ def get_config(params) -> config_dict.ConfigDict:
 
     config.batch_size = 512
     config.dataset = "MNIST"
-
-    config.shuffle_buffer_size = 50_000
-    config.shuffle = "preprocessed"
-    config.repeat_after_batching = (
-        True  # NOTE: ordering of PP, shuffle, and repeat is important!
-    )
-
-    params = params.split(",")
-    config.angle = float(params[0])
     config.num_val = 10000
-    if len(params) > 1:
-        config.num_trn = int(params[1])
-        end_index = config.num_trn + config.num_val
-    else:
-        end_index = ""
-
-    config.train_split = f"train[{config.num_val}:{end_index}]"
-    config.pp_train = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'
-    config.val_split = f"train[:{config.num_val}]"
-    config.pp_eval = f'value_range(-1, 1)|random_rotate(-{config.angle}, {config.angle}, fill_value=-1)|keep(["image", "label"])'
+    add_mnist_config(
+        config,
+        angle=config.angle,
+        num_trn=config.get("num_trn", None),
+        num_val=config.num_val,
+    )
 
     return config
