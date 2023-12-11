@@ -52,6 +52,7 @@ def get_data(
             sampler_rng=val_rng,  # Use a different RNG key for validation.
         )
         num_val_examples = config.get("num_val_examples", 10240)
+        # TODO: rename ^ to num_val
         dataset = dataset.take(num_val_examples)
         dataset_or_builder = dataset
         # Need to specify cardinality for the dataset manually

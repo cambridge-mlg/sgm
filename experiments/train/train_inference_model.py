@@ -1,4 +1,5 @@
 from itertools import product
+from pathlib import Path
 
 import ciclo
 import flax
@@ -7,9 +8,11 @@ import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
+import orbax.checkpoint
 import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
+from flax.training import orbax_utils
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
@@ -110,6 +113,20 @@ def main(_):
             ],
             stop=config.steps + 1,
         )
+
+        # Save the checkpoint if a path is provided:
+        model_checkpoint_path = config.get("checkpoint", "")
+        if model_checkpoint_path != "":
+            model_checkpoint_path = Path(model_checkpoint_path)
+            if model_checkpoint_path.exists():
+                model_checkpoint_path.rmtree()
+            model_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
+            logging.info(f"Saving model checkpoint to {model_checkpoint_path}.")
+            ckpt = {"state": final_state, "config": config}
+            checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+            save_args = orbax_utils.save_args_from_target(ckpt)
+            checkpointer.save(model_checkpoint_path, ckpt, save_args=save_args)
 
         fig = plot_proto_model_training_metrics(history)
         run.summary["inf_training_metrics"] = wandb.Image(fig)
