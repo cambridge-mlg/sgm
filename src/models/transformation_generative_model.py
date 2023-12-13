@@ -1,29 +1,24 @@
 import functools
-import math
-from typing import Callable, Optional, Sequence, Union
+from typing import Callable, Optional, Sequence
 
-import numpy as np
+import ciclo
+import distrax
+import flax
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import jax.random as random
-from jax import lax
+import numpy as np
+import optax
 from chex import Array, PRNGKey
-import flax
-import flax.linen as nn
+from clu import metrics
 from flax.linen import initializers as init
 from flax.training import train_state
-from flax import traverse_util
-from clu import metrics
-import distrax
-import optax
-import ciclo
+from jax import lax
 
 from src.models.utils import clipped_adamw
+from src.transformations.transforms import AffineTransformWithoutShear, Transform
 from src.utils.types import KwArgs
-from src.transformations.affine import (
-    gen_affine_matrix_no_shear,
-    transform_image_with_affine_matrix,
-)
 
 
 class Conditioner(nn.Module):
@@ -94,6 +89,7 @@ class TransformationGenerativeNet(nn.Module):
     conditioner: Optional[KwArgs] = None
     ε: float = 1e-6
     squash_to_bounds: bool = False
+    transform: Transform = AffineTransformWithoutShear
 
     def setup(self) -> None:
         self.bounds_array = jnp.array(self.bounds)
@@ -140,8 +136,9 @@ class TransformationGenerativeNet(nn.Module):
         mask = mask.astype(bool)
 
         def bijector_fn(params: Array):
-            return distrax.RationalQuadraticSpline(params, range_min=-3., range_max=3.)
-
+            return distrax.RationalQuadraticSpline(
+                params, range_min=-3.0, range_max=3.0
+            )
 
         for i in range(self.num_flows):
             # params_rational_quadratic = Conditioner(
@@ -155,7 +152,7 @@ class TransformationGenerativeNet(nn.Module):
             #     len(self.event_shape),
             # )
             # layers.append(layer)
-            
+
             conditioner = ConditionedConditioner(
                 event_shape=self.event_shape,
                 num_bijector_params=num_bijector_params,
@@ -171,7 +168,6 @@ class TransformationGenerativeNet(nn.Module):
 
             layers.append(layer)
             mask = ~mask
-
 
         bijector = distrax.Chain(
             [
@@ -202,7 +198,6 @@ def make_transformation_generative_train_and_eval(
     model: TransformationGenerativeNet,
     prototype_function: Callable[[Array, Array], Array],
 ):
-
     def loss_fn(
         x,
         params,
@@ -214,29 +209,37 @@ def make_transformation_generative_train_and_eval(
 
         def get_xhat_on_random_augmentation(x, rng):
             """
-            Rather than obtaining the prototype of `x` directly by passing it into the prototype 
+            Rather than obtaining the prototype of `x` directly by passing it into the prototype
             function, augment it randomly and then pass it through to get the prototype.
 
-            This is useful for training the generative model to be robust to imperfections in the 
+            This is useful for training the generative model to be robust to imperfections in the
             canonicalization function.
             """
             sample_rng, prototype_fn_rng = random.split(rng)
             Η_rand = distrax.Uniform(
                 # Separate model bounds and augment bounds
-                low=-jnp.array(config.augment_bounds) + jnp.array(config.augment_offset),
-                high=jnp.array(config.augment_bounds) + jnp.array(config.augment_offset),
+                low=-jnp.array(config.augment_bounds)
+                + jnp.array(config.augment_offset),
+                high=jnp.array(config.augment_bounds)
+                + jnp.array(config.augment_offset),
             )
             η_rand = Η_rand.sample(seed=sample_rng, sample_shape=())
-            η_rand_aff_mat = gen_affine_matrix_no_shear(η_rand)
+            η_rand_transform = model.transform(η_rand)
+            x_rand = η_rand_transform.apply(x)
 
-            x_rand = transform_image_with_affine_matrix(x, η_rand_aff_mat)
-            
+            # η_rand_aff_mat = gen_affine_matrix_no_shear(η_rand)
+            # x_rand = transform_image_with_affine_matrix(x, η_rand_aff_mat)
+
             η_rand_proto = prototype_function(x_rand, prototype_fn_rng)
-            η_rand_proto_aff_mat = gen_affine_matrix_no_shear(η_rand_proto)
-            η_rand_proto_aff_mat_inv = jnp.linalg.inv(η_rand_proto_aff_mat)
-            return transform_image_with_affine_matrix(
-                x, η_rand_aff_mat @ η_rand_proto_aff_mat_inv, order=config.interpolation_order
-            )
+
+            η_rand_proto_transform = model.transform(η_rand_proto)
+            η_rand_proto_inv_transform = η_rand_proto_transform.inverse()
+
+            composed_transform = η_rand_transform.compose(η_rand_proto_inv_transform)
+
+            # η_rand_proto_aff_mat = gen_affine_matrix_no_shear(η_rand_proto)
+            # η_rand_proto_aff_mat_inv = jnp.linalg.inv(η_rand_proto_aff_mat)
+            return composed_transform.apply(x, order=config.interpolation_order)
 
         def per_sample_loss_fn(rng):
             η_rng, x_hat_rng = random.split(rng)

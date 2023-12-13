@@ -84,5 +84,6 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.generative.conditioner = config_dict.ConfigDict()
     config.model.generative.conditioner.hidden_dims = (256, 256)
     config.model.generative.squash_to_bounds = config.model.inference.squash_to_bounds
+    config.model.generative.transform = AffineTransformWithoutShear
 
     return config
