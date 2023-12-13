@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from absl import logging
 from jax import numpy as jnp
 from jax import random
 from scipy.stats import gaussian_kde
@@ -117,28 +118,32 @@ def plot_gen_dists(x, prototype_function, rng, gen_model, gen_params, config, n=
     axs[1].imshow(rescale_for_imshow(xhat), cmap="gray")
 
     for i, ax in enumerate(axs[2:]):
-        kde_ = gaussian_kde(ηs_p[:, i])
         THRESHOLD = 0.01
         try:
+            # First fit a KDE estimate and use it to filter out outliers
+            kde_ = gaussian_kde(ηs_p[:, i])
             ηs_p_ = ηs_p[kde_(ηs_p[:, i]) > THRESHOLD, i]
-            # plot p(η|x_hat)
-            kde = gaussian_kde(ηs_p_)
-        except:
-            ηs_p_ = ηs_p[:, i]
-            # plot p(η|x_hat)
+
+            # Then fit a KDE and plot it, as well as the histogram with outliers removed
             kde = gaussian_kde(ηs_p_)
 
-        x = np.linspace(ηs_p_.min(), ηs_p_.max(), 1000)
+            xs = np.linspace(ηs_p_.min(), ηs_p_.max(), 1000)
+            ax.plot(xs, kde(xs), color="C0")
 
-        ax.hist(ηs_p_, bins=100, density=True, alpha=0.5, color="C0")
+            ax.hist(ηs_p_, bins=100, density=True, alpha=0.5, color="C0")
 
-        ax.plot(x, kde(x), color="C0")
+            ax.set_xlim(xs.min(), xs.max())
 
-        # make a axvline to plot η, make the line dashed
+        except Exception as e:
+            logging.warning(f"Failed to plot KDE for dim {i}: {e}")
+            try:
+                ax.hist(ηs_p[:, i], bins=100, density=True, alpha=0.5, color="C0")
+            except Exception as e:
+                logging.warning(f"Failed to plot histogram for dim {i}: {e}")
+
         ax.axvline(η[i], color="C1", linestyle="--")
 
         ax.set_title(f"dim {i}")
-        ax.set_xlim(x.min(), x.max())
 
     plt.tight_layout()
 
