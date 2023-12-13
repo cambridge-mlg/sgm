@@ -1,5 +1,7 @@
-from ml_collections import config_dict
 from jax import numpy as jnp
+from ml_collections import config_dict
+
+from src.transformations.transforms import AffineTransformWithoutShear
 
 
 def get_config(params) -> config_dict.ConfigDict:
@@ -71,6 +73,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.inference.bounds = config.augment_bounds
     config.model.inference.squash_to_bounds = False
     config.model.inference.hidden_dims = (1024, 512, 256, 128)
+    config.model.inference.transform = AffineTransformWithoutShear
 
     config.model.generative = config_dict.ConfigDict()
     config.model.generative.bounds = config.augment_bounds
