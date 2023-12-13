@@ -1,3 +1,4 @@
+import shutil
 from itertools import product
 from pathlib import Path
 
@@ -119,11 +120,11 @@ def main(_):
         if model_checkpoint_path != "":
             model_checkpoint_path = Path(model_checkpoint_path)
             if model_checkpoint_path.exists():
-                model_checkpoint_path.rmtree()
+                shutil.rmtree(model_checkpoint_path)
             model_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
             logging.info(f"Saving model checkpoint to {model_checkpoint_path}.")
-            ckpt = {"state": final_state, "config": config}
+            ckpt = {"state": final_state, "config": config.to_dict()}
             checkpointer = orbax.checkpoint.PyTreeCheckpointer()
             save_args = orbax_utils.save_args_from_target(ckpt)
             checkpointer.save(model_checkpoint_path, ckpt, save_args=save_args)
