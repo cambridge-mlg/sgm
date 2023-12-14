@@ -43,7 +43,6 @@ class Conditioner(nn.Module):
     num_bijector_params: int
     hidden_dims: Sequence[int]
     train: Optional[bool] = None
-    use_layernorm: bool = False
 
     @nn.compact
     def __call__(self, x: Array, h: Array, train: Optional[bool] = None) -> Array:
@@ -54,8 +53,7 @@ class Conditioner(nn.Module):
         for hidden_dim in self.hidden_dims:
             h = nn.Dense(hidden_dim)(h)
             h = nn.gelu(h)
-            if self.use_layernorm:
-                h = nn.LayerNorm()(h)
+            h = nn.LayerNorm()(h)
 
         # We initialize this dense layer to zero so that the flow is initialized to the identity function.
         y = nn.Dense(
@@ -77,7 +75,6 @@ class TransformationGenerativeNet(nn.Module):
     conditioner: Optional[KwArgs] = None
     ε: float = 1e-6
     squash_to_bounds: bool = False
-    use_layernorm: bool = False
 
     def setup(self) -> None:
         self.bounds_array = (
@@ -100,18 +97,14 @@ class TransformationGenerativeNet(nn.Module):
         for hidden_dim in self.hidden_dims:
             h = nn.Dense(hidden_dim)(h)
             h = nn.gelu(h)
-            if self.use_layernorm:
-                h = nn.LayerNorm()(h)
+            h = nn.LayerNorm()(h)
 
         # base distribution
-        base_hidden = nn.Dense(hidden_dim // 2)(h)
-        base_hidden = nn.gelu(base_hidden)
-        if self.use_layernorm:
-            h = nn.LayerNorm()(h)
-        base_hidden = nn.Dense(hidden_dim // 2)(base_hidden)
-        base_hidden = nn.gelu(base_hidden)
-        if self.use_layernorm:
-            h = nn.LayerNorm()(h)
+        base_hidden = h
+        for _ in range(2):
+            base_hidden = nn.Dense(hidden_dim // 2)(base_hidden)
+            base_hidden = nn.gelu(base_hidden)
+            base_hidden = nn.LayerNorm()(base_hidden)
 
         output_dim = np.prod(self.event_shape)
         μ = nn.Dense(output_dim)(base_hidden)
@@ -143,7 +136,6 @@ class TransformationGenerativeNet(nn.Module):
                 event_shape=self.event_shape,
                 num_bijector_params=num_bijector_params,
                 train=train,
-                use_layernorm=self.use_layernorm,
                 **(self.conditioner or {}),
             )
 
