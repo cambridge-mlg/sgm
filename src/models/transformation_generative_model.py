@@ -28,6 +28,7 @@ from flax.training import train_state
 from jax import lax
 from ml_collections import config_dict
 
+from src.models.mlp import MLP
 from src.models.utils import clipped_adamw
 from src.transformations.affine import (
     gen_affine_matrix_no_shear,
@@ -43,6 +44,7 @@ class Conditioner(nn.Module):
     num_bijector_params: int
     hidden_dims: Sequence[int]
     train: Optional[bool] = None
+    dropout_rate: float = 0.0
 
     @nn.compact
     def __call__(self, x: Array, h: Array, train: Optional[bool] = None) -> Array:
@@ -50,10 +52,7 @@ class Conditioner(nn.Module):
 
         h = jnp.concatenate((x.flatten(), h.flatten()), axis=0)
 
-        for hidden_dim in self.hidden_dims:
-            h = nn.Dense(hidden_dim)(h)
-            h = nn.gelu(h)
-            h = nn.LayerNorm()(h)
+        h = MLP(self.hidden_dims, dropout_rate=self.dropout_rate)(h, train=train)
 
         # We initialize this dense layer to zero so that the flow is initialized to the identity function.
         y = nn.Dense(
@@ -75,6 +74,7 @@ class TransformationGenerativeNet(nn.Module):
     conditioner: Optional[KwArgs] = None
     ε: float = 1e-6
     squash_to_bounds: bool = False
+    dropout_rate: float = 0.0
 
     def setup(self) -> None:
         self.bounds_array = (
@@ -94,17 +94,10 @@ class TransformationGenerativeNet(nn.Module):
         h = x_hat.flatten()
 
         # shared feature extractor
-        for hidden_dim in self.hidden_dims:
-            h = nn.Dense(hidden_dim)(h)
-            h = nn.gelu(h)
-            h = nn.LayerNorm()(h)
+        h = MLP(self.hidden_dims, dropout_rate=self.dropout_rate)(h, train=train)
 
         # base distribution
-        base_hidden = h
-        for _ in range(2):
-            base_hidden = nn.Dense(hidden_dim // 2)(base_hidden)
-            base_hidden = nn.gelu(base_hidden)
-            base_hidden = nn.LayerNorm()(base_hidden)
+        base_hidden = MLP((self.hidden_dims[-1] // 2,) * 2)(h, train=train)
 
         output_dim = np.prod(self.event_shape)
         μ = nn.Dense(output_dim)(base_hidden)
@@ -217,13 +210,15 @@ def make_transformation_generative_train_and_eval(
             )
 
         def per_sample_loss_fn(rng):
-            η_rng, x_hat_rng = random.split(rng)
+            η_rng, x_hat_rng, dropout_rng = random.split(rng)
 
             η_x = prototype_function(x, η_rng)
 
             x_hat = get_xhat_on_random_augmentation(x, x_hat_rng)
 
-            p_Η_x_hat = model.apply({"params": params}, x_hat, train=train)
+            p_Η_x_hat = model.apply(
+                {"params": params}, x_hat, train=train, rngs={"dropout": dropout_rng}
+            )
             log_p_η_x_hat = p_Η_x_hat.log_prob(η_x)
             return log_p_η_x_hat
 

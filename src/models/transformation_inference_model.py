@@ -28,6 +28,7 @@ from jax import lax
 from jax.scipy import linalg
 from ml_collections import config_dict
 
+from src.models.mlp import MLP
 from src.models.utils import clipped_adamw, huber_loss
 from src.transformations.affine import (
     gen_affine_matrix_no_shear,
@@ -60,10 +61,7 @@ class TransformationInferenceNet(nn.Module):
     def __call__(self, x, train: bool = False) -> distrax.Transformed:
         h = x.flatten()
 
-        for hidden_dim in self.hidden_dims:
-            h = nn.Dense(hidden_dim)(h)
-            h = nn.gelu(h)
-            h = nn.LayerNorm()(h)
+        h = MLP(self.hidden_dims)(h, train=train)
 
         output_dim = np.prod(self.event_shape)
         μ = nn.Dense(
