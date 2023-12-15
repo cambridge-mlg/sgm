@@ -39,8 +39,10 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.hidden_dims = (2048, 512, 256)
     config.model.num_flows = 6
     config.model.num_bins = 6
+    config.model.dropout_rate = 0.1
     config.model.conditioner = config_dict.ConfigDict()
     config.model.conditioner.hidden_dims = (256, 256)
+    config.model.conditioner.dropout_rate = 0.1
 
     config.batch_size = 512
     config.dataset = "MNIST"
