@@ -1,26 +1,26 @@
 import enum
 from functools import partial
-from typing import Any, Callable, Sequence
+from typing import Callable, Sequence
 
+import flax.linen.initializers as init
+from chex import Array, PRNGKey, Shape
+from flax import linen as nn
 from jax import numpy as jnp
 from jax import random
-from jax.tree_util import tree_map
-from jax.nn.initializers import Initializer
 from jax._src import dtypes
-from chex import Array, PRNGKey, Shape, assert_rank, assert_equal_shape
-from flax import linen as nn
-import flax.linen.initializers as init
+from jax.nn.initializers import Initializer
 
 
 class Block(nn.Module):
     """
     ConvNeXT Block. From https://github.com/facebookresearch/ConvNeXt-V2
-    
+
     Args:
         dim (int): Number of input channels.
     """
+
     num_channels: int
-    norm_cls: Callable[[], nn.Module] =  partial(nn.LayerNorm, epsilon=1e-6)
+    norm_cls: Callable[[], nn.Module] = partial(nn.LayerNorm, epsilon=1e-6)
 
     @nn.compact
     def __call__(
@@ -31,20 +31,32 @@ class Block(nn.Module):
         x = nn.Conv(
             features=self.num_channels,
             kernel_size=(7, 7),
-            padding='SAME',
+            padding="SAME",
             kernel_init=truncated_normal(stddev=0.02),
             bias_init=init.zeros,
             feature_group_count=self.num_channels,
         )(x)
         x = self.norm_cls()(x)
         # pointwise/1x1 convs, implemented with linear layers
-        x = nn.Dense(4 * self.num_channels, use_bias=True, kernel_init=truncated_normal(0.02), bias_init=init.zeros)(x)
+        x = nn.Dense(
+            4 * self.num_channels,
+            use_bias=True,
+            kernel_init=truncated_normal(0.02),
+            bias_init=init.zeros,
+        )(x)
         x = nn.gelu(x)
         # pointwise/1x1 convs, implemented with linear layers
-        x = nn.Dense(self.num_channels, use_bias=True, kernel_init=truncated_normal(0.02), bias_init=init.zeros)(x)
+        x = nn.Dense(
+            self.num_channels,
+            use_bias=True,
+            kernel_init=truncated_normal(0.02),
+            bias_init=init.zeros,
+        )(x)
 
         # Use layer scale from ConvNext V1
-        gamma = self.param("gamma", lambda key, shape: jnp.full(shape, 1e-6), (self.num_channels,))
+        gamma = self.param(
+            "gamma", lambda key, shape: jnp.full(shape, 1e-6), (self.num_channels,)
+        )
         x = gamma * x
 
         return residual + x
@@ -53,7 +65,7 @@ class Block(nn.Module):
 class ConvNeXt(nn.Module):
     """
     ConvNeXt V1 adapted from https://github.com/facebookresearch/ConvNeXt-V2
-        
+
     Args:
         in_chans (int): Number of input image channels. Default: 3
         num_classes (int): Number of classes for classification head. Default: 1000
@@ -61,12 +73,15 @@ class ConvNeXt(nn.Module):
         dims (int): Feature dimension at each stage. Default: [96, 192, 384, 768]
         head_init_scale (float): Init scaling value for classifier weights and biases. Default: 1.
     """
+
     in_channels: int = 1
     num_outputs: int = 10
     depths: Sequence[int] = (3, 3, 9, 3)
     dims: Sequence[int] = (96, 192, 384, 768)
-    head_init_scale: float = 1.
-    init_downsample: int = 2  # The stride of the first conv layer. Use `1` for small res datasets
+    head_init_scale: float = 1.0
+    init_downsample: int = (
+        2  # The stride of the first conv layer. Use `1` for small res datasets
+    )
     norm_cls: Callable[[], nn.Module] = partial(nn.LayerNorm, epsilon=1e-6)
 
     @nn.compact
@@ -99,11 +114,15 @@ class ConvNeXt(nn.Module):
                 x = Block(self.dims[i])(x)
         # --- Head
         x = x.mean(axis=(-3, -2))  # Global average pooling across height, width axes
-        x = nn.Dense(self.num_outputs, kernel_init=truncated_normal(0.02 * self.head_init_scale), bias_init=init.zeros)(x)
+        x = nn.Dense(
+            self.num_outputs,
+            kernel_init=truncated_normal(0.02 * self.head_init_scale),
+            bias_init=init.zeros,
+        )(x)
         return x
 
 
-def truncated_normal(stddev = 1e-2, dtype = jnp.float_) -> Initializer:
+def truncated_normal(stddev=1e-2, dtype=jnp.float_) -> Initializer:
     """Builds an initializer that returns real trunc. normally-distributed random arrays.
 
     Args:
@@ -120,13 +139,15 @@ def truncated_normal(stddev = 1e-2, dtype = jnp.float_) -> Initializer:
     Array([[ 3.0613258 ,  5.6129413 ,  5.6866574 ],
             [-4.063663  , -4.4520254 ,  0.63115686]], dtype=float32)
     """
+
     def init(
-            key: PRNGKey,
-            shape: Shape,
-            dtype = dtype,
-        ) -> Array:
+        key: PRNGKey,
+        shape: Shape,
+        dtype=dtype,
+    ) -> Array:
         dtype = dtypes.canonicalize_dtype(dtype)
         return random.truncated_normal(key, -2, 2, shape, dtype) * stddev
+
     return init
 
 
@@ -134,38 +155,47 @@ def convenext_atto(**kwargs) -> ConvNeXt:
     model = ConvNeXt(depths=[2, 2, 6, 2], dims=[40, 80, 160, 320], **kwargs)
     return model
 
+
 def convenext_femto(**kwargs) -> ConvNeXt:
     model = ConvNeXt(depths=[2, 2, 6, 2], dims=[48, 96, 192, 384], **kwargs)
     return model
 
-def convenext_pico(**kwargs)-> ConvNeXt:
+
+def convenext_pico(**kwargs) -> ConvNeXt:
     model = ConvNeXt(depths=[2, 2, 6, 2], dims=[64, 128, 256, 512], **kwargs)
     return model
+
 
 def convenext_nano(**kwargs) -> ConvNeXt:
     model = ConvNeXt(depths=[2, 2, 8, 2], dims=[80, 160, 320, 640], **kwargs)
     return model
 
+
 def convenext_tiny(**kwargs) -> ConvNeXt:
     model = ConvNeXt(depths=[3, 3, 9, 3], dims=[96, 192, 384, 768], **kwargs)
     return model
+
 
 def convenext_base(**kwargs) -> ConvNeXt:
     model = ConvNeXt(depths=[3, 3, 27, 3], dims=[128, 256, 512, 1024], **kwargs)
     return model
 
+
 def convenext_large(**kwargs) -> ConvNeXt:
     model = ConvNeXt(depths=[3, 3, 27, 3], dims=[192, 384, 768, 1536], **kwargs)
     return model
+
 
 def convenext_huge(**kwargs) -> ConvNeXt:
     model = ConvNeXt(depths=[3, 3, 27, 3], dims=[352, 704, 1408, 2816], **kwargs)
     return model
 
+
 def convenext_pathetic(**kwargs) -> ConvNeXt:
     """Not an official ConvNeXt model, but a small one for testing purposes."""
     model = ConvNeXt(depths=[1, 1, 2, 1], dims=[20, 40, 80, 160], **kwargs)
     return model
+
 
 def convenext_very_pathetic(**kwargs) -> ConvNeXt:
     """Not an official ConvNeXt model, but a small one for testing purposes."""
@@ -219,5 +249,3 @@ def get_convnext_constructor(convnext_type: ConvNextType) -> Callable[[], ConvNe
         return convenext_very_pathetic
     else:
         raise ValueError(f"Unrecognized ConvNeXt type {convnext_type}.")
-        
-
