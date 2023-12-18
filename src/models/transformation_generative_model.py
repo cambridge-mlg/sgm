@@ -210,7 +210,7 @@ def make_transformation_generative_train_and_eval(
             )
 
         def per_sample_loss_fn(rng):
-            η_rng, x_hat_rng, dropout_rng = random.split(rng)
+            η_rng, x_hat_rng, dropout_rng = random.split(rng, 3)
 
             η_x = prototype_function(x, η_rng)
 
