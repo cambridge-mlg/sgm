@@ -1,0 +1,56 @@
+command:
+  - ${interpreter}
+  - ${program}
+  - --gen_config=experiments/configs/gen_mnist.py:90,50000
+  - --inf_config=experiments/configs/inf_best.py:MNIST,0,90,50000
+  - --rerun
+method: grid
+metric:
+  goal: maximize
+  name: valid/log_p_η_x_hat
+name: inf_rand_sweep_90_50k
+parameters:
+  final_lr_mult:
+    values:
+      - 0.3
+      - 0.03
+  lr:
+    values:
+      - 0.003
+      - 0.0003
+  mae_loss_mult:
+    values:
+     - 0.
+     - 1.
+  model:
+    parameters:
+      conditioner:
+        parameters:
+          hidden_dims:
+            value: "256"
+          dropout_rate:
+            value: 0.1
+      hidden_dims:
+        value: 1024,512,256
+      num_bins:
+        value: 6
+      num_flows:
+        values:
+          - 4
+          - 5
+          - 6
+      squash_to_bounds:
+        value: False
+      dropout_rate:
+        values:
+          - 0.05
+          - 0.1
+          - 0.2
+  steps:
+    values:
+      - 7500
+      - 15000
+      - 30000
+      - 60000
+program: experiments/train/train_generative_model.py
+run_cap: 288
