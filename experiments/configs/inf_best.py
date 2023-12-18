@@ -31,6 +31,18 @@ def get_config(params) -> config_dict.ConfigDict:
     config.blur_end_pct = 0.01
     config.weight_decay = 1e-4
 
+    config.augment_bounds = (
+        (0.25, 0.25, jnp.pi, 0.25, 0.25)
+        if config.dataset == "MNIST"
+        else (0.5, 0.5, jnp.pi, 0.5, 0.5)
+    )
+    config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
+
+    config.model_name = "inference_net"
+    config.model = config_dict.ConfigDict()
+    config.model.squash_to_bounds = False
+    config.model.hidden_dims = (2048, 1024, 512, 256)
+
     match (
         config.dataset,
         config.get("angle", None),
@@ -115,18 +127,6 @@ def get_config(params) -> config_dict.ConfigDict:
             config.init_lr_mult = 3e-2
             config.lr = 1e-3
             config.warmup_steps_pct = 0.2
-
-    config.augment_bounds = (
-        (0.25, 0.25, jnp.pi, 0.25, 0.25)
-        if config.dataset == "MNIST"
-        else (0.5, 0.5, jnp.pi, 0.5, 0.5)
-    )
-    config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
-
-    config.model_name = "inference_net"
-    config.model = config_dict.ConfigDict()
-    config.model.squash_to_bounds = False
-    config.model.hidden_dims = (2048, 1024, 512, 256)
 
     config.batch_size = 512
     if config.dataset == "MNIST":
