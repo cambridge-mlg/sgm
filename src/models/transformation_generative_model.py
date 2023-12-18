@@ -236,7 +236,7 @@ def make_transformation_generative_train_and_eval(
 
         # --- TODO: smoothness loss? Need to think about it, cause the l2 of grad. doesn't necessarily make sense
 
-        loss = -log_p_η_x_hat.mean() + state.mae_loss_mult * mae
+        loss = -log_p_η_x_hat.mean() + config.mae_loss_mult * mae
 
         return loss, {
             "loss": loss,
@@ -273,7 +273,6 @@ def make_transformation_generative_train_and_eval(
             "lr_gen",
             state.opt_state.hyperparams["learning_rate"],
         )
-        logs.add_entry("schedules", "mae_loss_mult", state.mae_loss_mult)
         logs.add_entry("gradients", "grad_norm", optax.global_norm(grads))
 
         return logs, state.replace(metrics=metrics)
@@ -315,8 +314,6 @@ class TransformationGenerativeMetrics(metrics.Collection):
 
 class TransformationGenerativeTrainState(train_state.TrainState):
     metrics: TransformationGenerativeMetrics
-    mae_loss_mult: float
-    mae_loss_mult_schedule: optax.Schedule = flax.struct.field(pytree_node=False)
     rng: PRNGKey
 
     def apply_gradients(self, *, grads, **kwargs):
@@ -327,12 +324,11 @@ class TransformationGenerativeTrainState(train_state.TrainState):
             step=self.step + 1,
             params=new_params,
             opt_state=new_opt_state,
-            mae_loss_mult=self.mae_loss_mult_schedule(self.step),
             **kwargs,
         )
 
     @classmethod
-    def create(cls, *, apply_fn, params, tx, mae_loss_mult_schedule, **kwargs):
+    def create(cls, *, apply_fn, params, tx, **kwargs):
         opt_state = tx.init(params)
         return cls(
             step=0,
@@ -340,8 +336,6 @@ class TransformationGenerativeTrainState(train_state.TrainState):
             params=params,
             tx=tx,
             opt_state=opt_state,
-            mae_loss_mult_schedule=mae_loss_mult_schedule,
-            mae_loss_mult=mae_loss_mult_schedule(0),
             **kwargs,
         )
 
@@ -380,10 +374,5 @@ def create_transformation_generative_state(model, config, rng, input_shape):
         params=params,
         tx=opt,
         metrics=TransformationGenerativeMetrics.empty(),
-        mae_loss_mult_schedule=optax.linear_schedule(
-            init_value=config.mae_loss_mult_initial,
-            end_value=config.mae_loss_mult_final,
-            transition_steps=config.steps,
-        ),
         rng=state_rng,
     )
