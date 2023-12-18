@@ -23,7 +23,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.steps = 15_000
     config.lr = 3e-3
     config.init_lr_mult = 1e-1
-    config.final_lr_mult = 1e-3
+    config.final_lr_mult = 3e-2
     config.warmup_steps_pct = 0.2
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
@@ -35,13 +35,13 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model_name = "generative_net"
     config.model = config_dict.ConfigDict()
     config.model.squash_to_bounds = False
-    config.model.hidden_dims = (2048, 512, 256)
+    config.model.hidden_dims = (1024, 512, 256)
     config.model.num_flows = 6
     config.model.num_bins = 6
-    config.model.dropout_rate = 0.1
+    config.model.dropout_rate = 0.2
     config.model.conditioner = config_dict.ConfigDict()
     config.model.conditioner.hidden_dims = (256,)
-    config.model.conditioner.dropout_rate = 0.05
+    config.model.conditioner.dropout_rate = 0.1
 
     config.batch_size = 512
     config.dataset = "MNIST"

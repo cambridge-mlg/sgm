@@ -22,7 +22,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.translate_last = False
 
     config.n_samples = 5
-    config.init_lr_mult = 1e-1
+    config.init_lr_mult = 0.1
     config.warmup_steps_pct = 0.2
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
@@ -38,11 +38,11 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model_name = "generative_net"
     config.model = config_dict.ConfigDict()
     config.model.squash_to_bounds = False
-    config.model.hidden_dims = (2048, 512, 256)
+    config.model.hidden_dims = (1024, 512, 256)
     config.model.num_bins = 6
     config.model.conditioner = config_dict.ConfigDict()
     config.model.conditioner.hidden_dims = (256,)
-    config.model.conditioner.dropout_rate = 0.05
+    config.model.conditioner.dropout_rate = 0.1
 
     match (
         config.dataset,
