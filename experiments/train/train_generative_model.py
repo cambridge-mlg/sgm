@@ -1,3 +1,4 @@
+import shutil
 from itertools import product
 from pathlib import Path
 
@@ -254,9 +255,22 @@ def main(_):
             stop=gen_config.steps + 1,
         )
 
+        # Save the checkpoint if a path is provided:
+        gen_model_checkpoint_path = gen_config.get("checkpoint", "")
+        if gen_model_checkpoint_path != "":
+            gen_model_checkpoint_path = Path(gen_model_checkpoint_path)
+            if gen_model_checkpoint_path.exists():
+                shutil.rmtree(gen_model_checkpoint_path)
+            gen_model_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
+            logging.info(f"Saving gen_model checkpoint to {gen_model_checkpoint_path}.")
+            ckpt = {"state": gen_final_state, "config": gen_config.to_dict()}
+            gen_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+            save_args = orbax_utils.save_args_from_target(ckpt)
+            gen_checkpointer.save(gen_model_checkpoint_path, ckpt, save_args=save_args)
+
         fig = plot_gen_model_training_metrics(history)
         run.summary[f"gen_training_metrics"] = wandb.Image(fig)
-
         plt.close(fig)
 
         val_iter = deterministic_data.start_input_pipeline(val_ds)
