@@ -22,13 +22,12 @@ def get_config(params) -> config_dict.ConfigDict:
     config.n_samples = 5
     config.steps = 15_000
     config.lr = 3e-3
-    config.init_lr_mult = 1e-2
-    config.final_lr_mult = 1e-4
-    config.warmup_steps_pct = 0.1
+    config.init_lr_mult = 1e-1
+    config.final_lr_mult = 1e-3
+    config.warmup_steps_pct = 0.2
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
-    config.mae_loss_mult_initial = 0.0
-    config.mae_loss_mult_final = 1.0
+    config.mae_loss_mult = 1.0
 
     config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
@@ -41,8 +40,8 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.num_bins = 6
     config.model.dropout_rate = 0.1
     config.model.conditioner = config_dict.ConfigDict()
-    config.model.conditioner.hidden_dims = (256, 256)
-    config.model.conditioner.dropout_rate = 0.1
+    config.model.conditioner.hidden_dims = (256,)
+    config.model.conditioner.dropout_rate = 0.05
 
     config.batch_size = 512
     config.dataset = "MNIST"
