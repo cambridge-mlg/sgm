@@ -4,7 +4,10 @@ from pathlib import Path
 ENTITY = "invariance-learners"
 PROJECT = "icml2024"
 CHECKPOINT_DIR = "/home/jua23/rds/hpc-work/learning-invariances-models"
-ANGLES = [0, None]
+ANGLES = [
+    0,
+    None,
+]
 NUM_TRNS = [
     25_000,
     37_500,
@@ -45,7 +48,6 @@ with job_file.open("w") as jf:
             "python "
             "experiments/train/train_inference_model.py "
             f"--config=experiments/configs/inf_best.py:{','.join(params)} "
-            f"--config.seed={seed} "
             f"--config.checkpoint={CHECKPOINT_DIR}/inf_best_ckpt_{'_'.join(params)} "
             f"--wandb_project={PROJECT} "
             f"--wandb_entity={ENTITY} "
