@@ -227,9 +227,6 @@ def make_transformation_generative_train_and_eval(
             η_rand_transform = model.transform(η_rand)
             x_rand = η_rand_transform.apply(x)
 
-            # η_rand_aff_mat = gen_affine_matrix_no_shear(η_rand)
-            # x_rand = transform_image_with_affine_matrix(x, η_rand_aff_mat)
-
             η_rand_proto = prototype_function(x_rand, prototype_fn_rng)
 
             η_rand_proto_transform = model.transform(η_rand_proto)
@@ -237,8 +234,6 @@ def make_transformation_generative_train_and_eval(
 
             composed_transform = η_rand_transform.compose(η_rand_proto_inv_transform)
 
-            # η_rand_proto_aff_mat = gen_affine_matrix_no_shear(η_rand_proto)
-            # η_rand_proto_aff_mat_inv = jnp.linalg.inv(η_rand_proto_aff_mat)
             return composed_transform.apply(x, order=config.interpolation_order)
 
         def per_sample_loss_fn(rng):
