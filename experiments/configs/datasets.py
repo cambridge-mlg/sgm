@@ -4,17 +4,6 @@ from typing import Optional
 from ml_collections import config_dict
 
 
-def add_dataset_config(
-    config: config_dict.ConfigDict, dataset: str, **kwargs
-) -> config_dict.ConfigDict:
-    if dataset == "MNIST":
-        return add_mnist_config(config, **kwargs)
-    elif dataset == "aug_dsprites":
-        return add_aug_dsprites_config(config, **kwargs)
-    else:
-        raise ValueError(f"Unknown dataset: {dataset}")
-
-
 def add_mnist_config(
     config: config_dict.ConfigDict, angle: float, num_trn: Optional[int], num_val: int
 ) -> config_dict.ConfigDict:
