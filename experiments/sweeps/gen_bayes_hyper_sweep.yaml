@@ -1,0 +1,96 @@
+command:
+  - ${interpreter}
+  - ${program}
+  - --gen_config=experiments/configs/gen_mnist.py:90,50000
+  - --inf_config=experiments/configs/inf_best.py:MNIST,0,90,50000
+  - --rerun
+method: bayes
+metric:
+  goal: maximize
+  name: valid/log_p_η_x_hat
+name: inf_rand_sweep_90_50k
+parameters:
+  clip_norm:
+    distribution: log_uniform_values
+    max: 10
+    min: 1
+  final_lr_mult:
+    distribution: log_uniform_values
+    max: 1
+    min: 0.001
+  init_lr_mult:
+    distribution: log_uniform_values
+    max: 1
+    min: 0.03
+  lr:
+    distribution: log_uniform_values
+    max: 0.01
+    min: 0.0001
+  mae_loss_mult_final:
+    distribution: uniform
+    max: 1
+    min: 0
+  mae_loss_mult_initial:
+    distribution: uniform
+    max: 1
+    min: 0
+  model:
+    parameters:
+      conditioner:
+        parameters:
+          hidden_dims:
+            distribution: categorical
+            values:
+              - "256"
+              - 256,256
+          dropout_rate:
+            distribution: categorical
+            values:
+              - 0.05
+              - 0.1
+              - 0.2
+      hidden_dims:
+        distribution: constant
+        value: 1024,512,256
+      num_bins:
+        distribution: categorical
+        values:
+          - 6
+          - 8
+      num_flows:
+        distribution: categorical
+        values:
+          - 2
+          - 4
+      squash_to_bounds:
+        distribution: constant
+        value: False
+      dropout_rate:
+        distribution: categorical
+        values:
+          - 0.05
+          - 0.1
+          - 0.2
+  n_samples:
+    distribution: categorical
+    values:
+      - 1
+      - 3
+      - 5
+  steps:
+    distribution: categorical
+    values:
+      - 7500
+      - 15000
+      - 30000
+      - 60000
+  warmup_steps_pct:
+    distribution: uniform
+    max: 0.3
+    min: 0
+  weight_decay:
+    distribution: log_uniform_values
+    max: 0.001
+    min: 1e-05
+program: experiments/train/train_generative_model.py
+run_cap: 64
