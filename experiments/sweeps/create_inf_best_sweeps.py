@@ -11,16 +11,20 @@ NUM_TRNS = [
     50_000,
     None,
 ]
-SEEDS = [0, 1, 2]
+SEEDS = [
+    0,
+    1,
+    2,
+]
 DATASETS = ["MNIST", "aug_dsprites"]
 
 
 parent_path = Path(__file__).parent
 
-job_folder = parent_path.parent / "jobs" / f"jobs_inf_best_sweep"
+job_folder = parent_path.parent / "jobs" / f"inf_best_sweep"
 job_folder.mkdir(exist_ok=True, parents=True)
 
-job_file = job_folder / f"jobs_inf_best_sweep%01:30:00.txt"
+job_file = job_folder / f"inf_best_sweep%01:30:00.txt"
 if job_file.exists():
     job_file.unlink()
 
