@@ -17,7 +17,11 @@ from flax.training import orbax_utils
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
-from experiments.utils import duplicated_run
+from experiments.utils import (
+    assert_inf_gen_compatiblity,
+    duplicated_run,
+    load_checkpoint,
+)
 from src.models.transformation_generative_model import (
     TransformationGenerativeNet,
     create_transformation_generative_state,
@@ -67,6 +71,8 @@ flags.DEFINE_bool(
 def main(_):
     inf_config = FLAGS.inf_config
     gen_config = FLAGS.gen_config
+
+    assert_inf_gen_compatiblity(inf_config, gen_config)
 
     if not FLAGS.rerun:
         if duplicated_run(inf_config) and duplicated_run(gen_config):
@@ -147,22 +153,9 @@ def main(_):
             run.summary["proto_training_metrics"] = wandb.Image(fig)
             plt.close(fig)
         else:
-            logging.info(f"Loading model checkpoint from {inf_model_checkpoint_path}.")
-            inf_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-            ckpt = inf_checkpointer.restore(
-                inf_model_checkpoint_path,
-                item={"state": inf_state, "config": inf_config},
+            inf_final_state, inf_config_ = load_checkpoint(
+                inf_model_checkpoint_path, inf_state, inf_config
             )
-            inf_final_state, inf_config_ = ckpt["state"], ckpt["config"]
-            inf_config_ = config_dict.ConfigDict(inf_config_)
-            if inf_config_.to_json() != inf_config.to_json():
-                logging.warning(
-                    "The config loaded from the checkpoint is different from the one passed as a flag.\n"
-                    "Loaded config:\n"
-                    f"{inf_config_}\n"
-                    "Passed config:\n"
-                    f"{inf_config}"
-                )
             if (
                 gen_config.model.squash_to_bounds
                 and not inf_config_.model.squash_to_bounds
@@ -191,9 +184,9 @@ def main(_):
                 [
                     val_batch["image"][0][14],
                     val_batch["image"][0][12],
-                    val_batch["image"][0][1],
-                    val_batch["image"][0][4],
-                    val_batch["image"][0][9],
+                    # val_batch["image"][0][1],
+                    # val_batch["image"][0][4],
+                    # val_batch["image"][0][9],
                 ],
                 [
                     # jnp.array([0, 0, 1, 0, 0]),
