@@ -34,13 +34,11 @@ from src.models.transformation_inference_model import (
 )
 from src.models.utils import reset_metrics
 from src.transformations import transform_image
-from src.transformations.affine import (
-    gen_affine_matrix_no_shear,
-    transform_image_with_affine_matrix,
-)
+from src.transformations.affine import gen_affine_matrix_no_shear
 from src.utils.gen_plots import plot_gen_dists, plot_gen_model_training_metrics
 from src.utils.input import get_data
 from src.utils.proto_plots import (
+    make_get_prototype_fn,
     plot_proto_model_training_metrics,
     plot_protos_and_recons,
 )
@@ -168,16 +166,13 @@ def main(_):
         val_iter = deterministic_data.start_input_pipeline(val_ds)
         val_batch = next(val_iter)
 
-        @jax.jit
-        def get_prototype(x):
-            p_η = inf_model.apply({"params": inf_final_state.params}, x, train=False)
-            η = p_η.sample(seed=rng)
-            affine_matrix = gen_affine_matrix_no_shear(η)
-            affine_matrix_inv = jnp.linalg.inv(affine_matrix)
-            xhat = transform_image_with_affine_matrix(
-                x, affine_matrix_inv, order=inf_config.interpolation_order
-            )
-            return xhat, η
+        get_prototype = make_get_prototype_fn(
+            inf_model,
+            inf_final_state,
+            rng,
+            inf_config.interpolation_order,
+            gen_affine_matrix_no_shear,
+        )
 
         for i, (x_, mask) in enumerate(
             product(
