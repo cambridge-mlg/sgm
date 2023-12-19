@@ -1,23 +1,17 @@
-import shutil
 from itertools import product
-from pathlib import Path
 
 import ciclo
 import flax
-import jax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
-import numpy as np
-import orbax.checkpoint
-import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
-from flax.training import orbax_utils
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
-from experiments.utils import duplicated_run
+import wandb
+from experiments.utils import duplicated_run, save_checkpoint
 from src.models.transformation_inference_model import (
     TransformationInferenceNet,
     create_transformation_inference_state,
@@ -118,16 +112,7 @@ def main(_):
         # Save the checkpoint if a path is provided:
         model_checkpoint_path = config.get("checkpoint", "")
         if model_checkpoint_path != "":
-            model_checkpoint_path = Path(model_checkpoint_path)
-            if model_checkpoint_path.exists():
-                shutil.rmtree(model_checkpoint_path)
-            model_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-
-            logging.info(f"Saving model checkpoint to {model_checkpoint_path}.")
-            ckpt = {"state": final_state, "config": config.to_dict()}
-            checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-            save_args = orbax_utils.save_args_from_target(ckpt)
-            checkpointer.save(model_checkpoint_path, ckpt, save_args=save_args)
+            save_checkpoint(model_checkpoint_path, final_state, config)
 
         fig = plot_proto_model_training_metrics(history)
         run.summary["inf_training_metrics"] = wandb.Image(fig)

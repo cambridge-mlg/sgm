@@ -1,7 +1,12 @@
+import shutil
+from pathlib import Path
+
 import orbax.checkpoint
-import wandb
 from absl import flags, logging
+from flax.training import orbax_utils
 from ml_collections import config_dict
+
+import wandb
 
 FLAGS = flags.FLAGS
 
@@ -24,6 +29,19 @@ def load_checkpoint(checkpoint_path, init_state, config):
             f"{config}"
         )
     return final_state, config_
+
+
+def save_checkpoint(checkpoint_path, state, config):
+    checkpoint_path = Path(checkpoint_path)
+    if checkpoint_path.exists():
+        shutil.rmtree(checkpoint_path)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
+    logging.info(f"Saving model checkpoint to {checkpoint_path}.")
+    ckpt = {"state": state, "config": config.to_dict()}
+    checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+    save_args = orbax_utils.save_args_from_target(ckpt)
+    checkpointer.save(checkpoint_path, ckpt, save_args=save_args)
 
 
 def assert_inf_gen_compatiblity(inf_config, gen_config):

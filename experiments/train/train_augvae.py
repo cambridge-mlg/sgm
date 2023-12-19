@@ -1,24 +1,23 @@
-import os
 from itertools import product
 from pathlib import Path
 
 import ciclo
 import flax
-import jax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
-import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
+import wandb
 from experiments.utils import (
     assert_inf_gen_compatiblity,
     duplicated_run,
     load_checkpoint,
+    save_checkpoint,
 )
 from src.models.aug_vae import (
     AUG_VAE,
@@ -152,6 +151,8 @@ def main(_):
                 stop=inf_config.steps + 1,
             )
 
+            save_checkpoint(inf_model_checkpoint_path, inf_final_state, inf_config)
+
             fig = plot_proto_model_training_metrics(history)
             run.summary["proto_training_metrics"] = wandb.Image(fig)
             plt.close(fig)
@@ -244,6 +245,8 @@ def main(_):
                 ],
                 stop=gen_config.steps + 1,
             )
+
+            save_checkpoint(gen_model_checkpoint_path, gen_final_state, gen_config)
 
             fig = plot_gen_model_training_metrics(history)
             run.summary[f"gen_training_metrics"] = wandb.Image(fig)
