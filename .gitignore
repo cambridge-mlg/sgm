@@ -150,6 +150,7 @@ old/
 # checkpoints
 checkpoints/
 checkpoint_*
+ckpts/
 
 # local notebooks:
 notebooks/local
