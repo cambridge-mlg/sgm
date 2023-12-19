@@ -287,8 +287,8 @@ def main(_):
 
         aug_vae_model = AUG_VAE(
             vae=vae_config.model.to_dict(),
-            inference=inf_config.model.inference.to_dict(),
-            generative=gen_config.model.generative.to_dict(),
+            inference=inf_config.model.to_dict(),
+            generative=gen_config.model.to_dict(),
             interpolation_order=gen_config.interpolation_order,
             bounds=gen_config.get("augment_bounds", None),
             offset=gen_config.get("augment_offset", None),
