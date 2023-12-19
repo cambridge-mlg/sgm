@@ -1,5 +1,6 @@
 import os
 from itertools import product
+from pathlib import Path
 
 import ciclo
 import flax
@@ -13,9 +14,12 @@ from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
-from scipy.stats import gaussian_kde
 
-from experiments.utils import duplicated_run
+from experiments.utils import (
+    assert_inf_gen_compatiblity,
+    duplicated_run,
+    load_checkpoint,
+)
 from src.models.aug_vae import (
     AUG_VAE,
     create_aug_vae_state,
@@ -48,8 +52,10 @@ logging.set_verbosity(logging.INFO)
 plt.rcParams["savefig.facecolor"] = "white"
 
 FLAGS = flags.FLAGS
-config_flags.DEFINE_config_file("pgm_config")
-flags.mark_flag_as_required("pgm_config")
+config_flags.DEFINE_config_file("inf_config")
+flags.mark_flag_as_required("inf_config")
+config_flags.DEFINE_config_file("gen_config")
+flags.mark_flag_as_required("gen_config")
 config_flags.DEFINE_config_file("vae_config")
 flags.mark_flag_as_required("vae_config")
 flags.DEFINE_enum(
@@ -65,14 +71,20 @@ flags.DEFINE_bool(
 )
 
 
-# TODO: update since we don't use a shared pgm config any more
 def main(_):
-    pgm_config = FLAGS.pgm_config
+    inf_config = FLAGS.inf_config
+    gen_config = FLAGS.gen_config
     vae_config = FLAGS.vae_config
     vae_config.model_name = "AugVAE"
 
+    assert_inf_gen_compatiblity(inf_config, gen_config)
+
     if not FLAGS.rerun:
-        if duplicated_run(pgm_config) and duplicated_run(vae_config):
+        if (
+            duplicated_run(inf_config)
+            and duplicated_run(gen_config)
+            and duplicated_run(vae_config)
+        ):
             return 0
 
     with wandb.init(
@@ -97,46 +109,56 @@ def main(_):
                     int(x) for x in vae_config.model.dense_dims.split(",")
                 )
 
-        rng = random.PRNGKey(pgm_config.seed)
+        ####### INF MODEL #######
+        rng = random.PRNGKey(inf_config.seed)
         data_rng, init_rng = random.split(rng)
 
-        train_ds, val_ds, _ = get_data(pgm_config, data_rng)
+        train_ds, val_ds, _ = get_data(inf_config, data_rng)
         input_shape = train_ds.element_spec["image"].shape[2:]
 
         inf_model = TransformationInferenceNet(
-            bounds=pgm_config.get("augment_bounds", None),
-            offset=pgm_config.get("augment_offset", None),
-            **pgm_config.model.inference.to_dict(),
+            bounds=inf_config.get("augment_bounds", None),
+            offset=inf_config.get("augment_offset", None),
+            **inf_config.model.to_dict(),
         )
 
         inf_state = create_transformation_inference_state(
-            inf_model, pgm_config, init_rng, input_shape
+            inf_model, inf_config, init_rng, input_shape
         )
 
-        train_step, eval_step = make_transformation_inference_train_and_eval(
-            inf_model, pgm_config
-        )
+        # Only do training if there is no inf model checkpoint to load:
+        inf_model_checkpoint_path = inf_config.get("checkpoint", "")
+        if (
+            inf_model_checkpoint_path != ""
+            and not Path(inf_model_checkpoint_path).exists()
+        ):
+            train_step, eval_step = make_transformation_inference_train_and_eval(
+                inf_model, inf_config
+            )
 
-        total_steps = pgm_config.inf_steps
-        inf_final_state, history, _ = ciclo.train_loop(
-            inf_state,
-            deterministic_data.start_input_pipeline(train_ds),
-            {
-                ciclo.on_train_step: [train_step],
-                ciclo.on_reset_step: reset_metrics,
-                ciclo.on_test_step: eval_step,
-            },
-            test_dataset=lambda: deterministic_data.start_input_pipeline(val_ds),
-            epoch_duration=int(total_steps * pgm_config.eval_freq),
-            callbacks=[
-                ciclo.keras_bar(total=total_steps),
-            ],
-            stop=total_steps + 1,
-        )
+            inf_final_state, history, _ = ciclo.train_loop(
+                inf_state,
+                deterministic_data.start_input_pipeline(train_ds),
+                {
+                    ciclo.on_train_step: [train_step],
+                    ciclo.on_reset_step: reset_metrics,
+                    ciclo.on_test_step: eval_step,
+                },
+                test_dataset=lambda: deterministic_data.start_input_pipeline(val_ds),
+                epoch_duration=int(inf_config.steps * inf_config.eval_freq),
+                callbacks=[
+                    ciclo.keras_bar(total=inf_config.steps),
+                ],
+                stop=inf_config.steps + 1,
+            )
 
-        fig = plot_proto_model_training_metrics(history)
-        run.summary["proto_training_metrics"] = wandb.Image(fig)
-        plt.close(fig)
+            fig = plot_proto_model_training_metrics(history)
+            run.summary["proto_training_metrics"] = wandb.Image(fig)
+            plt.close(fig)
+        else:
+            inf_final_state, _ = load_checkpoint(
+                inf_model_checkpoint_path, inf_state, inf_config
+            )
 
         val_iter = deterministic_data.start_input_pipeline(val_ds)
         val_batch = next(val_iter)
@@ -145,7 +167,7 @@ def main(_):
             inf_model,
             inf_final_state,
             rng,
-            pgm_config.interpolation_order,
+            inf_config.interpolation_order,
             gen_affine_matrix_no_shear,
         )
 
@@ -154,88 +176,101 @@ def main(_):
                 [
                     val_batch["image"][0][14],
                     val_batch["image"][0][12],
+                    # val_batch["image"][0][1],
+                    # val_batch["image"][0][4],
+                    # val_batch["image"][0][9],
                 ],
                 [
-                    jnp.array([0, 0, 1, 0, 0]),
-                    jnp.array([1, 1, 0, 0, 0]),
+                    # jnp.array([0, 0, 1, 0, 0]),
+                    # jnp.array([1, 1, 0, 0, 0]),
                     jnp.array([1, 1, 1, 1, 1]),
                 ],
             )
         ):
             fig = plot_protos_and_recons(
-                x_, jnp.array(config.augment_bounds[:5]) * mask, get_prototype
+                x_, jnp.array(inf_config.augment_bounds) * mask, get_prototype
             )
             run.summary[f"inf_plots_{i}"] = wandb.Image(fig)
             plt.close(fig)
 
-        ####### GEN MODEL
+        ####### GEN MODEL #######
         def prototype_function(x, rng):
             η = inf_model.apply(
                 {"params": inf_final_state.params}, x, train=False
             ).sample(seed=rng)
             return η
 
-        rng = random.PRNGKey(pgm_config.seed)
+        rng = random.PRNGKey(gen_config.seed)
         data_rng, init_rng = random.split(rng)
 
-        train_ds, val_ds, _ = get_data(pgm_config, data_rng)
+        train_ds, val_ds, _ = get_data(gen_config, data_rng)
         input_shape = train_ds.element_spec["image"].shape[2:]
 
         gen_model = TransformationGenerativeNet(
-            bounds=pgm_config.get("augment_bounds", None),
-            offset=pgm_config.get("augment_offset", None),
-            **pgm_config.model.generative.to_dict(),
+            bounds=gen_config.get("augment_bounds", None),
+            offset=gen_config.get("augment_offset", None),
+            **gen_config.model.to_dict(),
         )
 
         gen_state = create_transformation_generative_state(
             gen_model,
-            pgm_config,
+            gen_config,
             init_rng,
             input_shape,
         )
 
-        train_step, eval_step = make_transformation_generative_train_and_eval(
-            gen_model, pgm_config, prototype_function=prototype_function
-        )
+        # Only do training if there is no gen model checkpoint to load:
+        gen_model_checkpoint_path = gen_config.get("checkpoint", "")
+        if (
+            gen_model_checkpoint_path != ""
+            and not Path(gen_model_checkpoint_path).exists()
+        ):
+            train_step, eval_step = make_transformation_generative_train_and_eval(
+                gen_model, gen_config, prototype_function=prototype_function
+            )
 
-        gen_final_state, history, _ = ciclo.train_loop(
-            gen_state,
-            deterministic_data.start_input_pipeline(train_ds),
-            {
-                ciclo.on_train_step: [train_step],
-                ciclo.on_reset_step: reset_metrics,
-                ciclo.on_test_step: eval_step,
-            },
-            test_dataset=lambda: deterministic_data.start_input_pipeline(val_ds),
-            epoch_duration=int(pgm_config.gen_steps * pgm_config.eval_freq),
-            callbacks=[
-                ciclo.keras_bar(total=pgm_config.gen_steps),
-            ],
-            stop=pgm_config.gen_steps + 1,
-        )
+            gen_final_state, history, _ = ciclo.train_loop(
+                gen_state,
+                deterministic_data.start_input_pipeline(train_ds),
+                {
+                    ciclo.on_train_step: [train_step],
+                    ciclo.on_reset_step: reset_metrics,
+                    ciclo.on_test_step: eval_step,
+                },
+                test_dataset=lambda: deterministic_data.start_input_pipeline(val_ds),
+                epoch_duration=int(gen_config.steps * gen_config.eval_freq),
+                callbacks=[
+                    ciclo.keras_bar(total=gen_config.steps),
+                ],
+                stop=gen_config.steps + 1,
+            )
 
-        fig = plot_gen_model_training_metrics(history)
-        run.summary[f"gen_training_metrics"] = wandb.Image(fig)
-
-        plt.close(fig)
+            fig = plot_gen_model_training_metrics(history)
+            run.summary[f"gen_training_metrics"] = wandb.Image(fig)
+            plt.close(fig)
+        else:
+            gen_final_state, _ = load_checkpoint(
+                gen_model_checkpoint_path, gen_state, gen_config
+            )
 
         val_iter = deterministic_data.start_input_pipeline(val_ds)
         val_batch = next(val_iter)
         for i, x in enumerate(
             [
                 val_batch["image"][0][14],
-                val_batch["image"][0][1],
-                val_batch["image"][0][4],
-                val_batch["image"][0][9],
+                val_batch["image"][0][12],
+                # val_batch["image"][0][1],
+                # val_batch["image"][0][4],
+                # val_batch["image"][0][9],
             ]
         ):
-            plot_gen_dists(
+            fig = plot_gen_dists(
                 x,
                 prototype_function,
                 rng,
                 gen_model,
                 gen_final_state.params,
-                pgm_config,
+                gen_config,
             )
             run.summary[f"gen_plots_{i}"] = wandb.Image(fig)
             plt.close(fig)
@@ -249,11 +284,11 @@ def main(_):
 
         aug_vae_model = AUG_VAE(
             vae=vae_config.model.to_dict(),
-            inference=pgm_config.model.inference.to_dict(),
-            generative=pgm_config.model.generative.to_dict(),
-            interpolation_order=pgm_config.interpolation_order,
-            bounds=pgm_config.get("augment_bounds", None),
-            offset=pgm_config.get("augment_offset", None),
+            inference=inf_config.model.inference.to_dict(),
+            generative=gen_config.model.generative.to_dict(),
+            interpolation_order=gen_config.interpolation_order,
+            bounds=gen_config.get("augment_bounds", None),
+            offset=gen_config.get("augment_offset", None),
         )
 
         aug_vae_state = create_aug_vae_state(
