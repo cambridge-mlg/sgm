@@ -320,12 +320,25 @@ def make_vae_train_and_eval(model, config):
         else:
             iwlb = jnp.nan
 
+        # add the reconstruction MSE as a metric
+        x_recon = model.apply(
+            {"params": params},
+            x,
+            sample_z=False,
+            sample_xrecon=False,
+            train=train,
+            method=model.reconstruct,
+            # rngs={"sample": rng_local},
+        )
+        x_mse = jnp.mean((x - x_recon) ** 2)
+
         return -elbo, {
             "loss": -elbo,
             "elbo": elbo,
             "ll": ll,
             "kld": kld,
             "iwlb": iwlb,
+            "x_mse": x_mse,
         }
 
     @jax.jit
