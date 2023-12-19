@@ -26,8 +26,8 @@ from jax import numpy as jnp
 from jax import random
 
 import src.utils.plotting as plot_utils
-from src.models.utils import clipped_adamw
 from src.models.mlp import MLP
+from src.models.utils import clipped_adamw
 from src.utils.training import get_learning_rate
 from src.utils.types import KwArgs
 
@@ -82,7 +82,12 @@ class Encoder(nn.Module):
 
             h = h.flatten()
 
-        h = MLP(self.dense_dims, act_fn=self.act_fn, norm_cls=self.norm_cls, dropout_rate=self.dropout_rate)(h, train)
+        h = MLP(
+            self.dense_dims,
+            act_fn=self.act_fn,
+            norm_cls=self.norm_cls,
+            dropout_rate=self.dropout_rate,
+        )(h, train)
 
         # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
         μ = nn.Dense(
@@ -131,7 +136,12 @@ class Decoder(nn.Module):
         if self.max_2strides is not None:
             num_2strides = np.minimum(num_2strides, self.max_2strides)
 
-        z = MLP(self.dense_dims, act_fn=self.act_fn, norm_cls=self.norm_cls, dropout_rate=self.dropout_rate)(z, train)
+        z = MLP(
+            self.dense_dims,
+            act_fn=self.act_fn,
+            norm_cls=self.norm_cls,
+            dropout_rate=self.dropout_rate,
+        )(z, train)
 
         dense_size = output_size // (2**num_2strides)
         h = nn.Dense(dense_size * dense_size * 3, name=f"resize")(z)
@@ -405,7 +415,7 @@ def create_vae_optimizer(config):
             config.steps * config.warmup_steps_pct,
             config.steps,
             config.lr * config.final_lr_mult,
-        )
+        ),
         config.get("clip_norm", 2.0),
         config.get("weight_decay", 1e-4),
     )
