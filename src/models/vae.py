@@ -308,6 +308,10 @@ def make_vae_train_and_eval(model, config):
         train,
     ):
         rng_local = random.fold_in(step_rng, lax.axis_index("batch"))
+        sample_rng, dropout_rng = random.split(rng_local)
+        # ^ the rng for dropout isn't used by the VAE at the moment, but is used
+        # by the AugVAe which also uses this function for creating train and
+        # eval steps. This is a small refused bequest, but oh well!
 
         elbo, ll, kld = model.apply(
             {"params": params},
@@ -315,7 +319,7 @@ def make_vae_train_and_eval(model, config):
             train,
             β=state.β,
             method=model.elbo,
-            rngs={"sample": rng_local},
+            rngs={"sample": sample_rng, "dropout": dropout_rng},
         )
 
         if not train and config.get("run_iwlb", False):
@@ -325,7 +329,7 @@ def make_vae_train_and_eval(model, config):
                 num_samples=config.get("iwlb_num_samples", 50),
                 train=train,
                 method=model.importance_weighted_lower_bound,
-                rngs={"sample": rng_local},
+                rngs={"sample": sample_rng, "dropout": dropout_rng},
             )
         else:
             iwlb = jnp.nan
@@ -338,7 +342,7 @@ def make_vae_train_and_eval(model, config):
             sample_xrecon=False,
             train=train,
             method=model.reconstruct,
-            # rngs={"sample": rng_local},
+            rngs={"sample": sample_rng, "dropout": dropout_rng},
         )
         x_mse = jnp.mean((x - x_recon) ** 2)
 

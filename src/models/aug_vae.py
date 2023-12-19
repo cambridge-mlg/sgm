@@ -158,9 +158,9 @@ def create_aug_vae_optimizer(params, config):
 def create_aug_vae_state(
     model, config, rng, input_shape, inf_final_state, gen_final_state
 ):
-    state_rng, init_rng = random.split(rng)
+    state_rng, init_rng, dropout_rng = random.split(rng, 3)
     variables = model.init(
-        {"params": init_rng, "sample": init_rng},
+        {"params": init_rng, "sample": init_rng, "dropout": dropout_rng},
         jnp.empty(input_shape),
         train=True,
     )
