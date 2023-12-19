@@ -1,4 +1,4 @@
-"""VAE implementation.
+"""Augmented VAE implementation.
 
 A note on notation. In order to distinguish between random variables and their values, we use upper
 and lower case variable names. I.e., p(Z) or `p_Z` is the distribution over the r.v. Z, and is a
@@ -23,6 +23,7 @@ from jax import random
 
 from src.models.transformation_generative_model import TransformationGenerativeNet
 from src.models.transformation_inference_model import TransformationInferenceNet
+from src.models.utils import clipped_adamw
 from src.models.vae import VAE
 from src.models.vae import VaeMetrics as AugVaeMetrics
 from src.models.vae import VaeTrainState as AugVaeTrainState
@@ -123,24 +124,21 @@ class AUG_VAE(nn.Module):
         )
 
         return new_x
-        # return jax.lax.cond(
-        #     jax.random.uniform(self.make_rng("sample"), ()) > 0.5,
-        #     lambda: x,
-        #     lambda: new_x,
-        # )
 
 
 def create_aug_vae_optimizer(params, config):
     partition_optimizers = {
         "nop": optax.set_to_zero(),
-        "vae": optax.inject_hyperparams(optax.adam)(
+        "vae": optax.inject_hyperparams(clipped_adamw)(
             optax.warmup_cosine_decay_schedule(
                 config.lr * config.init_lr_mult,
                 config.lr,
                 config.steps * config.warmup_steps_pct,
                 config.steps,
                 config.lr * config.final_lr_mult,
-            )
+            ),
+            config.get("clip_norm", 2.0),
+            config.get("weight_decay", 1e-4),
         ),
     }
 
