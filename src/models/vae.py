@@ -27,6 +27,7 @@ from jax import random
 
 import src.utils.plotting as plot_utils
 from src.models.utils import clipped_adamw
+from src.models.mlp import MLP
 from src.utils.training import get_learning_rate
 from src.utils.types import KwArgs
 
@@ -48,7 +49,7 @@ class Encoder(nn.Module):
     latent_dim: int
     conv_dims: Sequence[int]
     dense_dims: Sequence[int]
-    act_fn: Callable = nn.relu
+    act_fn: Callable = nn.gelu
     norm_cls: nn.Module = nn.LayerNorm
     σ_min: float = 1e-2
     dropout_rate: float = 0.0
@@ -74,18 +75,14 @@ class Encoder(nn.Module):
                     kernel_size=(3, 3),
                     strides=(2, 2) if i < num_2strides else (1, 1),
                 )(h)
-                h = self.norm_cls()(h)
                 h = self.act_fn(h)
+                h = self.norm_cls()(h)
 
             h = nn.Conv(3, kernel_size=(3, 3), strides=(1, 1), name=f"resize")(h)
 
             h = h.flatten()
 
-        for dense_dim in self.dense_dims:
-            h = nn.Dense(dense_dim)(h)
-            h = self.norm_cls()(h)
-            h = self.act_fn(h)
-            h = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(h)
+        h = MLP(self.dense_dims, act_fn=self.act_fn, norm_cls=self.norm_cls, dropout_rate=self.dropout_rate)(h, train)
 
         # We initialize these dense layers so that we get μ=0 and σ=1 at the start.
         μ = nn.Dense(
@@ -112,7 +109,7 @@ class Decoder(nn.Module):
     conv_dims: Sequence[int]
     dense_dims: Sequence[int]
     σ_init: Callable = init.constant(INV_SOFTPLUS_1)
-    act_fn: Callable = nn.relu
+    act_fn: Callable = nn.gelu
     norm_cls: nn.Module = nn.LayerNorm
     σ_min: float = 1e-2
     dropout_rate: float = 0.0
@@ -134,11 +131,7 @@ class Decoder(nn.Module):
         if self.max_2strides is not None:
             num_2strides = np.minimum(num_2strides, self.max_2strides)
 
-        for dense_dim in self.dense_dims:
-            z = nn.Dense(dense_dim)(z)
-            z = self.norm_cls()(z)
-            z = self.act_fn(z)
-            z = nn.Dropout(rate=self.dropout_rate, deterministic=not train)(z)
+        z = MLP(self.dense_dims, act_fn=self.act_fn, norm_cls=self.norm_cls, dropout_rate=self.dropout_rate)(z, train)
 
         dense_size = output_size // (2**num_2strides)
         h = nn.Dense(dense_size * dense_size * 3, name=f"resize")(z)
@@ -151,8 +144,8 @@ class Decoder(nn.Module):
                 # use stride of 2 for the last few layers
                 strides=(2, 2) if i >= len(self.conv_dims) - num_2strides else (1, 1),
             )(h)
-            h = self.norm_cls()(h)
             h = self.act_fn(h)
+            h = self.norm_cls()(h)
 
         μ = nn.Conv(
             self.image_shape[-1], kernel_size=(3, 3), strides=(1, 1), name=f"μ"
@@ -392,7 +385,7 @@ def make_vae_train_and_eval(model, config):
 
 
 def create_vae_optimizer(config):
-    return optax.inject_hyperparams(optax.adam)(
+    return optax.inject_hyperparams(clipped_adamw)(
         optax.warmup_cosine_decay_schedule(
             config.lr * config.init_lr_mult,
             config.lr,
@@ -400,9 +393,8 @@ def create_vae_optimizer(config):
             config.steps,
             config.lr * config.final_lr_mult,
         )
-        # config.get("clip_norm", 2.0),
-        # config.get("weight_decay", 1e-4),
-        # TODO: switch to clipped adamw and use the above commented out lines, also for augvae
+        config.get("clip_norm", 2.0),
+        config.get("weight_decay", 1e-4),
     )
 
 
