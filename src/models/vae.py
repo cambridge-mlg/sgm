@@ -432,6 +432,7 @@ class VaeMetrics(metrics.Collection):
     ll: metrics.Average.from_output("ll")
     kld: metrics.Average.from_output("kld")
     iwlb: metrics.Average.from_output("iwlb")
+    x_mse: metrics.Average.from_output("x_mse")
 
     def update(self, **kwargs) -> "VaeMetrics":
         updates = self.single_from_model_output(**kwargs)
