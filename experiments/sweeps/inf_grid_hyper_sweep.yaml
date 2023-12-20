@@ -36,3 +36,4 @@ parameters:
       - 0.1
       - 0.2
 program: experiments/train/train_inference_model.py
+run_cap: 144
