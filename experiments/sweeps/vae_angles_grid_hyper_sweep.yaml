@@ -1,0 +1,46 @@
+command:
+  - ${interpreter}
+  - ${program}
+  - --config=experiments/configs/vae_mnist.py:90,50000
+  - --rerun
+method: grid
+metric:
+  goal: minimize
+  name: valid/loss
+name: vae_sweep_90_50k
+parameters:
+  final_lr_mult:
+    values:
+      - 0.0001
+      - 0.01
+  lr:
+    values:
+      - 0.003
+      - 0.01
+  model:
+    parameters:
+      latent_dim:
+        values:
+          - 12
+          - 16
+          - 20
+      conv_dims:
+        values:
+          - 64,128
+          - 64,128,256
+      dense_dims:
+        values:
+          - "256"
+          - "128"
+  steps:
+    distribution: categorical
+    values:
+      - 5000
+      - 10000
+      - 20000
+  warmup_steps_pct:
+    values:
+      - 0.1
+      - 0.2
+program: experiments/train/train_vae.py
+run_cap: 288
