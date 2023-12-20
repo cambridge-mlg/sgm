@@ -32,15 +32,14 @@ def get_config(params) -> config_dict.ConfigDict:
     config.init_lr_mult = 1 / 3
     config.final_lr_mult = 1 / 3
     config.warmup_steps_pct = 0.1
-    # config.weight_decay = 1e-4
-    # config.clip_norm = 2.0
-    # TODO: re-introduce weight decay and clipping
+    config.weight_decay = 1e-4
+    config.clip_norm = 2.0
 
     config.β_schedule_init_value = 10.0
     config.β_schedule_final_value = 1.0
 
     config.run_iwlb = False
-    config.iwlb_num_samples = 100
+    config.iwlb_num_samples = 300
 
     config.dataset = "MNIST"
     config.batch_size = 512
@@ -52,5 +51,6 @@ def get_config(params) -> config_dict.ConfigDict:
         num_trn=config.get("num_trn", None),
         num_val=config.num_val,
     )
+    config.test_split = "test"
 
     return config
