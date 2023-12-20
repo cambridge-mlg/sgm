@@ -7,12 +7,12 @@ import flax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
-import wandb
 from absl import app, flags, logging
-from clu import deterministic_data, parameter_overview
+from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
+import wandb
 from experiments.utils import duplicated_run
 from src.models.utils import reset_metrics
 from src.models.vae import (
@@ -110,8 +110,31 @@ def main(_):
             stop=config.steps + 1,
         )
 
-        # TODO: add test set evaluation
-        # Also, add reconstruction mse as a metric and do IWLB
+        # Run test set eval, which should include IWLB
+        if test_ds is not None:
+            config_test = config.copy_and_resolve_references()
+            config_test.run_iwlb = True
+            _, test_step = make_vae_train_and_eval(model, config_test)
+
+            _, test_history, _ = ciclo.test_loop(
+                final_state,
+                deterministic_data.start_input_pipeline(test_ds),
+                {
+                    ciclo.on_reset_step: reset_metrics,
+                    ciclo.on_test_step: [
+                        test_step,
+                    ],
+                },
+            )
+            loss, elbo, ll, kld, iwlb, x_mse = test_history.collect(
+                "loss", "elbo", "ll", "kld", "iwlb", "x_mse"
+            )
+            run.summary["test/loss"] = loss[-1]
+            run.summary["test/elbo"] = elbo[-1]
+            run.summary["test/ll"] = ll[-1]
+            run.summary["test/kld"] = kld[-1]
+            run.summary["test/iwlb"] = iwlb[-1]
+            run.summary["test/x_mse"] = x_mse[-1]
 
 
 if __name__ == "__main__":

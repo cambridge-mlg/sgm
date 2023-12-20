@@ -278,11 +278,11 @@ def main(_):
             run.summary[f"gen_plots_{i}"] = wandb.Image(fig)
             plt.close(fig)
 
-        ####### VAE MODEL
+        ####### VAE MODEL #######
         rng = random.PRNGKey(vae_config.seed)
         data_rng, init_rng = random.split(rng, 2)
 
-        train_ds, val_ds, _ = get_data(vae_config, data_rng)
+        train_ds, val_ds, test_ds = get_data(vae_config, data_rng)
         input_shape = train_ds.element_spec["image"].shape[2:]
 
         aug_vae_model = AUG_VAE(
@@ -331,6 +331,32 @@ def main(_):
             ],
             stop=vae_config.steps + 1,
         )
+
+        # Run test set eval, which should include IWLB
+        if test_ds is not None:
+            vae_config_test = vae_config.copy_and_resolve_references()
+            vae_config_test.run_iwlb = True
+            _, test_step = make_aug_vae_train_and_eval(aug_vae_model, vae_config_test)
+
+            _, test_history, _ = ciclo.test_loop(
+                final_aug_vae_state,
+                deterministic_data.start_input_pipeline(test_ds),
+                {
+                    ciclo.on_reset_step: reset_metrics,
+                    ciclo.on_test_step: [
+                        test_step,
+                    ],
+                },
+            )
+            loss, elbo, ll, kld, iwlb, x_mse = test_history.collect(
+                "loss", "elbo", "ll", "kld", "iwlb", "x_mse"
+            )
+            run.summary["test/loss"] = loss[-1]
+            run.summary["test/elbo"] = elbo[-1]
+            run.summary["test/ll"] = ll[-1]
+            run.summary["test/kld"] = kld[-1]
+            run.summary["test/iwlb"] = iwlb[-1]
+            run.summary["test/x_mse"] = x_mse[-1]
 
 
 if __name__ == "__main__":
