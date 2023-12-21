@@ -53,8 +53,8 @@ parameters:
     min: 0
   # weight_decay:
   #   distribution: log_uniform_values
-  #   max: 0.01
-  #   min: 0.000001
+  #   max: 0.003
+  #   min: 0.00003
   β_schedule_init_value:
     distribution: uniform
     max: 20

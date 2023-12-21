@@ -53,4 +53,3 @@ parameters:
       - 30000
       - 60000
 program: experiments/train/train_generative_model.py
-run_cap: 288
