@@ -353,10 +353,11 @@ def make_transformation_inference_train_and_eval(
             η_x_rand2_transform = model.transform(η_x_rand2)
 
             # η_rand1 -η_x_rand1 + η_x_rand2 - η_rand2
-            composed_transform = η_rand1_transform.compose(
-                η_x_rand1_inv_transform.compose(
-                    η_x_rand2_transform.compose(η_rand2_inv_transform)
-                )
+            composed_transform = (
+                η_rand2_inv_transform
+                << η_x_rand2_transform
+                << η_x_rand1_inv_transform
+                << η_rand1_transform
             )
 
             # Consider transforming x twice (first into latent space, and then untransforming) as a

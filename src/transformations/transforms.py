@@ -37,8 +37,8 @@ class Transform:
     @classmethod
     def create(
         cls,
-        aff_matrix: Optional[Array] = None,
-        color_matrix: Optional[Array] = None,
+        aff_matrix: Optional[Array],
+        color_matrix: Optional[Array],
         η=None,
     ):
         transform = cls()

@@ -232,7 +232,7 @@ def make_transformation_generative_train_and_eval(
             η_rand_proto_transform = model.transform(η_rand_proto)
             η_rand_proto_inv_transform = η_rand_proto_transform.inverse()
 
-            composed_transform = η_rand_transform.compose(η_rand_proto_inv_transform)
+            composed_transform = η_rand_proto_inv_transform << η_rand_transform
 
             return composed_transform.apply(x, order=config.interpolation_order)
 
