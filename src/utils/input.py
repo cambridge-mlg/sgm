@@ -82,7 +82,7 @@ def get_data(
     )
 
     test_split = config.get("test_split", None)
-    if test_split is None:
+    if test_split is None or test_split == "":
         return train_ds, val_ds, None
 
     num_test_examples = dataset_builder.info.splits[test_split].num_examples
