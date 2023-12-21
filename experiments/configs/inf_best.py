@@ -45,11 +45,11 @@ def get_config(params) -> config_dict.ConfigDict:
 
     match (
         config.dataset,
-        config.get("angle", None),
+        # config.get("angle", None),
         config.get("num_trn", None),
         config.seed,
     ):
-        case ("MNIST", 0.0, 50_000, 0) | ("MNIST", 0.0, 37_500, 0):
+        case ("MNIST", 50_000, 0) | ("MNIST", 37_500, 0):
             # ^ xegejvhb | 59c3uexk
             config.blur_σ_init = 0.0
             config.clip_norm = 10.0
@@ -57,70 +57,70 @@ def get_config(params) -> config_dict.ConfigDict:
             config.init_lr_mult = 3e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.05
-        case ("MNIST", 0.0, 50_000, 1):  # vdfhrd8g
+        case ("MNIST", 50_000, 1):  # vdfhrd8g
             config.blur_σ_init = 0.0
             config.clip_norm = 10.0
             config.final_lr_mult = 1e-3
             config.init_lr_mult = 1e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.2
-        case ("MNIST", 0.0, 50_000, 2):  # vsnpg2te
+        case ("MNIST", 50_000, 2):  # vsnpg2te
             config.blur_σ_init = 0.0
             config.clip_norm = 10.0
             config.final_lr_mult = 3e-4
             config.init_lr_mult = 1e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.05
-        case ("MNIST", 0.0, 37_500, 1):  # y6vxr0yb
+        case ("MNIST", 37_500, 1):  # y6vxr0yb
             config.blur_σ_init = 3.0
             config.clip_norm = 10.0
             config.final_lr_mult = 3e-4
             config.init_lr_mult = 3e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.2
-        case ("MNIST", 0.0, 37_500, 2):  # smpwgumg
+        case ("MNIST", 37_500, 2):  # smpwgumg
             config.blur_σ_init = 3.0
             config.clip_norm = 3.0
             config.final_lr_mult = 1e-3
             config.init_lr_mult = 1e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.05
-        case ("MNIST", 0.0, 25_000, 0):  # kq36fzu9
+        case ("MNIST", 25_000, 0):  # kq36fzu9
             config.blur_σ_init = 0.0
             config.clip_norm = 10.0
             config.final_lr_mult = 1e-3
             config.init_lr_mult = 1e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.1
-        case ("MNIST", 0.0, 25_000, 1):  # 38kq6q8f
+        case ("MNIST", 25_000, 1):  # 38kq6q8f
             config.blur_σ_init = 3.0
             config.clip_norm = 10.0
             config.final_lr_mult = 1e-3
             config.init_lr_mult = 3e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.1
-        case ("MNIST", 0.0, 25_000, 2):  # s7pj0ucn
+        case ("MNIST", 25_000, 2):  # s7pj0ucn
             config.blur_σ_init = 0.0
             config.clip_norm = 3.0
             config.final_lr_mult = 3e-4
             config.init_lr_mult = 1e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.05
-        case ("aug_dsprites", None, None, 0):  # co5jijn1
+        case ("aug_dsprites", None, 0):  # co5jijn1
             config.blur_σ_init = 3.0
             config.clip_norm = 3.0
             config.final_lr_mult = 1e-3
             config.init_lr_mult = 3e-2
             config.lr = 1e-3
             config.warmup_steps_pct = 0.1
-        case ("aug_dsprites", None, None, 1):  # lcr9fjj6
+        case ("aug_dsprites", None, 1):  # lcr9fjj6
             config.blur_σ_init = 0.0
             config.clip_norm = 10.0
             config.final_lr_mult = 1e-3
             config.init_lr_mult = 1e-2
             config.lr = 1e-3
             config.warmup_steps_pct = 0.1
-        case ("aug_dsprites", None, None, 2):  # sup5y2kj
+        case ("aug_dsprites", None, 2):  # sup5y2kj
             config.blur_σ_init = 0.0
             config.clip_norm = 3.0
             config.final_lr_mult = 1e-3
