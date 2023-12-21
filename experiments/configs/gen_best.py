@@ -46,63 +46,59 @@ def get_config(params) -> config_dict.ConfigDict:
 
     match (
         config.dataset,
-        config.get("angle", None),
+        # config.get("angle", None),
         config.get("num_trn", None),
         config.seed,
     ):
-        case (
-            ("MNIST", 0.0, 50_000, 0)
-            | ("MNIST", 0.0, 50_000, 1)
-            | ("MNIST", 0.0, 50_000, 2)
-        ):
+        case (("MNIST", 50_000, 0) | ("MNIST", 50_000, 1) | ("MNIST", 50_000, 2)):
             config.final_lr_mult = 0.03
             config.lr = 0.003
             config.model.dropout_rate = 0.2
             config.model.num_flows = 6
             config.steps = 60000
-        case ("MNIST", 0.0, 37_500, 0):
+        case ("MNIST", 37_500, 0):
             config.final_lr_mult = 0.03
             config.lr = 0.0003
             config.model.dropout_rate = 0.2
             config.model.num_flows = 6
             config.steps = 15000
-        case ("MNIST", 0.0, 37_500, 1):
+        case ("MNIST", 37_500, 1):
             config.final_lr_mult = 0.03
             config.lr = 0.003
             config.model.dropout_rate = 0.2
             config.model.num_flows = 6
             config.steps = 30000
-        case ("MNIST", 0.0, 37_500, 2):
+        case ("MNIST", 37_500, 2):
             config.final_lr_mult = 0.03
             config.lr = 0.003
             config.model.dropout_rate = 0.2
             config.model.num_flows = 5
             config.steps = 30000
-        case ("MNIST", 0.0, 25_000, 0):
+        case ("MNIST", 25_000, 0):
             config.final_lr_mult = 0.03
             config.lr = 0.003
             config.model.dropout_rate = 0.2
             config.model.num_flows = 5
             config.steps = 7500
-        case ("MNIST", 0.0, 25_000, 1) | ("MNIST", 0.0, 25_000, 2):
+        case ("MNIST", 25_000, 1) | ("MNIST", 25_000, 2):
             config.final_lr_mult = 0.03
             config.lr = 0.003
             config.model.dropout_rate = 0.2
             config.model.num_flows = 6
             config.steps = 7500
-        case ("aug_dsprites", None, None, 0):
+        case ("aug_dsprites", None, 0):
             config.final_lr_mult = 0.3
             config.lr = 0.0003
             config.model.dropout_rate = 0.05
             config.model.num_flows = 6
             config.steps = 60000
-        case ("aug_dsprites", None, None, 1):
+        case ("aug_dsprites", None, 1):
             config.final_lr_mult = 0.03
             config.lr = 0.0003
             config.model.dropout_rate = 0.05
             config.model.num_flows = 6
             config.steps = 60000
-        case ("aug_dsprites", None, None, 2):
+        case ("aug_dsprites", None, 2):
             config.final_lr_mult = 0.3
             config.lr = 0.003
             config.model.dropout_rate = 0.05
