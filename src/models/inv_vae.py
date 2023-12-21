@@ -185,7 +185,7 @@ def create_inv_vae_state(
     opt = create_inv_vae_optimizer(params, config)
 
     return InvVaeTrainState.create(
-        apply_fn=inv_vae.apply,
+        apply_fn=INV_VAE.apply,
         params=params,
         tx=opt,
         metrics=InvVaeMetrics.empty(),
