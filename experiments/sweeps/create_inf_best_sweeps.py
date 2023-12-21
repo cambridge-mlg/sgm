@@ -6,6 +6,9 @@ PROJECT = "icml2024"
 CHECKPOINT_DIR = "/home/jua23/rds/hpc-work/learning-invariances-models"
 ANGLES = [
     0,
+    15,
+    90,
+    180,
     None,
 ]
 NUM_TRNS = [
@@ -19,7 +22,10 @@ SEEDS = [
     1,
     2,
 ]
-DATASETS = ["MNIST", "aug_dsprites"]
+DATASETS = [
+    "MNIST",
+    "aug_dsprites",
+]
 
 
 parent_path = Path(__file__).parent
