@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Optional
 
 from chex import Array, assert_rank, assert_shape
@@ -7,6 +8,10 @@ from src.transformations.affine import (
     gen_affine_matrix,
     gen_affine_matrix_no_shear,
     transform_image_with_affine_matrix,
+)
+from src.transformations.color import (
+    color_transform_image,
+    gen_hsv_in_yiq_matrix,
 )
 
 
@@ -109,3 +114,34 @@ class AffineTransformWithoutShear(Transform):
 
         if η is not None:
             self._set_matrices()
+
+
+class HueTransform(Transform):
+    def __init__(self, η: Optional[Array] = None):
+        super().__init__(n_color_params=1, η=η)
+        self.gen_color_matrix = partial(gen_hsv_in_yiq_matrix, only="hue")
+        self.transform_with_color_matrix = color_transform_image
+
+        if η is not None:
+            self._set_matrices()
+
+    def inverse(self) -> Array:
+        inv_aff_matrix = None
+        new_η = -self.η
+        inv_color_matrix = self.gen_color_matrix(new_η[self.n_aff_params :])
+        return self.create(inv_aff_matrix, inv_color_matrix, new_η)
+
+    def compose(self, other_transform) -> Array:
+        new_aff_matrix = None
+        new_η = self.η + other_transform.η
+        new_color_matrix = self.gen_color_matrix(new_η[self.n_aff_params :])
+
+        return self.create(new_aff_matrix, new_color_matrix, new_η)
+
+    def apply(self, image: Array, **kwargs) -> Array:
+        assert_rank(image, 3)
+
+        # NOTE: We always use the naive HSV transform here. The color_matrix is only used for the huber loss.
+        image = self.transform_with_color_matrix(image, self.η)
+
+        return image

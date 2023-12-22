@@ -1,7 +1,7 @@
 """Color transformations of images."""
 import jax
+from chex import Array, assert_rank, assert_shape
 from jax import numpy as jnp
-from chex import Array, assert_shape, assert_rank
 
 
 def _color_transform_image(
@@ -10,38 +10,36 @@ def _color_transform_image(
 ):
     assert_rank(image, 3)
     assert_shape(image, (None, None, 3))
-    assert_shape(η, (4,))
+    assert_shape(η, (3,))
 
     # Convert image range from [-1., 1.] to [0., 1.].
     image = (image + 1.0) / 2.0
 
-    image = _adjust_hsv_in_yiq(image, η[0], η[1], 1.0)
-
     rgb_tuple = tuple(jax.tree_map(jnp.squeeze, jnp.split(image, 3, axis=-1)))
 
     # # Convert to HSV.
-    # hsv_tuple = _rgb_to_hsv(*rgb_tuple)
+    hsv_tuple = _rgb_to_hsv(*rgb_tuple)
     # # Apply HSV transformations.
-    # hsv_tuple = _adjust_saturation(hsv_tuple, 1.0, η[1])
-    # hsv_tuple = _adjust_hue(hsv_tuple, η[0])
+    hsv_tuple = _adjust_saturation(hsv_tuple, 1.0, η[1])
+    hsv_tuple = _adjust_hue(hsv_tuple, η[0])
     # # Convert back to RGB.
-    # rgb_tuple = _hsv_to_rgb(*hsv_tuple)
+    rgb_tuple = _hsv_to_rgb(*hsv_tuple)
 
     # Apply RGB transformations.
-    rgb_tuple = _adjust_brightness(rgb_tuple, η[2])
-    rgb_tuple = _adjust_contrast(rgb_tuple, η[3])
+    # rgb_tuple = _adjust_brightness(rgb_tuple, η[2])
+    # rgb_tuple = _adjust_contrast(rgb_tuple, η[3])
 
-    image_out = jnp.stack(rgb_tuple, axis=-1)
+    image = jnp.stack(rgb_tuple, axis=-1)
 
     # Convert image range from [0., 1.] to [-1., 1.].
-    image_out = image_out * 2.0 - 1.0
-
-    return image_out
+    image = image * 2.0 - 1.0
+    return image
 
 
 def color_transform_image(
     image: Array,
     η: Array,
+    transform="hue",
 ):
     """Applies a color transformation to an image.
 
@@ -50,12 +48,14 @@ def color_transform_image(
         η: an Array with 4 entries:
         * η_0 controls hue.
         * η_1 controls saturation.
-        * η_2 controls brightness.
-        * η_3 controls contrast.
+        * η_2 controls value.
 
     Returns:
         A transformed image of same shape as the input.
     """
+    if transform == "hue":
+        assert_shape(η, (1,))
+        η = jnp.array([η[0], 0.0, 0.0])
     return _color_transform_image(image, η)
 
 
@@ -76,7 +76,7 @@ def hsv_transform_image(
         A transformed image of same shape as the input.
     """
     assert_shape(η, (2,))
-    η = jnp.array([η[0], η[1], η[2], 1.])
+    η = jnp.array([η[0], η[1], η[2], 1.0])
     return _color_transform_image(image, η)
 
 
@@ -95,7 +95,7 @@ def hue_transform_image(
         A transformed image of same shape as the input.
     """
     assert_shape(η, (1,))
-    η = jnp.array([η[0], 1., 0., 1.])
+    η = jnp.array([η[0], 1.0, 0.0, 1.0])
     return _color_transform_image(image, η)
 
 
@@ -116,9 +116,49 @@ def rgb_transform_image(
     """
     assert_shape(η, (2,))
 
-    η = jnp.array([0., 1., η[0], η[1]])
+    η = jnp.array([0.0, 1.0, η[0], η[1]])
 
     return _color_transform_image(image, η)
+
+
+def gen_hsv_in_yiq_matrix(
+    η: Array, only: str = "hue", include_yiq_matmuls: bool = False
+) -> Array:
+    if only == "hue":
+        assert_shape(η, (1,))
+        scale_saturation = 1.0
+        delta_hue = η[0]
+    elif only == "sat":
+        assert_shape(η, (1,))
+        scale_saturation = η[0]
+        delta_hue = 0.0
+    else:
+        assert_shape(η, (2,))
+        scale_saturation = η[1]
+        delta_hue = η[0]
+
+    scale_value = 1.0
+    # Construct hsv linear transformation matrix in YIQ space.
+    # https://beesbuzz.biz/code/hsv_color_transforms.php
+    yiq = jnp.array(
+        [[0.299, 0.596, 0.211], [0.587, -0.274, -0.523], [0.114, -0.322, 0.312]],
+    )
+    yiq_inverse = jnp.array(
+        [
+            [1.0, 1.0, 1.0],
+            [0.95617069, -0.2726886, -1.103744],
+            [0.62143257, -0.64681324, 1.70062309],
+        ],
+    )
+    vsu = scale_value * scale_saturation * jnp.cos(delta_hue)
+    vsw = scale_value * scale_saturation * jnp.sin(delta_hue)
+    hsv_transform = jnp.array([[scale_value, 0, 0], [0, vsu, vsw], [0, -vsw, vsu]])
+    if include_yiq_matmuls:
+        transform_matrix = yiq @ hsv_transform @ yiq_inverse
+    else:
+        transform_matrix = hsv_transform
+
+    return transform_matrix
 
 
 # Adapted from https://github.com/tensorflow/addons/blob/master/tensorflow_addons/image/distort_image_ops.py.
@@ -220,9 +260,24 @@ def _hsv_to_rgb(h, s, v):
     fmodu = dh % 2.0
     x = c * (1 - jnp.abs(fmodu - 1))
     hcat = jnp.floor(dh).astype(jnp.int32)
-    rr = jnp.where((hcat == 0) | (hcat == 5), c, jnp.where((hcat == 1) | (hcat == 4), x, 0)) + m
-    gg = jnp.where((hcat == 1) | (hcat == 2), c, jnp.where((hcat == 0) | (hcat == 3), x, 0)) + m
-    bb = jnp.where((hcat == 3) | (hcat == 4), c, jnp.where((hcat == 2) | (hcat == 5), x, 0)) + m
+    rr = (
+        jnp.where(
+            (hcat == 0) | (hcat == 5), c, jnp.where((hcat == 1) | (hcat == 4), x, 0)
+        )
+        + m
+    )
+    gg = (
+        jnp.where(
+            (hcat == 1) | (hcat == 2), c, jnp.where((hcat == 0) | (hcat == 3), x, 0)
+        )
+        + m
+    )
+    bb = (
+        jnp.where(
+            (hcat == 3) | (hcat == 4), c, jnp.where((hcat == 2) | (hcat == 5), x, 0)
+        )
+        + m
+    )
     return rr, gg, bb
 
 
