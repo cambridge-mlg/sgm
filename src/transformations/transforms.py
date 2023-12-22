@@ -185,7 +185,7 @@ class HSVTransform(Transform):
         super().__init__(n_color_params=3, η=η)
         self.gen_color_matrix = partial(gen_hsv_in_yiq_matrix, only="hue_sat_val")
         self.transform_with_color_matrix = partial(
-            color_transform_image, transform="hue_sat"
+            color_transform_image, transform="hue_sat_val"
         )
 
         if η is not None:
