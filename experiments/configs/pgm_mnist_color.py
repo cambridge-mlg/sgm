@@ -33,7 +33,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 0.0
 
-    config.inf_steps = 20_000
+    config.inf_steps = 10_000
     config.inf_lr = 3e-4
     config.inf_init_lr_mult = 1 / 3
     config.inf_final_lr_mult = 1 / 90
@@ -64,10 +64,10 @@ def get_config(params) -> config_dict.ConfigDict:
 
     config.train_split = f"train[{num_val}:{end_index}]"
     config.pp_train = (
-        f'to_rgb(0)|value_range(-1, 1)|random_hue(max_delta={hue})|keep(["image"])'
+        f'to_rgb(0)|random_hue(max_delta={hue})|value_range(-1, 1)|keep(["image"])'
     )
     config.val_split = f"train[:{num_val}]"
-    config.pp_eval = f'to_rgb(0)|value_range(-1, 1)|random_hue(max_delta={hue})|keep(["image", "label"])'
+    config.pp_eval = f'to_rgb(0)|random_hue(max_delta={hue})|value_range(-1, 1)|keep(["image", "label"])'
 
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
