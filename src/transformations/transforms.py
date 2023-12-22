@@ -145,3 +145,69 @@ class HueTransform(Transform):
         image = self.transform_with_color_matrix(image, self.η)
 
         return image
+
+
+class HueSaturationTransform(Transform):
+    def __init__(self, η: Optional[Array] = None):
+        super().__init__(n_color_params=2, η=η)
+        self.gen_color_matrix = partial(gen_hsv_in_yiq_matrix, only="hue_sat")
+        self.transform_with_color_matrix = partial(
+            color_transform_image, transform="hue_sat"
+        )
+
+        if η is not None:
+            self._set_matrices()
+
+    def inverse(self) -> Array:
+        inv_aff_matrix = None
+        new_η = -self.η
+        inv_color_matrix = self.gen_color_matrix(new_η[self.n_aff_params :])
+        return self.create(inv_aff_matrix, inv_color_matrix, new_η)
+
+    def compose(self, other_transform) -> Array:
+        new_aff_matrix = None
+        new_η = self.η + other_transform.η
+        new_color_matrix = self.gen_color_matrix(new_η[self.n_aff_params :])
+
+        return self.create(new_aff_matrix, new_color_matrix, new_η)
+
+    def apply(self, image: Array, **kwargs) -> Array:
+        assert_rank(image, 3)
+
+        # NOTE: We always use the naive HSV transform here. The color_matrix is only used for the huber loss.
+        image = self.transform_with_color_matrix(image, self.η)
+
+        return image
+
+
+class HSVTransform(Transform):
+    def __init__(self, η: Optional[Array] = None):
+        super().__init__(n_color_params=3, η=η)
+        self.gen_color_matrix = partial(gen_hsv_in_yiq_matrix, only="hue_sat_val")
+        self.transform_with_color_matrix = partial(
+            color_transform_image, transform="hue_sat"
+        )
+
+        if η is not None:
+            self._set_matrices()
+
+    def inverse(self) -> Array:
+        inv_aff_matrix = None
+        new_η = -self.η
+        inv_color_matrix = self.gen_color_matrix(new_η[self.n_aff_params :])
+        return self.create(inv_aff_matrix, inv_color_matrix, new_η)
+
+    def compose(self, other_transform) -> Array:
+        new_aff_matrix = None
+        new_η = self.η + other_transform.η
+        new_color_matrix = self.gen_color_matrix(new_η[self.n_aff_params :])
+
+        return self.create(new_aff_matrix, new_color_matrix, new_η)
+
+    def apply(self, image: Array, **kwargs) -> Array:
+        assert_rank(image, 3)
+
+        # NOTE: We always use the naive HSV transform here. The color_matrix is only used for the huber loss.
+        image = self.transform_with_color_matrix(image, self.η)
+
+        return image

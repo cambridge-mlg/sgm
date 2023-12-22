@@ -1,6 +1,6 @@
 from ml_collections import config_dict
 
-from src.transformations.transforms import HueTransform
+from src.transformations.transforms import HSVTransform
 
 
 def get_config(params) -> config_dict.ConfigDict:
@@ -52,9 +52,9 @@ def get_config(params) -> config_dict.ConfigDict:
     # Linearly increase MAE loss mult. from 0 to 1 (pairwise diffs between log-likelihoods for augmented samples)
     config.mae_loss_mult_initial = 0.0
     config.mae_loss_mult_final = 1.0
-    config.augment_bounds = (0.5,)
-    config.augment_offset = (0.5,)
-    config.eval_augment_bounds = (0.5,)
+    config.augment_bounds = (0.5, 2.301, 0.51)
+    config.augment_offset = (0.5, 0.0, 0.0)
+    config.eval_augment_bounds = (0.5, 2.301, 0.51)
 
     config.gen_steps = 10_000
     config.gen_lr = 2.7e-3
@@ -63,11 +63,9 @@ def get_config(params) -> config_dict.ConfigDict:
     config.gen_warmup_steps = 1_000
 
     config.train_split = f"train[{num_val}:{end_index}]"
-    config.pp_train = (
-        f'to_rgb(0)|random_hue(max_delta={hue})|value_range(-1, 1)|keep(["image"])'
-    )
+    config.pp_train = f'to_rgb(0)|random_saturation(min_factor=0.6, max_factor=0.9)|random_hue(max_delta={hue})|value_range(-1, 1)|keep(["image"])'
     config.val_split = f"train[:{num_val}]"
-    config.pp_eval = f'to_rgb(0)|random_hue(max_delta={hue})|value_range(-1, 1)|keep(["image", "label"])'
+    config.pp_eval = f'to_rgb(0)|random_saturation(min_factor=0.6, max_factor=0.9)|random_hue(max_delta={hue})|value_range(-1, 1)|keep(["image", "label"])'
 
     config.model = config_dict.ConfigDict()
     config.model.inference = config_dict.ConfigDict()
@@ -75,7 +73,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.inference.bounds = config.augment_bounds
     config.model.inference.squash_to_bounds = False
     config.model.inference.hidden_dims = (1024, 512, 256, 128)
-    config.model.inference.transform = HueTransform
+    config.model.inference.transform = HSVTransform
 
     config.model.generative = config_dict.ConfigDict()
     config.model.generative.bounds = config.augment_bounds
@@ -86,6 +84,6 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.generative.conditioner = config_dict.ConfigDict()
     config.model.generative.conditioner.hidden_dims = (256, 256)
     config.model.generative.squash_to_bounds = config.model.inference.squash_to_bounds
-    config.model.generative.transform = HueTransform
+    config.model.generative.transform = HSVTransform
 
     return config

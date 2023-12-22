@@ -1,7 +1,23 @@
 """Color transformations of images."""
 import jax
 from chex import Array, assert_rank, assert_shape
+from jax import custom_jvp
 from jax import numpy as jnp
+
+
+@custom_jvp
+def passthrough_clip(x):
+    """jnp.clip with passthrough gradients"""
+    return jnp.clip(x, a_min=0.0, a_max=1.0)
+
+
+@passthrough_clip.defjvp
+def passthrough_clip_jvp(primals, tangents):
+    x = primals[0]
+    x_dot = tangents[0]
+    primal_out = passthrough_clip(x)
+    tangent_out = x_dot
+    return primal_out, tangent_out
 
 
 def _color_transform_image(
@@ -22,6 +38,7 @@ def _color_transform_image(
     # # Apply HSV transformations.
     hsv_tuple = _adjust_saturation(hsv_tuple, 1.0, η[1])
     hsv_tuple = _adjust_hue(hsv_tuple, η[0])
+    hsv_tuple = _adjust_value(hsv_tuple, 1.0, η[2])
     # # Convert back to RGB.
     rgb_tuple = _hsv_to_rgb(*hsv_tuple)
 
@@ -56,6 +73,12 @@ def color_transform_image(
     if transform == "hue":
         assert_shape(η, (1,))
         η = jnp.array([η[0], 0.0, 0.0])
+    elif transform == "hue_sat":
+        assert_shape(η, (2,))
+        η = jnp.array([η[0], η[1], 0.0])
+    elif transform == "hue_sat_val":
+        assert_shape(η, (3,))
+        η = jnp.array([η[0], η[1], η[2]])
     return _color_transform_image(image, η)
 
 
@@ -128,16 +151,23 @@ def gen_hsv_in_yiq_matrix(
         assert_shape(η, (1,))
         scale_saturation = 1.0
         delta_hue = η[0]
+        scale_value = 1.0
     elif only == "sat":
         assert_shape(η, (1,))
         scale_saturation = η[0]
         delta_hue = 0.0
-    else:
+        scale_value = 1.0
+    elif only == "hue_sat":
         assert_shape(η, (2,))
         scale_saturation = η[1]
         delta_hue = η[0]
+        scale_value = 1.0
+    elif only == "hue_sat_val":
+        assert_shape(η, (3,))
+        scale_saturation = η[1]
+        delta_hue = η[0]
+        scale_value = η[2]
 
-    scale_value = 1.0
     # Construct hsv linear transformation matrix in YIQ space.
     # https://beesbuzz.biz/code/hsv_color_transforms.php
     yiq = jnp.array(
@@ -281,9 +311,20 @@ def _hsv_to_rgb(h, s, v):
     return rr, gg, bb
 
 
-def _adjust_saturation(hsv_tuple, factor, delta):
+def _adjust_saturation(hsv_tuple, _, delta):
     h, s, v = hsv_tuple
-    return h, jnp.clip((s + delta) * factor, 0.0, 1.0), v
+
+    s_new = s * (jnp.exp(delta))
+
+    return h, passthrough_clip(s_new), v
+
+
+def _adjust_value(hsv_tuple, _, delta):
+    h, s, v = hsv_tuple
+
+    v_new = v * (jnp.exp(delta))
+
+    return h, s, passthrough_clip(v_new)
 
 
 def _adjust_hue(hsv_tuple, delta):
