@@ -51,6 +51,6 @@ def get_config(params) -> config_dict.ConfigDict:
         num_trn=config.get("num_trn", None),
         num_val=config.num_val,
     )
-    config.test_split = None
+    config.test_split = ""
 
     return config
