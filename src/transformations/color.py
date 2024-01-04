@@ -76,7 +76,7 @@ def hsv_transform_image(
         A transformed image of same shape as the input.
     """
     assert_shape(η, (2,))
-    η = jnp.array([η[0], η[1], η[2], 1.])
+    η = jnp.array([η[0], η[1], η[2], 1.0])
     return _color_transform_image(image, η)
 
 
@@ -95,7 +95,7 @@ def hue_transform_image(
         A transformed image of same shape as the input.
     """
     assert_shape(η, (1,))
-    η = jnp.array([η[0], 1., 0., 1.])
+    η = jnp.array([η[0], 1.0, 0.0, 1.0])
     return _color_transform_image(image, η)
 
 
@@ -116,7 +116,7 @@ def rgb_transform_image(
     """
     assert_shape(η, (2,))
 
-    η = jnp.array([0., 1., η[0], η[1]])
+    η = jnp.array([0.0, 1.0, η[0], η[1]])
 
     return _color_transform_image(image, η)
 
@@ -220,9 +220,24 @@ def _hsv_to_rgb(h, s, v):
     fmodu = dh % 2.0
     x = c * (1 - jnp.abs(fmodu - 1))
     hcat = jnp.floor(dh).astype(jnp.int32)
-    rr = jnp.where((hcat == 0) | (hcat == 5), c, jnp.where((hcat == 1) | (hcat == 4), x, 0)) + m
-    gg = jnp.where((hcat == 1) | (hcat == 2), c, jnp.where((hcat == 0) | (hcat == 3), x, 0)) + m
-    bb = jnp.where((hcat == 3) | (hcat == 4), c, jnp.where((hcat == 2) | (hcat == 5), x, 0)) + m
+    rr = (
+        jnp.where(
+            (hcat == 0) | (hcat == 5), c, jnp.where((hcat == 1) | (hcat == 4), x, 0)
+        )
+        + m
+    )
+    gg = (
+        jnp.where(
+            (hcat == 1) | (hcat == 2), c, jnp.where((hcat == 0) | (hcat == 3), x, 0)
+        )
+        + m
+    )
+    bb = (
+        jnp.where(
+            (hcat == 3) | (hcat == 4), c, jnp.where((hcat == 2) | (hcat == 5), x, 0)
+        )
+        + m
+    )
     return rr, gg, bb
 
 

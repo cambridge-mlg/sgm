@@ -32,7 +32,9 @@ def get_config() -> config_dict.ConfigDict:
     # config.aug_dsprites.heart_distribution.orientation = DistributionConfig(
     #     "delta", {"value": 0.0}
     # )
-    config.aug_dsprites.heart_distribution.orientation = f"uniform(low=0.0, high={2*np.pi})"
+    config.aug_dsprites.heart_distribution.orientation = (
+        f"uniform(low=0.0, high={2*np.pi})"
+    )
     # config.aug_dsprites.heart_distribution.orientation = config_dict.ConfigDict()
     # config.aug_dsprites.heart_distribution.orientation.type = "uniform"
     # config.aug_dsprites.heart_distribution.orientation.kwargs = config_dict.ConfigDict()

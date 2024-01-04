@@ -551,9 +551,12 @@ def make_transformation_inference_train_and_eval(
                 return optax.squared_error(x2, x2_recon).mean()
 
             # Return MSE of 0 if there is no label match
-            return jax.vmap(per_example_paired_image_mse, in_axes=(0, 0, 0))(
-                xs, paired_xs, random.split(sample_rng, num_images)
-            ), has_matching
+            return (
+                jax.vmap(per_example_paired_image_mse, in_axes=(0, 0, 0))(
+                    xs, paired_xs, random.split(sample_rng, num_images)
+                ),
+                has_matching,
+            )
 
         label_paired_image_mse, has_matching = mse_same_label_examples(
             batch["image"][0], batch["label"][0], batch["mask"][0], step_rng
