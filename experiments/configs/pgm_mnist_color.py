@@ -71,7 +71,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.inference = config_dict.ConfigDict()
     config.model.inference.offset = config.augment_offset
     config.model.inference.bounds = config.augment_bounds
-    config.model.inference.squash_to_bounds = False
+    config.model.inference.squash_to_bounds = True
     config.model.inference.hidden_dims = (1024, 512, 256, 128)
     config.model.inference.transform = HSVTransform
 

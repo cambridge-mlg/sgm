@@ -183,7 +183,9 @@ def affine_transform_image(
     assert_shape(η, (6,))
 
     T = gen_affine_matrix(η)
-    return transform_image_with_affine_matrix(image, T, fill_mode=fill_mode, fill_value=fill_value, order=order)
+    return transform_image_with_affine_matrix(
+        image, T, fill_mode=fill_mode, fill_value=fill_value, order=order
+    )
 
 
 def rotate_image(

@@ -95,8 +95,10 @@ def clipped_adamw(learning_rate, norm, weight_decay: float = 1e-4):
     )
 
 
-def huber_loss(target: float, pred: float, slope: float = 1.0, radius: float = 1.0) -> float:
-    """Huber loss. Separate out delta (which normally controls both the slope of the linear behaviour, 
+def huber_loss(
+    target: float, pred: float, slope: float = 1.0, radius: float = 1.0
+) -> float:
+    """Huber loss. Separate out delta (which normally controls both the slope of the linear behaviour,
     and the radius of the quadratic behaviour) into 2 separate terms.
 
     Args:
@@ -115,5 +117,5 @@ def huber_loss(target: float, pred: float, slope: float = 1.0, radius: float = 1
     return jnp.where(
         abs_diff > radius,
         slope * abs_diff - 0.5 * slope * radius,
-        (0.5 * slope / radius) * abs_diff ** 2,
+        (0.5 * slope / radius) * abs_diff**2,
     )

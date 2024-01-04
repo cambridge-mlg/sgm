@@ -29,7 +29,8 @@ def plot_img_array(array, ncol=16, padding=2, pad_value=0.0, title=None):
             if k >= nmaps:
                 break
             grid = grid.at[
-                y * height + padding : (y + 1) * height, x * width + padding : (x + 1) * width
+                y * height + padding : (y + 1) * height,
+                x * width + padding : (x + 1) * width,
             ].set(array[k])
             k = k + 1
 

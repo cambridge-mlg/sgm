@@ -76,6 +76,7 @@ def main_with_wandb(_):
         # Run main:
         main(config, run)
 
+
 def main(config, run):
     # --- Make directories for saving ckeckpoints/logs ---
     output_dir = config.get(
@@ -120,7 +121,9 @@ def main(config, run):
     proto_params = flax.core.freeze(variables["params"])
 
     proto_state_rng, state_rng = random.split(state_rng)
-    proto_state = create_transformation_inference_state(proto_params, proto_state_rng, config)
+    proto_state = create_transformation_inference_state(
+        proto_params, proto_state_rng, config
+    )
 
     train_step_proto, eval_step_proto = make_transformation_inference_train_and_eval(
         config, proto_model
@@ -134,10 +137,8 @@ def main(config, run):
         xhat = transform_image(x, -η, order=config.interpolation_order)
         return xhat
 
-    plot_data_samples_canonicalizations = (
-        construct_plot_data_samples_canonicalizations(
-            get_prototype_fn=get_prototype
-        )
+    plot_data_samples_canonicalizations = construct_plot_data_samples_canonicalizations(
+        get_prototype_fn=get_prototype
     )
 
     def plot_and_log_data_samples_canonicalizations(state, batch):
@@ -153,9 +154,7 @@ def main(config, run):
 
     def plot_and_log_data_augmented_samples_canonicalizations(state, batch):
         fig = plot_augmented_data_samples_canonicalizations(state, batch)
-        wandb.log(
-            {"prototypes_on_augmented": wandb.Image(fig)}, step=state.step
-        )
+        wandb.log({"prototypes_on_augmented": wandb.Image(fig)}, step=state.step)
         plt.close(fig)
 
     plot_training_augmented_samples = construct_plot_training_augmented_samples(
@@ -166,7 +165,7 @@ def main(config, run):
         fig = plot_training_augmented_samples(state, batch)
         wandb.log({"training_samples_augmented": wandb.Image(fig)}, step=state.step)
         plt.close(fig)
-    
+
     def plot_and_log_training_samples(state, batch):
         fig = plot_training_samples(state, batch)
         wandb.log({"training_samples": wandb.Image(fig)}, step=state.step)
@@ -213,7 +212,9 @@ def main(config, run):
     def prototype_function(x, rng):
         η = proto_model.apply(
             {"params": proto_final_state.params}, x, train=False
-        ).sample(seed=rng)  # type: ignore
+        ).sample(
+            seed=rng
+        )  # type: ignore
         return η
 
     if config.dataset == "aug_dsprites":
