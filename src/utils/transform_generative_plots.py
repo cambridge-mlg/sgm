@@ -8,20 +8,23 @@ from scipy.stats import gaussian_kde
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from src.transformations.affine import gen_affine_matrix_no_shear, transform_image_with_affine_matrix
+from src.transformations.affine import (
+    gen_affine_matrix_no_shear,
+    transform_image_with_affine_matrix,
+)
 
 
 def plot_transform_gen_model_training_metrics(history) -> Figure:
     colors = sns.color_palette("husl", 3)
 
     # plot the training history
-    steps, loss, log_p_η_x_hat, mae, lr_gen,  = history.collect(
-        "steps",
-        "loss",
-        "log_p_η_x_hat",
-        "mae",
-        "lr_gen"
-    )
+    (
+        steps,
+        loss,
+        log_p_η_x_hat,
+        mae,
+        lr_gen,
+    ) = history.collect("steps", "loss", "log_p_η_x_hat", "mae", "lr_gen")
     mae_loss_mult = history.collect("mae_loss_mult")
     steps_test, loss_test, log_p_η_x_hat_test, mae_test = history.collect(
         "steps", "loss_test", "log_p_η_x_hat_test", "mae_test"
@@ -38,8 +41,15 @@ def plot_transform_gen_model_training_metrics(history) -> Figure:
         ["loss", "log_p_η_x_hat", "mae"],
         axs,
     ):
-        ax.plot(steps, train_metric, label=f"train {train_metric[-1]:.4f}", color=colors[0])
-        ax.plot(steps_test, test_metric, label=f"test  {test_metric[-1]:.4f}", color=colors[1])
+        ax.plot(
+            steps, train_metric, label=f"train {train_metric[-1]:.4f}", color=colors[0]
+        )
+        ax.plot(
+            steps_test,
+            test_metric,
+            label=f"test  {test_metric[-1]:.4f}",
+            color=colors[1],
+        )
         ax.legend()
         ax.set_title(metric_name)
 
@@ -48,12 +58,14 @@ def plot_transform_gen_model_training_metrics(history) -> Figure:
     multiplier_ax = lr_ax.twinx()
     # par2 = host.twinx()
 
-    p1, = lr_ax.plot(steps, lr_gen, "--", label=f"lr_gen {lr_gen[-1]:.4f}", color=colors[0])
-    p2, = multiplier_ax.plot(
+    (p1,) = lr_ax.plot(
+        steps, lr_gen, "--", label=f"lr_gen {lr_gen[-1]:.4f}", color=colors[0]
+    )
+    (p2,) = multiplier_ax.plot(
         steps,
         mae_loss_mult,
         label=f"mae_loss_mult {mae_loss_mult[-1]:.4f}",
-        color=colors[2]
+        color=colors[2],
     )
     lines = [p1, p2]
     lr_ax.legend(lines, [l.get_label() for l in lines])
@@ -71,8 +83,8 @@ def plot_transform_gen_model_training_metrics(history) -> Figure:
     # par2.yaxis.label.set_color(p3.get_color())
 
     tkw = dict(size=4, width=1.5)
-    lr_ax.tick_params(axis='y', colors=p1.get_color(), **tkw)
-    multiplier_ax.tick_params(axis='y', colors=p2.get_color(), **tkw)
+    lr_ax.tick_params(axis="y", colors=p1.get_color(), **tkw)
+    multiplier_ax.tick_params(axis="y", colors=p2.get_color(), **tkw)
     # par2.tick_params(axis='y', colors=p3.get_color(), **tkw)
 
     axs[-1].set_xlim(min(steps), max(steps))
@@ -83,30 +95,38 @@ def plot_transform_gen_model_training_metrics(history) -> Figure:
     return fig
 
 
-
 # function to plot the histograms of p(η|x_hat) in each dimmension
-def plot_generative_histograms(x, rng, prototype_function, transform_gen_distribution_function, interpolation_order, fig: Optional[Figure]=None) -> Figure:
+def plot_generative_histograms(
+    x,
+    rng,
+    prototype_function,
+    transform_gen_distribution_function,
+    interpolation_order,
+    fig: Optional[Figure] = None,
+) -> Figure:
     rng_proto, rng_gen_samples = jax.random.split(rng, 2)
     η = prototype_function(x, rng_proto)
     η_aff_mat = gen_affine_matrix_no_shear(η)
     η_aff_mat_inv = jnp.linalg.inv(η_aff_mat)
-    xhat = transform_image_with_affine_matrix(x, η_aff_mat_inv, order=interpolation_order)
+    xhat = transform_image_with_affine_matrix(
+        x, η_aff_mat_inv, order=interpolation_order
+    )
 
     # p_H_x_hat = gen_model.apply({"params": gen_final_state.params}, xhat)
     p_H_x_hat = transform_gen_distribution_function(xhat)
-    
+
     ηs_p = p_H_x_hat.sample(seed=rng_gen_samples, sample_shape=(20_000,))
 
     transform_param_dim = η.shape[0]
     if fig is None:
-        fig = plt.figure(figsize=(3*(transform_param_dim+2), 3))
+        fig = plt.figure(figsize=(3 * (transform_param_dim + 2), 3))
     axs = fig.subplots(nrows=1, ncols=transform_param_dim + 2)
 
-    axs[0].imshow(x, cmap='gray', vmin=-1, vmax=1)
-    axs[0].axis('off')
+    axs[0].imshow(x, cmap="gray", vmin=-1, vmax=1)
+    axs[0].axis("off")
     axs[0].set_title("x")
-    axs[1].imshow(xhat, cmap='gray', vmin=-1, vmax=1)
-    axs[1].axis('off')
+    axs[1].imshow(xhat, cmap="gray", vmin=-1, vmax=1)
+    axs[1].axis("off")
     axs[1].set_title("x_hat")
 
     for i, ax in enumerate(axs[2:]):
