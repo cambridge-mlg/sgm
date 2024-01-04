@@ -149,7 +149,7 @@ def main(config, run, prototype_model_dir: str):
         {"params": gen_init_rng, "sample": gen_init_rng},
         jnp.empty((64, 64, 1))
         if "dsprites" in config.dataset
-        else jnp.empty((28, 28, 1)), 
+        else jnp.empty((28, 28, 1)),
         η=jnp.empty((5,)),
         train=False,
     )

@@ -13,7 +13,10 @@ import scipy.stats
 import tensorflow as tf
 from jax import random
 
-from src.transformations.affine import gen_affine_matrix_no_shear, transform_image_with_affine_matrix
+from src.transformations.affine import (
+    gen_affine_matrix_no_shear,
+    transform_image_with_affine_matrix,
+)
 
 
 # --- Schema classes for the configuration of the augmented DSprites dataset:
@@ -43,8 +46,10 @@ def expected_kwargs_for_distribution_type(
         case DistributionType.DELTA:
             return {"value"}
         case _:
-            raise NotImplementedError(f"Invalid distribution type {distribution_type}."
-                                      f"Expected one of {DistributionType.__members__}")
+            raise NotImplementedError(
+                f"Invalid distribution type {distribution_type}."
+                f"Expected one of {DistributionType.__members__}"
+            )
 
 
 class ShapeDistributionConfig(Protocol):
@@ -174,12 +179,14 @@ def construct_augmented_dsprites(
         log_p: np.ndarray, mask: np.ndarray, total_prob: float
     ) -> np.ndarray:
         """Normalise the probs to sum up to total_prob"""
-        if total_prob == 0.:
+        if total_prob == 0.0:
             return np.where(mask, -np.infty, log_p)
         else:
             return np.where(
                 mask,
-                log_p - scipy.special.logsumexp(np.where(mask, log_p, -np.infty)) + np.log(total_prob),
+                log_p
+                - scipy.special.logsumexp(np.where(mask, log_p, -np.infty))
+                + np.log(total_prob),
                 log_p,
             )
 
@@ -363,15 +370,25 @@ def convert_str_to_distribution_config(
         case str():
             # expecting a string of the form "distribution_type(kwargs1=val1, ....)"
             # e.g. "uniform(low=0.0, high=1.0)"
-            assert distribution_conf.endswith(")"), "Expecting a string of the form 'distribution_type(kwargs1=val1, ....)'"
+            assert distribution_conf.endswith(
+                ")"
+            ), "Expecting a string of the form 'distribution_type(kwargs1=val1, ....)'"
             distribution_type = distribution_conf.split("(")[0]
-            kwargs = [kwarg_val_pair.split("=") for kwarg_val_pair in distribution_conf.strip().replace(" ", "").split("(")[1][:-1].split(",")]
+            kwargs = [
+                kwarg_val_pair.split("=")
+                for kwarg_val_pair in distribution_conf.strip()
+                .replace(" ", "")
+                .split("(")[1][:-1]
+                .split(",")
+            ]
             return DistributionConfig(
                 type=distribution_type,
-                kwargs={kwarg: float(val) for kwarg, val in kwargs}
+                kwargs={kwarg: float(val) for kwarg, val in kwargs},
             )
         case _:
-            raise NotImplemented(f"Invalid distribution configuration {distribution_conf}")
+            raise NotImplemented(
+                f"Invalid distribution configuration {distribution_conf}"
+            )
 
 
 def get_log_prob_func(
@@ -480,6 +497,7 @@ def plot_prototypes_by_shape(prototype_function, batch):
     import matplotlib.pyplot as plt
 
     rng = random.PRNGKey(0)
+
     def get_proto(x):
         η = prototype_function(x, rng)
         xhat = transform_image_with_affine_matrix(
@@ -522,9 +540,7 @@ def plot_prototypes_by_shape(prototype_function, batch):
     )
     ncols = 10
     imshow_kwargs = dict(cmap="gray", vmin=vmin, vmax=vmax)
-    fig, axes = plt.subplots(
-        ncols=ncols, nrows=6, figsize=(ncols * 1.5, 1.5 * 6)
-    )
+    fig, axes = plt.subplots(ncols=ncols, nrows=6, figsize=(ncols * 1.5, 1.5 * 6))
     for ax in axes.ravel():
         ax.axis("off")
     for i in range(ncols):

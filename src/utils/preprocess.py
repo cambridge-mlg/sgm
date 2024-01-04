@@ -252,31 +252,35 @@ class MoveKey:
 
         return features
 
+
 def _maybe_repeat(arg, n_reps):
-  if not isinstance(arg, abc.Sequence):
-    arg = (arg,) * n_reps
-  return arg
+    if not isinstance(arg, abc.Sequence):
+        arg = (arg,) * n_reps
+    return arg
+
 
 @dataclasses.dataclass
 class Resize:
-  """Resizes an image to a given size.
+    """Resizes an image to a given size.
 
-  Attributes:
-    resize_size: Either an integer H, where H is both the new height and width
-      of the resized image, or a list or tuple [H, W] of integers, where H and W
-      are new image's height and width respectively.
-    key: Key of the data to be processed.
-    key_result: Key under which to store the result (same as `key` if None).
-  """
+    Attributes:
+      resize_size: Either an integer H, where H is both the new height and width
+        of the resized image, or a list or tuple [H, W] of integers, where H and W
+        are new image's height and width respectively.
+      key: Key of the data to be processed.
+      key_result: Key under which to store the result (same as `key` if None).
+    """
 
-  resize_size: Union[int, Tuple[int, int], List[int]]
-  method: str = "bilinear"
-  key: str = "image"
-  key_result: Optional[str] = None
+    resize_size: Union[int, Tuple[int, int], List[int]]
+    method: str = "bilinear"
+    key: str = "image"
+    key_result: Optional[str] = None
 
-  def __call__(self, features: Features) -> Features:
-    image = features[self.key]
-    resize_size = _maybe_repeat(self.resize_size, 2)
-    resized_image = tf.cast(tf.image.resize(image, resize_size), image.dtype)  # pytype: disable=attribute-error  # allow-recursive-types
-    features[self.key_result or self.key] = resized_image
-    return features
+    def __call__(self, features: Features) -> Features:
+        image = features[self.key]
+        resize_size = _maybe_repeat(self.resize_size, 2)
+        resized_image = tf.cast(
+            tf.image.resize(image, resize_size), image.dtype
+        )  # pytype: disable=attribute-error  # allow-recursive-types
+        features[self.key_result or self.key] = resized_image
+        return features
