@@ -261,10 +261,16 @@ def make_transformation_inference_train_and_eval(
             # to settle on one of the modes. The square loss would make the model settle inbetween
             # the modes (at the mean of the modes)
             # TODO: Change the matrix being added to the loss function here.
+            if composed_transform.aff_matrix is None:
+                matrix = composed_transform.color_matrix
+            elif composed_transform.color_matrix is None:
+                matrix = composed_transform.aff_matrix
+            else:
+                matrix = composed_transform.aff_matrix @ composed_transform.color_matrix
             η_recon_loss = huber_loss(
                 # Measure how close the transformation is to identity
-                (composed_transform.aff_matrix)[:2, :].ravel(),
-                jnp.eye(3, dtype=composed_transform.aff_matrix.dtype)[:2, :].ravel(),
+                matrix[:2, :].ravel(),
+                jnp.eye(3, dtype=matrix.dtype)[:2, :].ravel(),
                 slope=1,
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
@@ -376,10 +382,16 @@ def make_transformation_inference_train_and_eval(
             # to settle on one of the modes. The square loss would make the model settle inbetween
             # the modes (at the mean of the modes)
             # TODO: Change the way the matrix is returned.
+            if composed_transform.aff_matrix is None:
+                matrix = composed_transform.color_matrix
+            elif composed_transform.color_matrix is None:
+                matrix = composed_transform.aff_matrix
+            else:
+                matrix = composed_transform.aff_matrix @ composed_transform.color_matrix
             η_recon_loss = huber_loss(
                 # Measure how close the transformation is to identity
-                (composed_transform.aff_matrix)[:2, :].ravel(),
-                jnp.eye(3, dtype=composed_transform.aff_matrix.dtype)[:2, :].ravel(),
+                matrix[:2, :].ravel(),
+                jnp.eye(3, dtype=matrix.dtype)[:2, :].ravel(),
                 slope=1,
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
@@ -415,7 +427,7 @@ def make_transformation_inference_train_and_eval(
         loss = (
             config.x_mse_loss_mult * x_mse
             + state.η_loss_mult * η_recon_loss
-            + config.invertibility_loss_mult * invertibility_loss
+            # + config.invertibility_loss_mult * invertibility_loss
         )
 
         return loss, {
