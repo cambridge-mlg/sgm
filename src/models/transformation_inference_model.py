@@ -1,31 +1,31 @@
 import functools
 from typing import Callable, Optional, Sequence
 
-import numpy as np
+import ciclo
+import distrax
+import flax
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import jax.random as random
-from jax import lax
-from jax.scipy import linalg
+import numpy as np
+import optax
 from chex import PRNGKey
-import flax
-import flax.linen as nn
+from clu import metrics
+from flax import traverse_util
 from flax.linen import initializers as init
 from flax.training import train_state
-from flax import traverse_util
-import distrax
-from clu import metrics
-import optax
-import ciclo
-from src.models.convnext import ConvNeXt, get_convnext_constructor
+from jax import lax
 
+from src.models.convnext import ConvNeXt, get_convnext_constructor
 from src.models.utils import clipped_adamw, huber_loss
-from src.utils.types import KwArgs
 from src.transformations.affine import (
-    transform_image_with_affine_matrix,
     gen_affine_matrix_no_shear,
+    transform_image_with_affine_matrix,
 )
+from src.transformations.transforms import AffineTransformWithoutShear, Transform
 from src.utils.blur import gaussian_filter2d
+from src.utils.types import KwArgs
 
 
 class TransformationInferenceNet(nn.Module):
@@ -41,6 +41,7 @@ class TransformationInferenceNet(nn.Module):
     # default factory kwargs for convnext
     convnext_kwargs: Optional[KwArgs] = None
     use_layernorm: bool = True
+    transform: Transform = AffineTransformWithoutShear
 
     def setup(self) -> None:
         self.bounds_array = jnp.array(self.bounds)
@@ -137,15 +138,9 @@ def make_transformation_inference_train_and_eval(
     gen_affine_augment = gen_affine_matrix_no_shear
     gen_affine_model = gen_affine_matrix_no_shear
 
-    def invertibility_loss_fn(x_, affine_mat, affine_mat_inv):
-        transformed_x = transform_image_fn(
-            x_,
-            affine_mat,
-        )
-        untransformed_x = transform_image_fn(
-            transformed_x,
-            affine_mat_inv,
-        )
+    def invertibility_loss_fn(x_, affine_transform, inv_affine_transform):
+        transformed_x = affine_transform.apply(x_)
+        untransformed_x = inv_affine_transform.apply(transformed_x)
         mse = optax.squared_error(
             untransformed_x,
             x_,
@@ -229,28 +224,29 @@ def make_transformation_inference_train_and_eval(
                 )
 
             η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
-            η_rand1_aff_mat = gen_affine_augment(η_rand1)
+            η_rand1_transform = model.transform(η_rand1)
+            x_rand1 = η_rand1_transform.apply(x)
 
-            x_rand1 = transform_image_fn(x, η_rand1_aff_mat)
+            # η_rand1_aff_mat = gen_affine_augment(η_rand1)
+            # x_rand1 = transform_image_fn(x, η_rand1_aff_mat)
+
             q_H_x_rand1 = model.apply({"params": params}, x_rand1, train)
             q_H_x = model.apply({"params": params}, x, train)
 
             η_x_rand1 = q_H_x_rand1.sample(seed=rng_sample1)
             η_x = q_H_x.sample(seed=rng_sample2)
-            # Get the affine matrices
-            η_x_rand1_aff_mat = gen_affine_model(η_x_rand1)
-            η_x_rand1_inv_aff_mat = linalg.inv(
-                η_x_rand1_aff_mat
-            )  # Inv. faster than matrix exponential
-            η_x_aff_mat = gen_affine_model(η_x)
-            η_x_inv_aff_mat = linalg.inv(η_x_aff_mat)
+
+            η_x_transform = model.transform(η_x)
+            η_x_rand1_transform = model.transform(η_x_rand1)
+            η_x_rand1_inv_transform = η_x_rand1_transform.inverse()
+
+            composed_transform = (
+                η_x_transform << η_x_rand1_inv_transform << η_rand1_transform
+            )
 
             x_mse = optax.squared_error(
                 x,
-                transform_image_fn(
-                    x,
-                    η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_aff_mat,
-                ),
+                composed_transform.apply(x),
             ).mean()
 
             difficulty = optax.squared_error(x_rand1, x).mean()
@@ -264,18 +260,17 @@ def make_transformation_inference_train_and_eval(
             # because we expect the error distribution to be multimodal, and we want the model
             # to settle on one of the modes. The square loss would make the model settle inbetween
             # the modes (at the mean of the modes)
+            # TODO: Change the matrix being added to the loss function here.
             η_recon_loss = huber_loss(
                 # Measure how close the transformation is to identity
-                (η_rand1_aff_mat @ η_x_rand1_inv_aff_mat @ η_x_aff_mat)[:2, :].ravel(),
-                jnp.eye(3, dtype=η_rand1_aff_mat.dtype)[:2, :].ravel(),
+                (composed_transform.aff_matrix)[:2, :].ravel(),
+                jnp.eye(3, dtype=composed_transform.aff_matrix.dtype)[:2, :].ravel(),
                 slope=1,
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
 
             invertibility_loss = invertibility_loss_fn(
-                x_rand1,
-                affine_mat=η_x_rand1_inv_aff_mat,
-                affine_mat_inv=η_x_rand1_aff_mat,
+                x_rand1, η_x_rand1_inv_transform, η_x_rand1_transform
             )
 
             return x_mse, η_recon_loss, invertibility_loss, difficulty
@@ -340,14 +335,11 @@ def make_transformation_inference_train_and_eval(
             η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
             η_rand2 = Η_rand.sample(seed=rng_η_rand2, sample_shape=())
 
-            # Get the affine matrices
-            η_rand1_aff_mat = gen_affine_augment(η_rand1)
-            η_rand1_inv_aff_mat = linalg.inv(η_rand1_aff_mat)
-            η_rand2_aff_mat = gen_affine_augment(η_rand2)
-            η_rand2_inv_aff_mat = linalg.inv(η_rand2_aff_mat)
-
-            x_rand1 = transform_image_fn(x, η_rand1_aff_mat)
-            x_rand2 = transform_image_fn(x, η_rand2_aff_mat)
+            η_rand1_transform = model.transform(η_rand1)
+            η_rand2_transform = model.transform(η_rand2)
+            η_rand2_inv_transform = η_rand2_transform.inverse()
+            x_rand1 = η_rand1_transform.apply(x)
+            x_rand2 = η_rand2_transform.apply(x)
 
             q_H_x_rand1 = model.apply({"params": params}, x_rand1, train)
             q_H_x_rand2 = model.apply({"params": params}, x_rand2, train)
@@ -355,26 +347,22 @@ def make_transformation_inference_train_and_eval(
             η_x_rand1 = q_H_x_rand1.sample(seed=rng_sample1)
             η_x_rand2 = q_H_x_rand2.sample(seed=rng_sample2)
 
-            # Get the affine matrices
-            η_x_rand1_aff_mat = gen_affine_model(η_x_rand1)
-            η_x_rand1_inv_aff_mat = linalg.inv(
-                η_x_rand1_aff_mat
-            )  # Inv. faster than matrix exponential
-            η_x_rand2_aff_mat = gen_affine_model(η_x_rand2)
-            η_x_rand2_inv_aff_mat = linalg.inv(η_x_rand2_aff_mat)
+            # Get the transforms
+            η_x_rand1_transform = model.transform(η_x_rand1)
+            η_x_rand1_inv_transform = η_x_rand1_transform.inverse()
+            η_x_rand2_transform = model.transform(η_x_rand2)
+
+            # η_rand1 -η_x_rand1 + η_x_rand2 - η_rand2
+            composed_transform = (
+                η_rand2_inv_transform
+                << η_x_rand2_transform
+                << η_x_rand1_inv_transform
+                << η_rand1_transform
+            )
 
             # Consider transforming x twice (first into latent space, and then untransforming) as a
             # way to regularise for invertibility
-            x_mse = optax.squared_error(
-                x,
-                transform_image_fn(
-                    x,
-                    η_rand1_aff_mat
-                    @ η_x_rand1_inv_aff_mat
-                    @ η_x_rand2_aff_mat
-                    @ η_rand2_inv_aff_mat,
-                ),
-            ).mean()
+            x_mse = optax.squared_error(x, composed_transform.apply(x)).mean()
 
             difficulty = optax.squared_error(x_rand1, x_rand2).mean()
 
@@ -387,23 +375,17 @@ def make_transformation_inference_train_and_eval(
             # because we expect the error distribution to be multimodal, and we want the model
             # to settle on one of the modes. The square loss would make the model settle inbetween
             # the modes (at the mean of the modes)
+            # TODO: Change the way the matrix is returned.
             η_recon_loss = huber_loss(
                 # Measure how close the transformation is to identity
-                (
-                    η_rand1_aff_mat
-                    @ η_x_rand1_inv_aff_mat
-                    @ η_x_rand2_aff_mat
-                    @ η_rand2_inv_aff_mat
-                )[:2, :].ravel(),
-                jnp.eye(3, dtype=η_rand2_aff_mat.dtype)[:2, :].ravel(),
+                (composed_transform.aff_matrix)[:2, :].ravel(),
+                jnp.eye(3, dtype=composed_transform.aff_matrix.dtype)[:2, :].ravel(),
                 slope=1,
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear
             ).mean()
 
             invertibility_loss = invertibility_loss_fn(
-                x_rand1,
-                affine_mat=η_x_rand1_inv_aff_mat,
-                affine_mat_inv=η_x_rand1_aff_mat,
+                x_rand1, η_x_rand1_inv_transform, η_x_rand1_transform
             )
 
             return x_mse, η_recon_loss, invertibility_loss, difficulty
@@ -559,13 +541,13 @@ def make_transformation_inference_train_and_eval(
                 p_η_x2 = model.apply({"params": state.params}, x2, False)
                 η2 = p_η_x2.sample(seed=rng_sample2)
 
-                η1_aff_mat = gen_affine_model(η1)
-                η1_inv_aff_mat = linalg.inv(η1_aff_mat)
-                η2_aff_mat = gen_affine_model(η2)
-                η2_inv_aff_mat = linalg.inv(η2_aff_mat)
+                η1_transform = model.transform(η1)
+                η1_inv_transform = η1_transform.inverse()
+                η2_transform = model.transform(η2)
 
-                x1_hat = transform_image_fn(x1, η1_inv_aff_mat)
-                x2_recon = transform_image_fn(x1_hat, η2_aff_mat)
+                x1_hat = η1_inv_transform.apply(x1)
+                x2_recon = η2_transform.apply(x1_hat)
+
                 return optax.squared_error(x2, x2_recon).mean()
 
             # Return MSE of 0 if there is no label match
