@@ -28,9 +28,9 @@ def get_config(params) -> config_dict.ConfigDict:
     config.eval_freq = 0.01
     config.plot_freq = 0.25
 
-    config.lr = 9e-4
+    config.lr = 6e-3
     config.init_lr_mult = 0.03
-    config.final_lr_mult = 1 / 3
+    config.final_lr_mult = 0.0001
     config.warmup_steps_pct = 0.1
     config.weight_decay = 1e-4
     config.clip_norm = 2.0
