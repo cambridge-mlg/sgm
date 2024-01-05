@@ -105,14 +105,14 @@ class INV_VAE(nn.Module):
 
         return self.vae_model.elbo(x_hat, train, β)
 
+    # TODO: add option to also integrte over η
     def importance_weighted_lower_bound(
         self,
         x: Array,
         num_samples: int = 50,
         train: bool = False,
     ) -> float:
-        if train:
-            x_hat = self.make_proto(x, train=train)
+        x_hat = self.make_proto(x, train=train)
 
         return self.vae_model.importance_weighted_lower_bound(x_hat, num_samples, train)
 
