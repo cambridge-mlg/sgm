@@ -62,7 +62,7 @@ def get_config() -> config_dict.ConfigDict:
     # --- Training (proto) ---
     config.n_samples = 5
     config.eval_freq = 0.01
-]    config.interpolation_order = 3
+    config.interpolation_order = 3
     config.translate_last = False
 
     config.σ_lr = 1e-2

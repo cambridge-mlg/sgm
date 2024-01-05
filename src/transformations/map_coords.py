@@ -163,11 +163,15 @@ def _spline_basis(t: Array) -> Array:
     at = jnp.abs(t)
     fn1 = lambda t: (2 - t) ** 3
     fn2 = lambda t: 4 - 6 * t**2 + 3 * t**3
-    return jnp.where(at >= 1, jnp.where(at <= 2, fn1(at), 0), jnp.where(at <= 1, fn2(at), 0))
+    return jnp.where(
+        at >= 1, jnp.where(at <= 2, fn1(at), 0), jnp.where(at <= 1, fn2(at), 0)
+    )
 
 
 def _spline_value(coefficients: Array, coordinate: Array, indexes: Array) -> Array:
-    coefficient = jnp.squeeze(lax.dynamic_slice(coefficients, indexes, [1] * coefficients.ndim))
+    coefficient = jnp.squeeze(
+        lax.dynamic_slice(coefficients, indexes, [1] * coefficients.ndim)
+    )
     fn = vmap(lambda x, i: _spline_basis(x - i + 1), (0, 0))
     return coefficient * fn(coordinate, indexes).prod()
 
@@ -189,7 +193,11 @@ def _cubic_spline(input: Array, coordinates: Array) -> Array:
 
 @functools.partial(api.jit, static_argnums=(2, 3, 4))
 def _map_coordinates(
-    input: ArrayLike, coordinates: Sequence[ArrayLike], order: int, mode: str, cval: ArrayLike
+    input: ArrayLike,
+    coordinates: Sequence[ArrayLike],
+    order: int,
+    mode: str,
+    cval: ArrayLike,
 ) -> Array:
     input_arr = jnp.asarray(input)
     coordinate_arrs = [jnp.asarray(c) for c in coordinates]
@@ -220,7 +228,9 @@ def _map_coordinates(
     elif order == 3:
         interp_fun = _cubic_indices_and_weights
     else:
-        raise NotImplementedError("jax.scipy.ndimage.map_coordinates currently requires order<=1")
+        raise NotImplementedError(
+            "jax.scipy.ndimage.map_coordinates currently requires order<=1"
+        )
 
     valid_1d_interpolations = []
     for coordinate, size in zip(coordinate_arrs, input_arr.shape):
