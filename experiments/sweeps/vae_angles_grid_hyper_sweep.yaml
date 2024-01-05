@@ -9,19 +9,15 @@ metric:
   name: valid/loss
 name: vae_sweep_90_50k
 parameters:
-  final_lr_mult:
-    values:
-      - 0.0001
-      - 0.01
   lr:
     values:
       - 0.003
-      - 0.01
+      - 0.006
+      - 0.009
   model:
     parameters:
       latent_dim:
         values:
-          - 12
           - 16
           - 20
       conv_dims:
@@ -31,7 +27,6 @@ parameters:
       dense_dims:
         values:
           - "256"
-          - "128"
   steps:
     distribution: categorical
     values:
@@ -40,7 +35,6 @@ parameters:
       - 20000
   warmup_steps_pct:
     values:
-      - 0.1
+      - 0.15
       - 0.2
 program: experiments/train/train_vae.py
-run_cap: 288
