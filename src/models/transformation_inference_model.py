@@ -7,8 +7,7 @@ a function which returns another function p(X|z) or `p_X_given_z`, which would r
 that X=x|Z=z a.k.a `p_x_given_z`.
 """
 
-import functools
-from typing import Callable, Optional, Sequence
+from typing import Optional, Sequence
 
 import ciclo
 import distrax
@@ -30,13 +29,8 @@ from ml_collections import config_dict
 
 from src.models.mlp import MLP
 from src.models.utils import clipped_adamw, huber_loss
-from src.transformations.affine import (
-    gen_affine_matrix_no_shear,
-    transform_image_with_affine_matrix,
-)
 from src.transformations.transforms import AffineTransformWithoutShear, Transform
 from src.utils.blur import gaussian_filter2d
-from src.utils.types import KwArgs
 
 
 class TransformationInferenceNet(nn.Module):
@@ -99,22 +93,9 @@ class TransformationInferenceNet(nn.Module):
 def make_transformation_inference_train_and_eval(
     model: TransformationInferenceNet, config: config_dict.ConfigDict
 ):
-    transform_image_fn = jax.jit(
-        functools.partial(
-            transform_image_with_affine_matrix,
-            order=config.interpolation_order,
-            fill_value=-1.0,
-            fill_mode="constant",
-        )
-    )
-    # Currently `gen_affine_augment` and `gen_affine_model` are the same, but it might make sense for them
-    # to be different
-    gen_affine_augment = gen_affine_matrix_no_shear
-    gen_affine_model = gen_affine_matrix_no_shear
-
-    def invertibility_loss_fn(x_, affine_transform, inv_affine_transform):
+    def invertibility_loss_fn(x_, affine_transform):
         transformed_x = affine_transform.apply(x_)
-        untransformed_x = inv_affine_transform.apply(transformed_x)
+        untransformed_x = affine_transform.inverse().apply(transformed_x)
         mse = optax.squared_error(
             untransformed_x,
             x_,
@@ -246,9 +227,7 @@ def make_transformation_inference_train_and_eval(
                 radius=1e-2,  # Choose a relatively small delta - want the loss to be mostly linear.
             ).mean()
 
-            invertibility_loss = invertibility_loss_fn(
-                x_rand1, η_x_rand1_inv_transform, η_x_rand1_transform
-            )
+            invertibility_loss = invertibility_loss_fn(x_rand1, η_x_rand1_transform)
 
             return x_mse, η_recon_loss, invertibility_loss
 

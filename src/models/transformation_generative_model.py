@@ -21,7 +21,6 @@ import numpy as np
 import optax
 from chex import Array, PRNGKey
 from clu import metrics, parameter_overview
-from flax import traverse_util
 from flax.linen import initializers as init
 from flax.training import train_state
 from jax import lax
@@ -186,7 +185,6 @@ def make_transformation_generative_train_and_eval(
             """
             sample_rng, prototype_fn_rng = random.split(rng)
             Η_rand = distrax.Uniform(
-                # Separate model bounds and augment bounds
                 low=-jnp.array(config.augment_bounds)
                 + jnp.array(config.augment_offset),
                 high=jnp.array(config.augment_bounds)
