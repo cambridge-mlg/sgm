@@ -8,8 +8,7 @@ that X=x|Z=z a.k.a `p_x_given_z`.
 """
 
 import functools
-import math
-from typing import Callable, Optional, Sequence, Union
+from typing import Callable, Optional, Sequence
 
 import ciclo
 import distrax
@@ -30,10 +29,7 @@ from ml_collections import config_dict
 
 from src.models.mlp import MLP
 from src.models.utils import clipped_adamw
-from src.transformations.affine import (
-    gen_affine_matrix_no_shear,
-    transform_image_with_affine_matrix,
-)
+from src.transformations.transforms import AffineTransformWithoutShear, Transform
 from src.utils.types import KwArgs
 
 
@@ -75,6 +71,7 @@ class TransformationGenerativeNet(nn.Module):
     ε: float = 1e-6
     squash_to_bounds: bool = False
     dropout_rate: float = 0.0
+    transform: Transform = AffineTransformWithoutShear
 
     def setup(self) -> None:
         self.bounds_array = (
@@ -185,7 +182,7 @@ def make_transformation_generative_train_and_eval(
             function, augment it randomly and then pass it through to get the prototype.
 
             This is useful for training the generative model to be robust to imperfections in the
-            canonicalization function.
+            inference net.
             """
             sample_rng, prototype_fn_rng = random.split(rng)
             Η_rand = distrax.Uniform(
@@ -196,18 +193,17 @@ def make_transformation_generative_train_and_eval(
                 + jnp.array(config.augment_offset),
             )
             η_rand = Η_rand.sample(seed=sample_rng, sample_shape=())
-            η_rand_aff_mat = gen_affine_matrix_no_shear(η_rand)
-
-            x_rand = transform_image_with_affine_matrix(x, η_rand_aff_mat)
+            η_rand_transform = model.transform(η_rand)
+            x_rand = η_rand_transform.apply(x)
 
             η_rand_proto = prototype_function(x_rand, prototype_fn_rng)
-            η_rand_proto_aff_mat = gen_affine_matrix_no_shear(η_rand_proto)
-            η_rand_proto_aff_mat_inv = jnp.linalg.inv(η_rand_proto_aff_mat)
-            return transform_image_with_affine_matrix(
-                x,
-                η_rand_aff_mat @ η_rand_proto_aff_mat_inv,
-                order=config.interpolation_order,
-            )
+
+            η_rand_proto_transform = model.transform(η_rand_proto)
+            η_rand_proto_inv_transform = η_rand_proto_transform.inverse()
+
+            composed_transform = η_rand_proto_inv_transform << η_rand_transform
+
+            return composed_transform.apply(x, order=config.interpolation_order)
 
         def per_sample_loss_fn(rng):
             η_rng, x_hat_rng, dropout_rng = random.split(rng, 3)
