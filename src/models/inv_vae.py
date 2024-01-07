@@ -29,18 +29,16 @@ from src.models.vae import VaeMetrics as InvVaeMetrics
 from src.models.vae import VaeTrainState as InvVaeTrainState
 from src.models.vae import make_vae_plotting_fns as make_inv_vae_plotting_fns
 from src.models.vae import make_vae_train_and_eval as make_inv_vae_train_and_eval
-from src.transformations.affine import (
-    gen_affine_matrix_no_shear,
-    transform_image_with_affine_matrix,
-)
+from src.transformations.transforms import Transform
 from src.utils.types import KwArgs
 
 
 class INV_VAE(nn.Module):
+    transform: Transform
+    transform_kwargs: Optional[KwArgs] = None
     vae: Optional[KwArgs] = None
     inference: Optional[KwArgs] = None
     generative: Optional[KwArgs] = None
-    interpolation_order: int = 3
     bounds: Optional[Sequence[float]] = None
     offset: Optional[Sequence[float]] = None
 
@@ -73,10 +71,8 @@ class INV_VAE(nn.Module):
 
         p_Η_given_x_hat = self.generative_model(x_hat, train=train)
         η = p_Η_given_x_hat.sample(seed=self.make_rng("sample"))
-        η_matrix = gen_affine_matrix_no_shear(η)
-        x = transform_image_with_affine_matrix(
-            x_hat, η_matrix, order=self.interpolation_order
-        )
+        η_transform = self.transform(η)
+        x = η_transform.apply(x_hat, **(self.transform_kwargs or {}))
         return x
 
     def reconstruct(
@@ -86,13 +82,11 @@ class INV_VAE(nn.Module):
         sample_xrecon: bool = False,
         train: bool = True,
     ) -> Array:
-        x_hat, η_matrix = self.make_proto(x, train=train, return_transform=True)
+        x_hat, η_transform = self.make_proto(x, train=train, return_transform=True)
 
         x_hat_recon = self.vae_model.reconstruct(x_hat, sample_z, sample_xrecon, train)
 
-        x_recon = transform_image_with_affine_matrix(
-            x_hat_recon, η_matrix, order=self.interpolation_order
-        )
+        x_recon = η_transform.apply(x_hat_recon, **(self.transform_kwargs or {}))
         return x_recon
 
     def elbo(
@@ -121,14 +115,12 @@ class INV_VAE(nn.Module):
     ) -> Array:
         q_H_given_x = self.inference_model(x, train=train)
         η = q_H_given_x.sample(seed=self.make_rng("sample"))
-        η_matrix = gen_affine_matrix_no_shear(η)
-        η_matrix_inv = jnp.linalg.inv(η_matrix)
-        x_hat = transform_image_with_affine_matrix(
-            x, η_matrix_inv, order=self.interpolation_order
-        )
+        η_transform = self.transform(η)
+        η_transform_inv = η_transform.inverse()
+        x_hat = η_transform_inv.apply(x, **(self.transform_kwargs or {}))
 
         if return_transform:
-            return x_hat, η_matrix
+            return x_hat, η_transform
         else:
             return x_hat
 

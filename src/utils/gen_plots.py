@@ -6,10 +6,6 @@ from jax import numpy as jnp
 from jax import random
 from scipy.stats import gaussian_kde
 
-from src.transformations.affine import (
-    gen_affine_matrix_no_shear,
-    transform_image_with_affine_matrix,
-)
 from src.utils.plotting import rescale_for_imshow
 
 
@@ -99,11 +95,9 @@ def plot_gen_dists(x, prototype_function, rng, gen_model, gen_params, config, n=
     # function to plot the histograms of p(η|x_hat) in each dimmension
     proto_rng, sample_rng = random.split(rng)
     η = prototype_function(x, proto_rng)
-    η_aff_mat = gen_affine_matrix_no_shear(η)
-    η_aff_mat_inv = jnp.linalg.inv(η_aff_mat)
-    xhat = transform_image_with_affine_matrix(
-        x, η_aff_mat_inv, order=config.interpolation_order
-    )
+    η_transform = gen_model.transform(η)
+    η_transform_inv = η_transform.inverse()
+    xhat = η_transform_inv.apply(x, **(config.transform_kwargs or {}))
 
     p_H_x_hat = gen_model.apply({"params": gen_params}, xhat)
 

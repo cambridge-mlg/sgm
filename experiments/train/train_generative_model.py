@@ -30,8 +30,6 @@ from src.models.transformation_inference_model import (
     make_transformation_inference_train_and_eval,
 )
 from src.models.utils import reset_metrics
-from src.transformations import transform_image
-from src.transformations.affine import gen_affine_matrix_no_shear
 from src.utils.gen_plots import plot_gen_dists, plot_gen_model_training_metrics
 from src.utils.input import get_data
 from src.utils.proto_plots import (
@@ -169,8 +167,8 @@ def main(_):
             inf_model,
             inf_final_state,
             rng,
-            inf_config.interpolation_order,
-            gen_affine_matrix_no_shear,
+            inf_model.transform,
+            inf_config.get("transform_kwargs", None),
         )
 
         for i, (x_, mask) in enumerate(
@@ -190,7 +188,11 @@ def main(_):
             )
         ):
             fig = plot_protos_and_recons(
-                x_, jnp.array(gen_config.augment_bounds[:5]) * mask, get_prototype
+                x_,
+                jnp.array(gen_config.augment_bounds[:5]) * mask,
+                inf_model.transform,
+                get_prototype,
+                inf_config.get("transform_kwargs", None),
             )
             run.summary[f"inf_plots_{i}"] = wandb.Image(fig)
             plt.close(fig)
@@ -273,6 +275,9 @@ def main(_):
             run.summary[f"gen_plots_{i}"] = wandb.Image(fig)
             plt.close(fig)
 
+        transform_image = lambda x, η: gen_model.transform(η).apply(
+            x, **(gen_config.get("transform_kwargs", None) or {})
+        )
         transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
             val_batch["image"][0][12],
             jnp.linspace(

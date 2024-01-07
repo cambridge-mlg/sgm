@@ -2,6 +2,7 @@ from jax import numpy as jnp
 from ml_collections import config_dict
 
 from experiments.configs.datasets import add_aug_dsprites_config
+from src.transformations.transforms import AffineTransformWithoutShear
 
 
 def get_config() -> config_dict.ConfigDict:
@@ -11,8 +12,7 @@ def get_config() -> config_dict.ConfigDict:
 
     config.eval_freq = 0.01
 
-    config.interpolation_order = 3
-    config.translate_last = False
+    config.transform_kwargs = {"order": 3}
 
     config.n_samples = 5
     config.x_mse_loss_mult = 1.0
@@ -37,6 +37,7 @@ def get_config() -> config_dict.ConfigDict:
     config.model = config_dict.ConfigDict()
     config.model.squash_to_bounds = False
     config.model.hidden_dims = (2048, 1024, 512, 256)
+    config.model.transform = AffineTransformWithoutShear
 
     # Dataset
     config.batch_size = 512

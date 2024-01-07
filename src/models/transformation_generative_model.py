@@ -192,7 +192,7 @@ def make_transformation_generative_train_and_eval(
             )
             η_rand = Η_rand.sample(seed=sample_rng, sample_shape=())
             η_rand_transform = model.transform(η_rand)
-            x_rand = η_rand_transform.apply(x)
+            x_rand = η_rand_transform.apply(x, **config.get("transform_kwargs", {}))
 
             η_rand_proto = prototype_function(x_rand, prototype_fn_rng)
 
@@ -201,7 +201,7 @@ def make_transformation_generative_train_and_eval(
 
             composed_transform = η_rand_proto_inv_transform << η_rand_transform
 
-            return composed_transform.apply(x, order=config.interpolation_order)
+            return composed_transform.apply(x, **config.get("transform_kwargs", {}))
 
         def per_sample_loss_fn(rng):
             η_rng, x_hat_rng, dropout_rng = random.split(rng, 3)

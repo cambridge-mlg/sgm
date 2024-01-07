@@ -36,7 +36,6 @@ from src.models.transformation_inference_model import (
     make_transformation_inference_train_and_eval,
 )
 from src.models.utils import reset_metrics
-from src.transformations.affine import gen_affine_matrix_no_shear
 from src.utils.gen_plots import plot_gen_dists, plot_gen_model_training_metrics
 from src.utils.input import get_data
 from src.utils.proto_plots import (
@@ -168,8 +167,8 @@ def main(_):
             inf_model,
             inf_final_state,
             rng,
-            inf_config.interpolation_order,
-            gen_affine_matrix_no_shear,
+            inf_model.transform,
+            inf_config.get("transform_kwargs", None),
         )
 
         for i, (x_, mask) in enumerate(
@@ -189,7 +188,11 @@ def main(_):
             )
         ):
             fig = plot_protos_and_recons(
-                x_, jnp.array(inf_config.augment_bounds) * mask, get_prototype
+                x_,
+                jnp.array(inf_config.augment_bounds) * mask,
+                inf_model.transform,
+                get_prototype,
+                inf_config.get("transform_kwargs", None),
             )
             run.summary[f"inf_plots_{i}"] = wandb.Image(fig)
             plt.close(fig)
@@ -286,10 +289,11 @@ def main(_):
         input_shape = train_ds.element_spec["image"].shape[2:]
 
         aug_vae_model = AUG_VAE(
+            transformation=gen_model.transformation,
+            transform_kwargs=gen_config.get("transform_kwargs", None),
             vae=vae_config.model.to_dict(),
             inference=inf_config.model.to_dict(),
             generative=gen_config.model.to_dict(),
-            interpolation_order=gen_config.interpolation_order,
             bounds=gen_config.get("augment_bounds", None),
             offset=gen_config.get("augment_offset", None),
         )

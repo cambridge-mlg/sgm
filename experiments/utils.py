@@ -20,7 +20,7 @@ def load_checkpoint(checkpoint_path, init_state, config):
     )
     final_state, config_ = ckpt["state"], ckpt["config"]
     config_ = config_dict.ConfigDict(config_)
-    if config_.to_json() != config.to_json():
+    if config_.to_json_best_effort() != config.to_json_best_effort():
         logging.warning(
             "The config loaded from the checkpoint is different from the one passed as a flag.\n"
             "Loaded config:\n"
@@ -45,7 +45,10 @@ def save_checkpoint(checkpoint_path, state, config):
 
 
 def assert_inf_gen_compatiblity(inf_config, gen_config):
-    assert inf_config.interpolation_order == gen_config.interpolation_order
+    assert inf_config.transform == gen_config.transform
+    assert inf_config.get("transform_kwargs", None) == gen_config.get(
+        "transform_kwargs", None
+    )
     assert inf_config.get("augment_bounds", None) == gen_config.get(
         "augment_bounds", None
     )
@@ -53,7 +56,6 @@ def assert_inf_gen_compatiblity(inf_config, gen_config):
         "augment_offset", None
     )
     assert inf_config.model.squash_to_bounds == gen_config.model.squash_to_bounds
-    assert inf_config.translate_last == gen_config.translate_last
     assert inf_config.get("shuffle", "loaded") == gen_config.get("shuffle", "loaded")
     assert inf_config.get("repeat_after_batching", False) == gen_config.get(
         "repeat_after_batching", False

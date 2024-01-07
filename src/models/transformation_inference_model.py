@@ -94,7 +94,7 @@ def make_transformation_inference_train_and_eval(
     model: TransformationInferenceNet, config: config_dict.ConfigDict
 ):
     def invertibility_loss_fn(x_, affine_transform):
-        transformed_x = affine_transform.apply(x_)
+        transformed_x = affine_transform.apply(x_, **config.get("transform_kwargs", {}))
         untransformed_x = affine_transform.inverse().apply(transformed_x)
         mse = optax.squared_error(
             untransformed_x,
@@ -180,8 +180,8 @@ def make_transformation_inference_train_and_eval(
             η_rand2_transform = model.transform(η_rand2)
             η_rand2_inv_transform = η_rand2_transform.inverse()
 
-            x_rand1 = η_rand1_transform.apply(x)
-            x_rand2 = η_rand2_transform.apply(x)
+            x_rand1 = η_rand1_transform.apply(x, **config.get("transform_kwargs", {}))
+            x_rand2 = η_rand2_transform.apply(x, **config.get("transform_kwargs", {}))
 
             q_H_x_rand1 = model.apply({"params": params}, x_rand1, train)
             q_H_x_rand2 = model.apply({"params": params}, x_rand2, train)
@@ -204,7 +204,9 @@ def make_transformation_inference_train_and_eval(
 
             # Consider transforming x twice (first into latent space, and then untransforming) as a
             # way to regularise for invertibility
-            x_mse = optax.squared_error(x, composed_transform.apply(x)).mean()
+            x_mse = optax.squared_error(
+                x, composed_transform.apply(x, **config.get("transform_kwargs", {}))
+            ).mean()
 
             # This loss regularises for the applied sequence of transformations to be identity, but directly in η space.
             # However, it is possible for it to be non-0 while the MSE is perfect due to self-symmetric objects
@@ -363,8 +365,12 @@ def make_transformation_inference_train_and_eval(
                 η1_inv_transform = η1_transform.inverse()
                 η2_transform = model.transform(η2)
 
-                x1_hat = η1_inv_transform.apply(x1)
-                x2_recon = η2_transform.apply(x1_hat)
+                x1_hat = η1_inv_transform.apply(
+                    x1, **config.get("transform_kwargs", {})
+                )
+                x2_recon = η2_transform.apply(
+                    x1_hat, **config.get("transform_kwargs", {})
+                )
 
                 return optax.squared_error(x2, x2_recon).mean()
 

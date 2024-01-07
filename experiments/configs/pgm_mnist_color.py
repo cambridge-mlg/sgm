@@ -1,3 +1,4 @@
+# TODO(@shreyas): Split this config in two: one for inference and one for generation, see gen_mnist and inf_mnist.
 from ml_collections import config_dict
 
 from src.transformations.transforms import HSVTransform
@@ -26,10 +27,7 @@ def get_config(params) -> config_dict.ConfigDict:
     )
     config.n_samples = 5
     config.eval_freq = 0.01
-    config.difficulty_weighted_inf_loss = False
-    config.interpolation_order = 3
-    config.translate_last = False
-    config.symmetrised_samples_in_loss = False
+    config.transform_kwargs = {"order": 3}
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 0.0
 

@@ -29,18 +29,16 @@ from src.models.vae import VaeMetrics as AugVaeMetrics
 from src.models.vae import VaeTrainState as AugVaeTrainState
 from src.models.vae import make_vae_plotting_fns as make_aug_vae_plotting_fns
 from src.models.vae import make_vae_train_and_eval as make_aug_vae_train_and_eval
-from src.transformations.affine import (
-    gen_affine_matrix_no_shear,
-    transform_image_with_affine_matrix,
-)
+from src.transformations.transforms import Transform
 from src.utils.types import KwArgs
 
 
 class AUG_VAE(nn.Module):
+    transform: Transform
+    transform_kwargs: Optional[KwArgs] = None
     vae: Optional[KwArgs] = None
     inference: Optional[KwArgs] = None
     generative: Optional[KwArgs] = None
-    interpolation_order: int = 3
     bounds: Optional[Sequence[float]] = None
     offset: Optional[Sequence[float]] = None
 
@@ -109,18 +107,16 @@ class AUG_VAE(nn.Module):
     def resample(self, x: Array, train: bool = True) -> Array:
         q_H_given_x = self.inference_model(x, train=train)
         η = q_H_given_x.sample(seed=self.make_rng("sample"))
-        η_matrix = gen_affine_matrix_no_shear(η)
-        η_matrix_inv = jnp.linalg.inv(η_matrix)
-        x_hat = transform_image_with_affine_matrix(
-            x, η_matrix_inv, order=self.interpolation_order
-        )
+        η_transform = self.transform(η)
+        η_transform_inv = η_transform.inverse()
+        x_hat = η_transform_inv.apply(x, **(self.transform_kwargs or {}))
 
         p_H_given_x_hat = self.generative_model(x_hat, train=train)
         η_new = p_H_given_x_hat.sample(seed=self.make_rng("sample"))
-        η_new_matrix = gen_affine_matrix_no_shear(η_new)
+        η_new_transform = self.transform(η_new)
 
-        new_x = transform_image_with_affine_matrix(
-            x, η_matrix_inv @ η_new_matrix, order=self.interpolation_order
+        new_x = η_transform_inv.compose(η_new_transform).apply(
+            x, **(self.transform_kwargs or {})
         )
 
         return new_x

@@ -2,7 +2,7 @@
 Plotting functions and utilities for logging training progress of a transformation inference (prototype inference) model.
 """
 import math
-from typing import Protocol
+from typing import Optional, Protocol
 
 import distrax
 import jax
@@ -12,9 +12,9 @@ import numpy as np
 import seaborn as sns
 from jax import random
 
-from src.transformations import transform_image
-from src.transformations.affine import transform_image_with_affine_matrix
+from src.transformations.transforms import Transform
 from src.utils.plotting import rescale_for_imshow
+from src.utils.types import KwArgs
 
 
 class GetPrototypeFn(Protocol):
@@ -88,8 +88,9 @@ def get_aug_image_fn(config):
             high=jnp.array(config.augment_bounds) + jnp.array(config.augment_offset),
         )
         η_rand = Η_rand.sample(seed=img_rng, sample_shape=())
+        η_rand_transform = config.transform(η_rand)
 
-        x_rand = transform_image(image, η_rand, order=config.interpolation_order)
+        x_rand = η_rand_transform.apply(image, **(config.transform_kwargs or {}))
         return x_rand
 
     return aug_image
@@ -325,7 +326,8 @@ def plot_proto_model_training_metrics(history):
     return fig
 
 
-def plot_protos_and_recons(x, bounds, get_prototype):
+def plot_protos_and_recons(x, bounds, transform, get_prototype, transform_kwargs):
+    transform_image = lambda x, η: transform(η).apply(x, **(transform_kwargs or {}))
     transformed_xs = jax.vmap(transform_image, in_axes=(None, 0))(
         x,
         jnp.linspace(
@@ -352,19 +354,20 @@ def plot_protos_and_recons(x, bounds, get_prototype):
     return fig
 
 
-# TODO: this will have to be rewritten to work automatically with other transformations:
 def make_get_prototype_fn(
-    inf_model, inf_state, rng, interpolation_order, gen_affine_matrix
+    inf_model,
+    inf_state,
+    rng,
+    transform: Transform,
+    transform_kwargs: Optional[KwArgs] = None,
 ):
     @jax.jit
     def get_prototype(x):
         p_η = inf_model.apply({"params": inf_state.params}, x, train=False)
         η = p_η.sample(seed=rng)
-        affine_matrix = gen_affine_matrix(η)
-        affine_matrix_inv = jnp.linalg.inv(affine_matrix)
-        xhat = transform_image_with_affine_matrix(
-            x, affine_matrix_inv, order=interpolation_order
-        )
+        η_transform = transform(η)
+        η_transform_inv = η_transform.inverse()
+        xhat = η_transform_inv.apply(x, **(transform_kwargs or {}))
         return xhat, η
 
     return get_prototype

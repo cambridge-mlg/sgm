@@ -18,7 +18,6 @@ from src.models.transformation_inference_model import (
     make_transformation_inference_train_and_eval,
 )
 from src.models.utils import reset_metrics
-from src.transformations.affine import gen_affine_matrix_no_shear
 from src.utils.input import get_data
 from src.utils.proto_plots import (
     make_get_prototype_fn,
@@ -125,8 +124,8 @@ def main(_):
             model,
             final_state,
             rng,
-            config.interpolation_order,
-            gen_affine_matrix_no_shear,
+            config.model.transform,
+            config.get("transform_kwargs", None),
         )
 
         for i, (x_, mask) in enumerate(
@@ -143,7 +142,11 @@ def main(_):
             )
         ):
             fig = plot_protos_and_recons(
-                x_, jnp.array(config.augment_bounds[:5]) * mask, get_prototype
+                x_,
+                jnp.array(config.augment_bounds[:5]) * mask,
+                config.model.transform,
+                get_prototype,
+                config.get("transform_kwargs", None),
             )
             run.summary[f"inf_plots_{i}"] = wandb.Image(fig)
             plt.close(fig)
