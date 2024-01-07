@@ -1,3 +1,4 @@
+# NOTE: This training script is DEPRECATED and has note been updated in a while. Use train_generative_model.py instead.
 import os
 from pathlib import Path
 
