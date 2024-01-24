@@ -72,3 +72,53 @@ def add_aug_dsprites_config(config: config_dict.ConfigDict) -> config_dict.Confi
     config.aug_dsprites.ellipse_distribution.unnormalised_shape_prob = 1 / 3
 
     return config
+
+
+def add_aug_dsprites_config_v2(
+    config: config_dict.ConfigDict,
+) -> config_dict.ConfigDict:
+    config.train_split = ""  # Doesn't matter for augmentedDsprites
+    config.val_split = ""  # Doesn't matter for augmentedDsprites
+
+    config.pp_train = f'value_range(-1, 1, 0, 1)|move_key("label_shape", "label")|keep(["image", "label"])'
+    config.pp_eval = f'value_range(-1, 1, 0, 1)|move_key("label_shape", "label")|keep(["image", "mask", "label"])'
+
+    config.aug_dsprites = config_dict.ConfigDict()
+
+    config.aug_dsprites.square_distribution = config_dict.ConfigDict()
+    config.aug_dsprites.square_distribution.orientation = (
+        f"uniform(low=0.0, high={math.pi * 2})"
+    )
+    config.aug_dsprites.square_distribution.scale = (
+        "truncated_normal(minval=0.0, maxval=1.0, loc=0.7, scale=0.3)"
+    )
+    config.aug_dsprites.square_distribution.x_position = "uniform(low=0.5, high=1.0)"
+    config.aug_dsprites.square_distribution.y_position = "uniform(low=0.5, high=1.0)"
+
+    config.aug_dsprites.ellipse_distribution = config_dict.ConfigDict()
+    config.aug_dsprites.ellipse_distribution.orientation = (
+        f"uniform(low=0.0, high={math.pi / 2})"
+    )
+    config.aug_dsprites.ellipse_distribution.scale = (
+        "truncated_normal(minval=0.55, maxval=0.95, loc=0.7, scale=0.15)"
+    )
+    config.aug_dsprites.ellipse_distribution.x_position = (
+        "truncated_normal(minval=0.0, maxval=1.0, loc=0.5, scale=0.25)"
+    )
+    config.aug_dsprites.ellipse_distribution.y_position = (
+        "truncated_normal(minval=0.35, maxval=0.65, loc=0.5, scale=0.5)"
+    )
+
+    config.aug_dsprites.heart_distribution = config_dict.ConfigDict()
+    config.aug_dsprites.heart_distribution.orientation = f"delta(value=0.0)"
+    config.aug_dsprites.heart_distribution.scale = "uniform(low=0.7, high=1.0)"
+    config.aug_dsprites.heart_distribution.x_position = "uniform(low=0.0, high=1.0)"
+    config.aug_dsprites.heart_distribution.y_position = (
+        "biuniform(low1=0.0, high1=0.2, low2=0.8, high2=1.0)"
+    )
+
+    config.aug_dsprites.heart_distribution.unnormalised_shape_prob = 1 / 3
+    config.aug_dsprites.square_distribution.unnormalised_shape_prob = 1 / 3
+    config.aug_dsprites.ellipse_distribution.unnormalised_shape_prob = 1 / 3
+
+    return config
