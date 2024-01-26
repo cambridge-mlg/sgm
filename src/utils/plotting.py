@@ -8,7 +8,7 @@ def rescale_for_imshow(img):
     return jnp.clip((img + 1.0) * 127.0 + 0.5, 0, 255).astype(jnp.uint8)
 
 
-def plot_img_array(array, ncol=16, padding=2, pad_value=0.0, title=None):
+def put_in_grid(array, ncol=16, padding=2, pad_value=0.0, return_maps=False):
     array = jnp.asarray(array)
 
     if array.ndim == 4 and array.shape[-1] == 1:  # single-channel images
@@ -34,7 +34,16 @@ def plot_img_array(array, ncol=16, padding=2, pad_value=0.0, title=None):
             ].set(rescale_for_imshow(array[k]))
             k = k + 1
 
-    fig = plt.figure(figsize=(2 * xmaps, 2 * ymaps), dpi=100)
+    if return_maps:
+        return grid, xmaps, ymaps
+
+    return grid
+
+
+def plot_img_array(array, ncol=16, padding=2, pad_value=0.0, title=None, dpi=100):
+    grid, xmaps, ymaps = put_in_grid(array, ncol, padding, pad_value, return_maps=True)
+
+    fig = plt.figure(figsize=(2 * xmaps, 2 * ymaps), dpi=dpi)
     plt.imshow(grid)
     plt.axis("off")
     plt.tight_layout()
