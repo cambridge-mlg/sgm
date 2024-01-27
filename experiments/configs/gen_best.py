@@ -1,7 +1,11 @@
 from jax import numpy as jnp
 from ml_collections import config_dict
 
-from experiments.configs.datasets import add_aug_dsprites_config, add_mnist_config
+from experiments.configs.datasets import (
+    add_aug_dsprites_config,
+    add_aug_dsprites_config_v2,
+    add_mnist_config,
+)
 from src.transformations.transforms import AffineTransformWithoutShear
 
 
@@ -10,6 +14,10 @@ def get_config(params) -> config_dict.ConfigDict:
 
     params = params.split(",")
     config.dataset = params[0]
+    v2 = False
+    if config.dataset == "aug_dsprites_v2":
+        config.dataset = "aug_dsprites"
+        v2 = True
     assert config.dataset in ["MNIST", "aug_dsprites"]
     config.seed = int(params[1])
     if len(params) > 2:
@@ -31,7 +39,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.augment_bounds = (
         (0.25, 0.25, jnp.pi, 0.25, 0.25)
         if config.dataset == "MNIST"
-        else (0.5, 0.5, jnp.pi, 0.5, 0.5)
+        else (0.75, 0.75, jnp.pi, 0.25, 0.25)
     )
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
 
@@ -115,6 +123,9 @@ def get_config(params) -> config_dict.ConfigDict:
             num_val=config.num_val,
         )
     else:
-        add_aug_dsprites_config(config)
+        if not v2:
+            add_aug_dsprites_config(config)
+        else:
+            add_aug_dsprites_config_v2(config)
 
     return config
