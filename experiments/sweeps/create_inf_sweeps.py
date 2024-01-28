@@ -10,23 +10,27 @@ ENTITY = "invariance-learners"
 PROJECT = "icml2024"
 MAX_NUM_RUNS = 144
 ANGLES = [
-    0,
+    # 0,
     # 90,
     # 180,
     None,
 ]
 NUM_TRNS = [
-    25_000,
-    37_500,
-    50_000,
+    # 25_000,
+    # 37_500,
+    # 50_000,
     None,
 ]
 SEEDS = [
-    # 0,
-    1,
-    2,
+    0,
+    # 1,
+    # 2,
 ]
-DATASETS = ["MNIST", "aug_dsprites"]  # "aug_dsprites"
+DATASETS = [
+    # "MNIST",
+    # "aug_dsprites",
+    "aug_dspritesv2",
+]
 SWEEP_TYPE = "grid"  # "grid" or "rand" or "bayes"
 SWEEP_CONFIG = f"inf_{SWEEP_TYPE}_hyper_sweep.yaml"
 
@@ -42,7 +46,9 @@ for dataset, angle, num_trn, seed in product(DATASETS, ANGLES, NUM_TRNS, SEEDS):
     if dataset == "MNIST" and (num_trn is None or angle is None):
         continue
 
-    if dataset == "aug_dsprites" and not (num_trn is None and angle is not None):
+    if (dataset == "aug_dsprites" or dataset == "aug_dspritesv2") and not (
+        num_trn is None and angle is None
+    ):
         continue
 
     with sweep_path.open() as file:
