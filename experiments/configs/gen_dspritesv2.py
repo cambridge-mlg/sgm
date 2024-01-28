@@ -23,6 +23,7 @@ def get_config() -> config_dict.ConfigDict:
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
     config.mae_loss_mult = 1.0
+    config.bounds_mult = 0.75
 
     config.augment_bounds = (0.75, 0.75, jnp.pi, 0.75, 0.75)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
