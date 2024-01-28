@@ -40,7 +40,8 @@ parameters:
           - 5
           - 6
       squash_to_bounds:
-        value: False
+      transform:
+        value: "AffineTransformWithoutShear"
       dropout_rate:
         values:
           - 0.05
