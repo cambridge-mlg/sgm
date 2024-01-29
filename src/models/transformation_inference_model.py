@@ -9,7 +9,9 @@ that X=x|Z=z a.k.a `p_x_given_z`.
 
 from typing import Optional, Sequence
 
+import ciclo
 import distrax
+import flax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
@@ -19,7 +21,9 @@ import optax
 from absl import logging
 from chex import PRNGKey
 from clu import metrics, parameter_overview
+from flax import traverse_util
 from flax.linen import initializers as init
+from flax.training import train_state
 from jax import lax
 from ml_collections import config_dict
 
