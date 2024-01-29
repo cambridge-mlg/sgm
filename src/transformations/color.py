@@ -99,7 +99,7 @@ def hsv_transform_image(
         A transformed image of same shape as the input.
     """
     assert_shape(η, (2,))
-    η = jnp.array([η[0], η[1], η[2], 1.0])
+    η = jnp.array([η[0], η[1], η[2]])
     return _color_transform_image(image, η)
 
 
