@@ -15,7 +15,7 @@ def get_config(params) -> config_dict.ConfigDict:
     params = params.split(",")
     config.dataset = params[0]
     v2 = False
-    if config.dataset == "aug_dsprites_v2":
+    if config.dataset == "aug_dspritesv2":
         config.dataset = "aug_dsprites"
         v2 = True
     assert config.dataset in ["MNIST", "aug_dsprites"]
@@ -38,17 +38,25 @@ def get_config(params) -> config_dict.ConfigDict:
     config.blur_filter_size = 5
     config.blur_end_pct = 0.01
     config.weight_decay = 1e-4
+    config.symmetrized_loss = (
+        True if not (config.dataset == "aug_dsprites" and v2) else False
+    )
 
     config.augment_bounds = (
         (0.25, 0.25, jnp.pi, 0.25, 0.25)
         if config.dataset == "MNIST"
-        else (0.75, 0.75, jnp.pi, 0.25, 0.25)
+        else (
+            (0.5, 0.5, jnp.pi, 0.5, 0.5) if not v2 else (0.75, 0.75, jnp.pi, 0.75, 0.75)
+        )
     )
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
 
     config.model_name = "inference_net"
     config.model = config_dict.ConfigDict()
-    config.model.squash_to_bounds = False
+    if not (config.dataset == "aug_dsprites" and v2):
+        config.model.squash_to_bounds = False
+    else:
+        config.model.squash_to_bounds = True
     config.model.hidden_dims = (2048, 1024, 512, 256)
     config.model.transform = AffineTransformWithoutShear
 
@@ -114,13 +122,21 @@ def get_config(params) -> config_dict.ConfigDict:
             config.init_lr_mult = 1e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.05
-        case ("aug_dsprites", None, 0):  # co5jijn1
-            config.blur_σ_init = 3.0
-            config.clip_norm = 3.0
-            config.final_lr_mult = 1e-3
-            config.init_lr_mult = 3e-2
-            config.lr = 1e-3
-            config.warmup_steps_pct = 0.1
+        case ("aug_dsprites", None, 0):
+            if not v2:  # co5jijn1
+                config.blur_σ_init = 3.0
+                config.clip_norm = 3.0
+                config.final_lr_mult = 1e-3
+                config.init_lr_mult = 3e-2
+                config.lr = 1e-3
+                config.warmup_steps_pct = 0.1
+            else:  # 0vnue3s0
+                config.blur_σ_init = 3.0
+                config.clip_norm = 3.0
+                config.final_lr_mult = 1e-3
+                config.init_lr_mult = 3e-2
+                config.lr = 3e-4
+                config.warmup_steps_pct = 0.05
         case ("aug_dsprites", None, 1):  # lcr9fjj6
             config.blur_σ_init = 0.0
             config.clip_norm = 10.0

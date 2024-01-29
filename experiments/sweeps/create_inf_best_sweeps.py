@@ -5,26 +5,27 @@ ENTITY = "invariance-learners"
 PROJECT = "icml2024"
 CHECKPOINT_DIR = "/home/jua23/rds/hpc-work/learning-invariances-models"
 ANGLES = [
-    0,
-    15,
-    90,
-    180,
+    # 0,
+    # 15,
+    # 90,
+    # 180,
     None,
 ]
 NUM_TRNS = [
-    25_000,
-    37_500,
-    50_000,
+    # 25_000,
+    # 37_500,
+    # 50_000,
     None,
 ]
 SEEDS = [
     0,
-    1,
-    2,
+    # 1,
+    # 2,
 ]
 DATASETS = [
-    "MNIST",
-    "aug_dsprites",
+    # "MNIST",
+    # "aug_dsprites",
+    "aug_dspritesv2",
 ]
 
 
@@ -42,7 +43,9 @@ with job_file.open("w") as jf:
         if dataset == "MNIST" and (num_trn is None or angle is None):
             continue
 
-        if dataset == "aug_dsprites" and not (num_trn is None and angle is not None):
+        if (dataset == "aug_dsprites" or dataset == "aug_dspritesv2") and not (
+            (num_trn is None) and (angle is None)
+        ):
             continue
 
         params = (
