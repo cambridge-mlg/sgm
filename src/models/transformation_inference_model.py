@@ -18,18 +18,22 @@ import jax.numpy as jnp
 import jax.random as random
 import numpy as np
 import optax
+from absl import logging
 from chex import PRNGKey
 from clu import metrics, parameter_overview
 from flax import traverse_util
 from flax.linen import initializers as init
 from flax.training import train_state
 from jax import lax
-from jax.scipy import linalg
 from ml_collections import config_dict
 
 from src.models.mlp import MLP
 from src.models.utils import clipped_adamw, huber_loss
-from src.transformations.transforms import AffineTransformWithoutShear, Transform
+from src.transformations.transforms import (
+    AffineTransform,
+    AffineTransformWithoutShear,
+    Transform,
+)
 from src.utils.blur import gaussian_filter2d
 
 
@@ -174,7 +178,20 @@ def make_transformation_inference_train_and_eval(
                 + jnp.array(config.augment_offset),
             )
             η_rand1 = Η_rand.sample(seed=rng_η_rand1, sample_shape=())
-            η_rand2 = Η_rand.sample(seed=rng_η_rand2, sample_shape=())
+            if config.get("symmetrized_loss", True):
+                η_rand2 = Η_rand.sample(seed=rng_η_rand2, sample_shape=())
+            else:
+                η_rand2 = jnp.zeros_like(η_rand1)
+                # Note: this assumes that the identity action is parameterised by 0s.
+                # I.e., this will break for color transformations.
+                # TODO: Add sommething to the transform class to generate the identity action.
+                if not (
+                    isinstance(model.transform, AffineTransformWithoutShear)
+                    or isinstance(model.transform, AffineTransform)
+                ):
+                    logging.warning(
+                        "The identity action is not necessarily parameterised by 0s."
+                    )
 
             η_rand1_transform = model.transform(η_rand1)
             η_rand2_transform = model.transform(η_rand2)

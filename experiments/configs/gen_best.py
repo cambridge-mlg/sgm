@@ -15,7 +15,7 @@ def get_config(params) -> config_dict.ConfigDict:
     params = params.split(",")
     config.dataset = params[0]
     v2 = False
-    if config.dataset == "aug_dsprites_v2":
+    if config.dataset == "aug_dspritesv2":
         config.dataset = "aug_dsprites"
         v2 = True
     assert config.dataset in ["MNIST", "aug_dsprites"]
@@ -35,17 +35,23 @@ def get_config(params) -> config_dict.ConfigDict:
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
     config.mae_loss_mult = 1.0
+    config.bounds_mult = 1.0 if not (config.dataset == "aug_dsprites" and v2) else 0.75
 
     config.augment_bounds = (
         (0.25, 0.25, jnp.pi, 0.25, 0.25)
         if config.dataset == "MNIST"
-        else (0.75, 0.75, jnp.pi, 0.25, 0.25)
+        else (
+            (0.5, 0.5, jnp.pi, 0.5, 0.5) if not v2 else (0.75, 0.75, jnp.pi, 0.75, 0.75)
+        )
     )
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
 
     config.model_name = "generative_net"
     config.model = config_dict.ConfigDict()
-    config.model.squash_to_bounds = False
+    if not (config.dataset == "aug_dsprites" and v2):
+        config.model.squash_to_bounds = False
+    else:
+        config.model.squash_to_bounds = True
     config.model.hidden_dims = (1024, 512, 256)
     config.model.num_bins = 6
     config.model.conditioner = config_dict.ConfigDict()
@@ -95,11 +101,19 @@ def get_config(params) -> config_dict.ConfigDict:
             config.model.num_flows = 6
             config.steps = 7500
         case ("aug_dsprites", None, 0):
-            config.final_lr_mult = 0.3
-            config.lr = 0.0003
-            config.model.dropout_rate = 0.05
-            config.model.num_flows = 6
-            config.steps = 60000
+            if not v2:
+                config.final_lr_mult = 0.3
+                config.lr = 0.0003
+                config.model.dropout_rate = 0.05
+                config.model.num_flows = 6
+                config.steps = 60000
+            else:  # q4r7bi1r
+                config.final_lr_mult = 0.03
+                config.lr = 0.003
+                config.mae_loss_mult = 0.0
+                config.model.dropout_rate = 0.05
+                config.model.num_flows = 6
+                config.steps = 60000
         case ("aug_dsprites", None, 1):
             config.final_lr_mult = 0.03
             config.lr = 0.0003

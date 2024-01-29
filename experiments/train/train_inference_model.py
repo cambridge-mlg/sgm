@@ -5,12 +5,12 @@ import flax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
-import wandb
 from experiments.utils import duplicated_run, save_checkpoint
 from src.models.transformation_inference_model import (
     TransformationInferenceNet,
@@ -18,6 +18,7 @@ from src.models.transformation_inference_model import (
     make_transformation_inference_train_and_eval,
 )
 from src.models.utils import reset_metrics
+from src.transformations import transforms
 from src.utils.input import get_data
 from src.utils.proto_plots import (
     make_get_prototype_fn,
@@ -69,6 +70,11 @@ def main(_):
             if isinstance(config.model.hidden_dims, str):
                 config.model.hidden_dims = tuple(
                     int(x) for x in config.model.hidden_dims.split(",")
+                )
+
+            if isinstance(config.model.transform, str):
+                config.model.transform = getattr(
+                    transforms, config.model.transform.split(".")[-1]
                 )
 
         rng = random.PRNGKey(config.seed)
@@ -133,6 +139,9 @@ def main(_):
                 [
                     val_batch["image"][0][14],
                     val_batch["image"][0][12],
+                    val_batch["image"][0][7],
+                    val_batch["image"][0][8],
+                    val_batch["image"][0][9],
                 ],
                 [
                     jnp.array([0, 0, 1, 0, 0]),

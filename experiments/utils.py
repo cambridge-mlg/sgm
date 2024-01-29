@@ -2,11 +2,10 @@ import shutil
 from pathlib import Path
 
 import orbax.checkpoint
+import wandb
 from absl import flags, logging
 from flax.training import orbax_utils
 from ml_collections import config_dict
-
-import wandb
 
 FLAGS = flags.FLAGS
 
@@ -45,7 +44,7 @@ def save_checkpoint(checkpoint_path, state, config):
 
 
 def assert_inf_gen_compatiblity(inf_config, gen_config):
-    assert inf_config.transform == gen_config.transform
+    assert inf_config.model.transform == gen_config.model.transform
     assert inf_config.get("transform_kwargs", None) == gen_config.get(
         "transform_kwargs", None
     )

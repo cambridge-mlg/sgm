@@ -184,10 +184,20 @@ def make_transformation_generative_train_and_eval(
             inference net.
             """
             sample_rng, prototype_fn_rng = random.split(rng)
+
+            mult = config.get("bounds_mult", 1.0)
+            # For some datasets, the full range of transformations in the dataset
+            # results in too much loss of information, and thus high variance in the objetive.
+            # We can reduce this variance by restricting the range of transformations.
+            # Since the gen model is only ever seeing protos, this doesn't actually change
+            # the learning in any way.
+            # TODO: the name augment_bounds is a bit misleading, since it's also
+            # used for the bounds of the affine transformation, and can be modified
+            # by the bounds_mult parameter.
             Η_rand = distrax.Uniform(
-                low=-jnp.array(config.augment_bounds)
+                low=-jnp.array(config.augment_bounds) * mult
                 + jnp.array(config.augment_offset),
-                high=jnp.array(config.augment_bounds)
+                high=jnp.array(config.augment_bounds) * mult
                 + jnp.array(config.augment_offset),
             )
             η_rand = Η_rand.sample(seed=sample_rng, sample_shape=())

@@ -90,7 +90,7 @@ def add_aug_dsprites_config_v2(
         f"uniform(low=0.0, high={math.pi * 2})"
     )
     config.aug_dsprites.square_distribution.scale = (
-        "truncated_normal(minval=0.5, maxval=1.0, loc=0.75, scale=0.2)"
+        "truncated_normal(minval=0.55, maxval=1.0, loc=0.75, scale=0.2)"
     )
     config.aug_dsprites.square_distribution.x_position = "uniform(low=0.5, high=0.95)"
     config.aug_dsprites.square_distribution.y_position = "uniform(low=0.5, high=0.95)"

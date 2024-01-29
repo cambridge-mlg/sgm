@@ -7,12 +7,12 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
-import wandb
 from experiments.utils import (
     assert_inf_gen_compatiblity,
     duplicated_run,
@@ -30,6 +30,7 @@ from src.models.transformation_inference_model import (
     make_transformation_inference_train_and_eval,
 )
 from src.models.utils import reset_metrics
+from src.transformations import transforms
 from src.utils.gen_plots import plot_gen_dists, plot_gen_model_training_metrics
 from src.utils.input import get_data
 from src.utils.proto_plots import (
@@ -92,6 +93,10 @@ def main(_):
                 gen_config.model.conditioner.hidden_dims = tuple(
                     int(x) for x in gen_config.model.conditioner.hidden_dims.split(",")
                 )
+            if isinstance(gen_config.model.transform, str):
+                gen_config.model.transform = getattr(
+                    transforms, gen_config.model.transform.split(".")[-1]
+                )
 
         ####### INF MODEL #######
         rng = random.PRNGKey(inf_config.seed)
@@ -115,8 +120,8 @@ def main(_):
 
         # Only do training if there is no inf model checkpoint to load:
         inf_model_checkpoint_path = inf_config.get("checkpoint", "")
-        if inf_model_checkpoint_path != "" and gen_config.model.squash_to_bounds:
-            inf_model_checkpoint_path = inf_model_checkpoint_path + "_squashed"
+        # if inf_model_checkpoint_path != "" and gen_config.model.squash_to_bounds:
+        #     inf_model_checkpoint_path = inf_model_checkpoint_path + "_squashed"
 
         if (
             inf_model_checkpoint_path != ""
@@ -176,6 +181,9 @@ def main(_):
                 [
                     val_batch["image"][0][14],
                     val_batch["image"][0][12],
+                    val_batch["image"][0][7],
+                    val_batch["image"][0][8],
+                    val_batch["image"][0][9],
                     # val_batch["image"][0][1],
                     # val_batch["image"][0][4],
                     # val_batch["image"][0][9],
@@ -259,8 +267,8 @@ def main(_):
             [
                 val_batch["image"][0][14],
                 val_batch["image"][0][12],
-                val_batch["image"][0][1],
-                val_batch["image"][0][4],
+                val_batch["image"][0][7],
+                val_batch["image"][0][8],
                 val_batch["image"][0][9],
             ]
         ):

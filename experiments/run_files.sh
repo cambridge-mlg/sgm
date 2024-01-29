@@ -21,7 +21,7 @@ for FILE in $1*; do
     n_jobs=$(grep -c '^' "$FILE")
 
     # Set/determine number of jobs to run in parallel
-    jobs_in_parallel=1
+    jobs_in_parallel=auto
 
     max_n_gpus=64
     if [ "$jobs_in_parallel" = "auto" ]; then
