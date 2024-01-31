@@ -99,8 +99,7 @@ class INV_VAE(nn.Module):
 
         return self.vae_model.elbo(x_hat, train, β)
 
-    # TODO: add option to also integrte over η
-    def importance_weighted_lower_bound(
+    def vae_importance_weighted_lower_bound(
         self,
         x: Array,
         num_samples: int = 50,
@@ -109,6 +108,43 @@ class INV_VAE(nn.Module):
         x_hat = self.make_proto(x, train=train)
 
         return self.vae_model.importance_weighted_lower_bound(x_hat, num_samples, train)
+
+    def importance_weighted_lower_bound(
+        self,
+        x: Array,
+        num_samples: int = 50,
+        train: bool = False,
+    ) -> float:
+        def single_sample_log_w(i):
+            q_H_given_x = self.inference_model(x, train=train)
+            η = q_H_given_x.sample(seed=random.fold_in(self.make_rng("sample"), i))
+            η_transform = self.transform(η)
+            η_transform_inv = η_transform.inverse()
+            x_hat = η_transform_inv.apply(x, **(self.transform_kwargs or {}))
+
+            q_Z_given_x_hat = self.vae_model.q_Z_given_X(x_hat, train=train)
+            z = q_Z_given_x_hat.sample(seed=random.fold_in(self.make_rng("sample"), i))
+            p_X_hat_given_z = self.vae_model.p_X_given_Z(z, train=train)
+
+            p_Η_given_x_hat = self.generative_model(x_hat, train=train)
+
+            log_p_η_given_x_hat = p_Η_given_x_hat.log_prob(η)
+            log_q_η_given_x = q_H_given_x.log_prob(η)
+            log_p_x_hat_given_z = p_X_hat_given_z.log_prob(x_hat)
+            log_q_z_given_x_hat = q_Z_given_x_hat.log_prob(z)
+            log_p_z = self.vae_model.p_Z.log_prob(z)
+
+            return (
+                log_p_η_given_x_hat
+                + log_p_x_hat_given_z
+                + log_p_z
+                - log_q_η_given_x
+                - log_q_z_given_x_hat
+            )
+
+        log_ws = jax.vmap(single_sample_log_w)(jnp.arange(num_samples))
+
+        return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
 
     def make_proto(
         self, x: Array, train: bool = True, return_transform: bool = False
