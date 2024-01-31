@@ -289,7 +289,7 @@ def main(_):
         input_shape = train_ds.element_spec["image"].shape[2:]
 
         inv_vae_model = INV_VAE(
-            transformation=gen_model.transformation,
+            transform=gen_model.transform,
             transform_kwargs=gen_config.get("transform_kwargs", None),
             vae=vae_config.model.to_dict(),
             inference=inf_config.model.to_dict(),

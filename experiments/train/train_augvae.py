@@ -7,12 +7,12 @@ import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
-import wandb
 from experiments.utils import (
     assert_inf_gen_compatiblity,
     duplicated_run,
@@ -289,7 +289,7 @@ def main(_):
         input_shape = train_ds.element_spec["image"].shape[2:]
 
         aug_vae_model = AUG_VAE(
-            transformation=gen_model.transformation,
+            transform=gen_model.transform,
             transform_kwargs=gen_config.get("transform_kwargs", None),
             vae=vae_config.model.to_dict(),
             inference=inf_config.model.to_dict(),
