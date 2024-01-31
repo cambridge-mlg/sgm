@@ -219,6 +219,15 @@ class VAE(nn.Module):
 
         return q_Z_given_x, p_X_given_z, self.p_Z
 
+    # def inference(self, x: Array, train: bool = True) -> distrax.Distribution:
+    #     return self.q_Z_given_X(x, train=train)
+
+    # def generative(self, z: Array, train: bool = True) -> distrax.Distribution:
+    #     return self.p_X_given_Z(z, train=train)
+
+    # def prior(self) -> distrax.Distribution:
+    #     return self.p_Z
+
     def sample(
         self,
         sample_x: bool = False,
@@ -277,7 +286,7 @@ class VAE(nn.Module):
         num_samples: int = 50,
         train: bool = False,
     ) -> float:
-        def single_sample_w(i):
+        def single_sample_log_w(i):
             q_Z_given_x = self.q_Z_given_X(x, train=train)
             z = q_Z_given_x.sample(
                 seed=random.fold_in(self.make_rng("sample"), i), sample_shape=()
@@ -294,7 +303,7 @@ class VAE(nn.Module):
 
             return logp_x_given_z + logp_z - logq_z_given_x
 
-        log_ws = jax.vmap(single_sample_w)(jnp.arange(num_samples))
+        log_ws = jax.vmap(single_sample_log_w)(jnp.arange(num_samples))
 
         return jax.nn.logsumexp(log_ws, axis=0) - jnp.log(num_samples)
 
