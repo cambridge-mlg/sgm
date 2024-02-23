@@ -9,7 +9,7 @@ from experiments.utils import format_thousand
 ENTITY = "invariance-learners"
 PROJECT = "icml2024"
 CHECKPOINT_DIR = "/home/jua23/rds/hpc-work/learning-invariances-models"
-MAX_NUM_RUNS = 144
+MAX_NUM_RUNS = 36
 ANGLES = [
     0,
     15,
@@ -27,9 +27,9 @@ MODEL_NAMES = [
     # "vae",
 ]
 SEEDS = [
-    0,
+    # 0,
     # 1,
-    # 2,
+    2,
 ]
 SWEEP_TYPE = "grid"  # "grid" or "rand" or "bayes"
 SWEEP_CONFIG = f"vae_angles_{SWEEP_TYPE}_hyper_sweep.yaml"
@@ -38,7 +38,7 @@ parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
 
 for model_name in MODEL_NAMES:
-    job_folder = parent_path.parent / "jobs" / f"{model_name}_{SWEEP_TYPE}_sweep2"
+    job_folder = parent_path.parent / "jobs" / f"{model_name}_{SWEEP_TYPE}_sweep3"
     job_folder.mkdir(exist_ok=True)
 
     for angle, num_trn, seed in product(ANGLES, NUM_TRNS, SEEDS):
