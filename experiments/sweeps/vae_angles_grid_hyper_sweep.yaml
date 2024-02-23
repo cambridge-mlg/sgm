@@ -18,7 +18,6 @@ parameters:
     parameters:
       latent_dim:
         values:
-          - 16
           - 20
       conv_dims:
         values:
