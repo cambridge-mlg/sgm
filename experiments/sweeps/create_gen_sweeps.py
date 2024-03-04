@@ -10,26 +10,27 @@ ENTITY = "invariance-learners"
 PROJECT = "icml2024"
 MAX_NUM_RUNS = 288
 ANGLES = [
-    # 0,
+    0,
     # 90,
     # 180,
-    None,
+    # None,
 ]
 NUM_TRNS = [
+    12_500,
     # 25_000,
     # 37_500,
     # 50_000,
-    None,
+    # None,
 ]
 SEEDS = [
     0,
-    # 1,
-    # 2,
+    1,
+    2,
 ]
 DATASETS = [
-    # "MNIST",
+    "MNIST",
     # "aug_dsprites",
-    "aug_dspritesv2",
+    # "aug_dspritesv2",
 ]
 SWEEP_TYPE = "grid"  # "grid" or "rand" or "bayes"
 SWEEP_CONFIG = f"gen_{SWEEP_TYPE}_hyper_sweep.yaml"
@@ -39,7 +40,7 @@ fmt_name = lambda dataset_name: dataset_name.split("_")[-1].lower()
 parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
 
-job_folder = parent_path.parent / "jobs" / f"gen_{SWEEP_TYPE}_sweep"
+job_folder = parent_path.parent / "jobs" / f"gen_{SWEEP_TYPE}_sweep_12k5"
 job_folder.mkdir(exist_ok=True)
 
 for dataset, angle, num_trn, seed in product(DATASETS, ANGLES, NUM_TRNS, SEEDS):

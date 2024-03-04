@@ -5,27 +5,28 @@ ENTITY = "invariance-learners"
 PROJECT = "icml2024"
 CHECKPOINT_DIR = "/home/jua23/rds/hpc-work/learning-invariances-models"
 ANGLES = [
-    # 0,
-    # 15,
-    # 90,
-    # 180,
-    None,
+    0,
+    15,
+    90,
+    180,
+    # None,
 ]
 NUM_TRNS = [
+    12_500,
     # 25_000,
     # 37_500,
     # 50_000,
-    None,
+    # None,
 ]
 SEEDS = [
     0,
-    # 1,
-    # 2,
+    1,
+    2,
 ]
 DATASETS = [
-    # "MNIST",
+    "MNIST",
     # "aug_dsprites",
-    "aug_dspritesv2",
+    # "aug_dspritesv2",
 ]
 
 

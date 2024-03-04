@@ -64,7 +64,7 @@ def get_config(params) -> config_dict.ConfigDict:
         config.get("num_trn", None),
         config.seed,
     ):
-        case (("MNIST", 50_000, 0) | ("MNIST", 50_000, 1) | ("MNIST", 50_000, 2)):
+        case ("MNIST", 50_000, 0) | ("MNIST", 50_000, 1) | ("MNIST", 50_000, 2):
             config.final_lr_mult = 0.03
             config.lr = 0.003
             config.model.dropout_rate = 0.2
@@ -99,6 +99,24 @@ def get_config(params) -> config_dict.ConfigDict:
             config.lr = 0.003
             config.model.dropout_rate = 0.2
             config.model.num_flows = 6
+            config.steps = 7500
+        case ("MNIST", 12_500, 0):  # 10lsa6lh
+            config.final_lr_mult = 0.03
+            config.lr = 0.0003
+            config.model.dropout_rate = 0.2
+            config.model.num_flows = 6
+            config.steps = 7500
+        case ("MNIST", 12_500, 1):  # tnjpu9b4
+            config.final_lr_mult = 0.03
+            config.lr = 0.0003
+            config.model.dropout_rate = 0.2
+            config.model.num_flows = 5
+            config.steps = 7500
+        case ("MNIST", 12_500, 2):  # 5h56yb82
+            config.final_lr_mult = 0.03
+            config.lr = 0.0003
+            config.model.dropout_rate = 0.2
+            config.model.num_flows = 5
             config.steps = 7500
         case ("aug_dsprites", None, 0):
             if not v2:

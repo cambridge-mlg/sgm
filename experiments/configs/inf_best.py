@@ -122,6 +122,27 @@ def get_config(params) -> config_dict.ConfigDict:
             config.init_lr_mult = 1e-2
             config.lr = 3e-4
             config.warmup_steps_pct = 0.05
+        case ("MNIST", 12_500, 0):  # nl0ipwa6
+            config.blur_σ_init = 3.0
+            config.clip_norm = 10.0
+            config.final_lr_mult = 1e-3
+            config.init_lr_mult = 3e-2
+            config.lr = 3e-4
+            config.warmup_steps_pct = 0.2
+        case ("MNIST", 12_500, 1):  # 598xpjbr
+            config.blur_σ_init = 3.0
+            config.clip_norm = 10.0
+            config.final_lr_mult = 3e-4
+            config.init_lr_mult = 1e-2
+            config.lr = 3e-4
+            config.warmup_steps_pct = 0.1
+        case ("MNIST", 12_500, 2):  # t99ei9o5
+            config.blur_σ_init = 0.0
+            config.clip_norm = 3.0
+            config.final_lr_mult = 1e-3
+            config.init_lr_mult = 1e-2
+            config.lr = 3e-4
+            config.warmup_steps_pct = 0.1
         case ("aug_dsprites", None, 0):
             if not v2:  # co5jijn1
                 config.blur_σ_init = 3.0
