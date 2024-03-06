@@ -283,3 +283,62 @@ class Resize:
         )  # pytype: disable=attribute-error  # allow-recursive-types
         features[self.key_result or self.key] = resized_image
         return features
+
+
+@dataclasses.dataclass
+class Pad:
+    """Pads an image by a given amount of pixels.
+
+    Attributes:
+        pad_amount: Either an integer H, where H is both the horizontal and vertical padding,
+            or a list or tuple [H, W] of integers, where H and W are the vertical and horizontal padding respectively.
+        fill_value: A scalar. The value to fill the empty pixels.
+        key: Key of the data to be processed.
+        key_result: Key under which to store the result (same as `key` if None).
+    """
+
+    pad_amount: Union[int, Tuple[int, int], List[int]]
+    fill_value: float = 0.0
+    key: str = "image"
+    key_result: Optional[str] = None
+
+    def __call__(self, features: Features) -> Features:
+        image = features[self.key]
+        pad_amount = _maybe_repeat(self.pad_amount, 2)
+        image = tf.pad(
+            image,
+            [[pad_amount[0], pad_amount[0]], [pad_amount[1], pad_amount[1]], [0, 0]],
+            constant_values=self.fill_value,
+        )
+        features[self.key_result or self.key] = image
+        return features
+
+
+@dataclasses.dataclass
+class RandomCrop:
+    """Performs a random crop of a given size.
+
+    Attributes:
+      crop_size: Either an integer H, where H is both the height and width of the
+        random crop, or a list or tuple [H, W] of integers, where H and W are
+        height and width of the random crop respectively.
+      key: Key of the data to be processed.
+      key_result: Key under which to store the result (same as `key` if None).
+      rng_key: Key of the random number used for
+        `tf.image.stateless_sample_distorted_bounding_box`.
+    """
+
+    crop_size: int
+    key: str = "image"
+    key_result: Optional[str] = None
+    rng_key: str = "rng"
+
+    def __call__(self, features: Features) -> Features:
+        image = features[self.key]
+        rng = features[self.rng_key]
+        crop_size = _maybe_repeat(self.crop_size, 2)
+        cropped_image = tf.image.stateless_random_crop(
+            image, [crop_size[0], crop_size[1], image.shape[-1]], seed=rng
+        )  # pytype: disable=attribute-error  # allow-recursive-types
+        features[self.key_result or self.key] = cropped_image
+        return features
