@@ -1,25 +1,21 @@
-import os
-
-os.environ["XLA_FLAGS"] = "--xla_gpu_deterministic_ops=true"
-
 import ciclo
 import flax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
-import wandb
 from experiments.utils import duplicated_run
 from src.models.utils import reset_metrics
-from src.models.vae import (
-    VAE,
-    create_vae_state,
-    make_vae_plotting_fns,
-    make_vae_train_and_eval,
+from src.models.vae_wsda import (
+    VAE_WSDA,
+    create_vae_wsda_state,
+    make_vae_wsda_plotting_fns,
+    make_vae_wsda_train_and_eval,
 )
 from src.utils.input import get_data
 from src.utils.training import custom_wandb_logger
@@ -46,6 +42,7 @@ flags.DEFINE_bool(
 
 def main(_):
     config = FLAGS.config
+    config.model_name = "VAE_WSDA"
 
     if not FLAGS.rerun:
         if duplicated_run(config):
@@ -79,13 +76,15 @@ def main(_):
         train_ds, val_ds, test_ds = get_data(config, data_rng)
         input_shape = train_ds.element_spec["image"].shape[2:]
 
-        model = VAE(**config.model.to_dict())
+        model = VAE_WSDA(vae=config.model.to_dict())
 
-        state = create_vae_state(model, config, init_rng, input_shape)
+        state = create_vae_wsda_state(model, config, init_rng, input_shape)
 
-        train_step, eval_step = make_vae_train_and_eval(model, config)
+        train_step, eval_step = make_vae_wsda_train_and_eval(model, config)
         x = next(deterministic_data.start_input_pipeline(val_ds))["image"][0]
-        reconstruction_plot, sampling_plot = make_vae_plotting_fns(config, model, x)
+        reconstruction_plot, sampling_plot = make_vae_wsda_plotting_fns(
+            config, model, x
+        )
 
         final_state, _, _ = ciclo.train_loop(
             state,
