@@ -12,8 +12,9 @@ from typing import Optional, Tuple
 import distrax
 import jax.numpy as jnp
 from chex import Array
-from clu import preprocess_spec
 from flax import linen as nn
+from imax import transforms as augmentations
+from jax import random
 
 from src.models.vae import VAE
 from src.models.vae import VaeMetrics as AugVaeMetrics
@@ -22,23 +23,20 @@ from src.models.vae import create_vae_optimizer as create_vae_wsda_optimizer
 from src.models.vae import create_vae_state as create_vae_wsda_state
 from src.models.vae import make_vae_plotting_fns as make_vae_wsda_plotting_fns
 from src.models.vae import make_vae_train_and_eval as make_vae_wsda_train_and_eval
-from src.transformations.transforms import Transform
-from src.utils.preprocess import all_ops
 from src.utils.types import KwArgs
 
 
 class VAE_WSDA(nn.Module):
-    data_aug_spec: str = (
-        f"random_rotate(-15, 15)|random_zoom({jnp.log(0.9)},{jnp.log(1.1)},{jnp.log(0.9)},{jnp.log(1.1)})|pad(2)|random_crop(28)"
-    )
+    # data_aug_spec: str = (
+    #     f"random_rotate(-15, 15)|random_zoom({jnp.log(0.9)},{jnp.log(1.1)},{jnp.log(0.9)},{jnp.log(1.1)})|pad(2)|random_crop(28)"
+    # )
+    rot_bounds: Tuple[float, float] = (-15, 15)
+    scale_bounds: Tuple[float, float] = (0.9, 1.1)
+    translate_bounds: Tuple[int, int] = (-2, 2)
     vae: Optional[KwArgs] = None
 
     def setup(self):
         self.vae_model = VAE(**(self.vae or {}))
-        self.data_aug_fn = preprocess_spec.parse(
-            spec=self.data_aug_spec,
-            available_ops=all_ops(),
-        )
 
     def __call__(
         self, x: Array, train: bool = True
@@ -91,5 +89,26 @@ class VAE_WSDA(nn.Module):
         return self.vae_model.importance_weighted_lower_bound(x, num_samples, train)
 
     def augment(self, x: Array) -> Array:
-        features = {"image": x, "rng": self.make_rng("sample")}
-        return self.data_aug_fn(features)["image"]
+        rng = self.make_rng("sample")
+        rot_rng, scale_rng, translate_rng = random.split(rng, 3)
+
+        rot_angle = random.uniform(
+            rot_rng, (), minval=self.rot_bounds[0], maxval=self.rot_bounds[1]
+        )
+        scale_x, scale_y = random.uniform(
+            scale_rng, (2,), minval=self.scale_bounds[0], maxval=self.scale_bounds[1]
+        )
+        translate_x, translate_y = random.randint(
+            translate_rng,
+            (2,),
+            minval=self.translate_bounds[0],
+            maxval=self.translate_bounds[1],
+        )
+
+        aug = (
+            augmentations.rotate(rot_angle * jnp.pi / 180.0)
+            @ augmentations.scale(scale_x, scale_y)
+            @ augmentations.translate(translate_x, translate_y)
+        )
+
+        return augmentations.apply_transform(x, aug)[:, :, :3]

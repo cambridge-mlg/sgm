@@ -20,15 +20,17 @@ NUM_TRNS = [
     50_000,
     37_500,
     25_000,
+    12_500,
 ]
 MODEL_NAMES = [
     # "augvae",
-    "invvae",
+    # "invvae",
     # "vae",
+    "vae_wsda"
 ]
 SEEDS = [
     # 0,
-    # 1,
+    1,
     2,
 ]
 SWEEP_TYPE = "grid"  # "grid" or "rand" or "bayes"
@@ -38,7 +40,7 @@ parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
 
 for model_name in MODEL_NAMES:
-    job_folder = parent_path.parent / "jobs" / f"{model_name}_{SWEEP_TYPE}_sweep3"
+    job_folder = parent_path.parent / "jobs" / f"{model_name}_{SWEEP_TYPE}_sweep12"
     job_folder.mkdir(exist_ok=True)
 
     for angle, num_trn, seed in product(ANGLES, NUM_TRNS, SEEDS):
@@ -52,6 +54,7 @@ for model_name in MODEL_NAMES:
         sweep_name = f"{model_name}_sweep_{angle:03}_{format_thousand(num_trn)}_{seed}"
         print(sweep_name)
         sweep_config["name"] = sweep_name
+        sweep_config["program"] = f"experiments/train/train_{model_name}.py"
 
         if model_name in ["augvae", "invvae"]:
             sweep_config["command"][
@@ -71,7 +74,6 @@ for model_name in MODEL_NAMES:
             sweep_config["command"].append(
                 f"--gen_config.checkpoint={CHECKPOINT_DIR}/gen_best_ckpt_MNIST_{seed}_{angle}_{num_trn}"
             )
-            sweep_config["program"] = f"experiments/train/train_{model_name}.py"
             sweep_config["command"].append(f"--vae_config.seed={seed}")
             sweep_config["command"].append(f"--vae_config.test_split=test")
         else:

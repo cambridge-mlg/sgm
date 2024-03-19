@@ -113,7 +113,7 @@ def main(_):
         if test_ds is not None:
             config_test = config.copy_and_resolve_references()
             config_test.run_iwlb = True
-            _, test_step = make_vae_train_and_eval(model, config_test)
+            _, test_step = make_vae_wsda_train_and_eval(model, config_test)
 
             _, test_history, _ = ciclo.test_loop(
                 final_state,
