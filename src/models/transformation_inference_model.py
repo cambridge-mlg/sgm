@@ -183,8 +183,7 @@ def make_transformation_inference_train_and_eval(
             else:
                 η_rand2 = jnp.zeros_like(η_rand1)
                 # Note: this assumes that the identity action is parameterised by 0s.
-                # I.e., this will break for color transformations.
-                # TODO: Add sommething to the transform class to generate the identity action.
+                # TODO: Add something to the transform class to generate the identity action.
                 if not (
                     isinstance(model.transform, AffineTransformWithoutShear)
                     or isinstance(model.transform, AffineTransform)
