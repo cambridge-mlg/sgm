@@ -158,6 +158,7 @@ notebooks/local
 
 # data:
 *.npz
+data/
 
 # plots
 *.pdf
