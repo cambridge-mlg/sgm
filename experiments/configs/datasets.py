@@ -26,6 +26,32 @@ def add_mnist_config(
     return config
 
 
+def add_galaxy_mnist_config(
+    config: config_dict.ConfigDict, num_trn: Optional[int], num_val: int
+) -> config_dict.ConfigDict:
+    if num_trn is not None:
+        end_index = num_trn + num_val
+    else:
+        end_index = ""
+
+    config.train_split = f"train[{num_val}:{end_index}]"
+    config.pp_train = (
+        f'value_range(-1, 1)|resize(64, "bilinear")|keep(["image", "label"])'
+    )
+    config.val_split = f"train[:{num_val}]"
+    config.pp_eval = (
+        f'value_range(-1, 1)|resize(64, "bilinear")|keep(["image", "label"])'
+    )
+
+    config.shuffle_buffer_size = 10_000
+    config.shuffle = "preprocessed"
+    config.repeat_after_batching = (
+        True  # NOTE: ordering of PP, shuffle, and repeat is important!
+    )
+
+    return config
+
+
 def add_aug_dsprites_config(config: config_dict.ConfigDict) -> config_dict.ConfigDict:
     config.train_split = ""  # Doesn't matter for augmentedDsprites
     config.val_split = ""  # Doesn't matter for augmentedDsprites
