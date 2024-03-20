@@ -1,0 +1,2 @@
+content.data-type.categorical # Contains categorical data.
+content.data-type.image # Contains image data.

@@ -5,6 +5,7 @@ from chex import PRNGKey
 from clu import deterministic_data, preprocess_spec
 
 from src.utils.datasets.augmented_dsprites import construct_augmented_dsprites
+from src.utils.datasets.galaxy_datasets import get_galaxy_mnist_dataset
 from src.utils.preprocess import all_ops
 
 
