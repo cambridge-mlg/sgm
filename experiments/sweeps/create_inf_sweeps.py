@@ -70,7 +70,7 @@ for dataset, angle, num_trn, seed in product(DATASETS, ANGLES, NUM_TRNS, SEEDS):
     sweep_name = f"inf_{SWEEP_TYPE}_{fmt_name[dataset]}_sweep"
     if dataset == "MNIST":
         sweep_name += f"_{angle:03}"
-    if dataset == "galaxy_mnist":
+    if dataset in ("galaxy_mnist", "MNIST"):
         sweep_name += f"_{format_thousand(num_trn)}"
     sweep_name += f"_{seed}"
     print(sweep_name)

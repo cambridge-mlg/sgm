@@ -65,7 +65,11 @@ for model_name in MODEL_NAMES:
         with sweep_path.open() as file:
             sweep_config = yaml.safe_load(file)
 
-        sweep_name = f"{model_name}_sweep_{angle:03}_{format_thousand(num_trn)}_{seed}"
+        sweep_name = f"{model_name}_{fmt_name[dataset]}_sweep"
+        if dataset == "MNIST":
+            sweep_name += f"_{angle:03}"
+        sweep_name += f"_{format_thousand(num_trn)}"
+        sweep_name += f"_{seed}"
         print(sweep_name)
         sweep_config["name"] = sweep_name
         sweep_config["program"] = f"experiments/train/train_{model_name}.py"
