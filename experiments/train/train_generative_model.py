@@ -191,13 +191,13 @@ def main(_):
                 [
                     # jnp.array([0, 0, 1, 0, 0]),
                     # jnp.array([1, 1, 0, 0, 0]),
-                    jnp.array([1, 1, 1, 1, 1]),
+                    jnp.array([1]),
                 ],
             )
         ):
             fig = plot_protos_and_recons(
                 x_,
-                jnp.array(gen_config.augment_bounds[:5]) * mask,
+                jnp.array(gen_config.augment_bounds) * mask,
                 inf_model.transform,
                 get_prototype,
                 inf_config.get("transform_kwargs", None),

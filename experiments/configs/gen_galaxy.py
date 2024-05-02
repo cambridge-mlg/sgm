@@ -5,8 +5,9 @@ from experiments.configs.datasets import add_galaxy_mnist_config
 from src.transformations.transforms import AffineAndHSVWithoutShearTransform
 
 
-def get_config() -> config_dict.ConfigDict:
+def get_config(param) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
+    config.num_trn = int(param)
 
     config.seed = 0
 

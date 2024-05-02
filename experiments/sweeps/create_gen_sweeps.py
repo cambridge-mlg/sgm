@@ -8,39 +8,46 @@ from experiments.utils import format_thousand
 
 ENTITY = "invariance-learners"
 PROJECT = "icml2024"
-MAX_NUM_RUNS = 288
+MAX_NUM_RUNS = 216  # 288
 ANGLES = [
-    0,
+    # 0,
     # 90,
     # 180,
-    # None,
+    None,
 ]
 NUM_TRNS = [
-    12_500,
+    3_500,
+    7_000,
     # 25_000,
     # 37_500,
     # 50_000,
     # None,
 ]
 SEEDS = [
-    0,
+    # 0,
     1,
     2,
 ]
 DATASETS = [
-    "MNIST",
+    # "MNIST",
     # "aug_dsprites",
     # "aug_dspritesv2",
+    "galaxy_mnist",
 ]
 SWEEP_TYPE = "grid"  # "grid" or "rand" or "bayes"
-SWEEP_CONFIG = f"gen_{SWEEP_TYPE}_hyper_sweep.yaml"
+SWEEP_CONFIG = f"gen_{SWEEP_TYPE}_hyper_sweep_galaxy.yaml"
 
-fmt_name = lambda dataset_name: dataset_name.split("_")[-1].lower()
+fmt_name = {
+    "MNIST": "mnist",
+    "aug_dsprites": "dsprites",
+    "aug_dspritesv2": "dspritesv2",
+    "galaxy_mnist": "galaxy",
+}
 
 parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
 
-job_folder = parent_path.parent / "jobs" / f"gen_{SWEEP_TYPE}_sweep_12k5"
+job_folder = parent_path.parent / "jobs" / f"gen_{SWEEP_TYPE}_sweep_galaxy"
 job_folder.mkdir(exist_ok=True)
 
 for dataset, angle, num_trn, seed in product(DATASETS, ANGLES, NUM_TRNS, SEEDS):
@@ -52,36 +59,42 @@ for dataset, angle, num_trn, seed in product(DATASETS, ANGLES, NUM_TRNS, SEEDS):
     ):
         continue
 
+    if (dataset == "galaxy_mnist") and (num_trn is None or angle is not None):
+        continue
+
     with sweep_path.open() as file:
         sweep_config = yaml.safe_load(file)
 
-    sweep_name = f"gen_{SWEEP_TYPE}_{fmt_name(dataset)}_sweep"
-    if num_trn is not None and angle is not None:
+    sweep_name = f"gen_{SWEEP_TYPE}_{fmt_name[dataset]}_sweep"
+    if dataset == "MNIST":
         sweep_name += f"_{angle:03}_{format_thousand(num_trn)}"
+    if dataset == "galaxy_mnist":
+        sweep_name += f"_{format_thousand(num_trn)}"
     sweep_name += f"_{seed}"
     print(sweep_name)
     sweep_config["name"] = sweep_name
 
+    sweep_command_gen = f"--gen_config=experiments/configs/gen_{fmt_name[dataset]}.py"
     if dataset == "MNIST":
-        sweep_config["command"][
-            2
-        ] = f"--gen_config=experiments/configs/gen_{fmt_name(dataset)}.py:{angle},{num_trn}"
-        sweep_config["command"][
-            3
-        ] = f"--inf_config=experiments/configs/inf_best.py:{dataset},{seed},0,{num_trn}"
-    else:
-        sweep_config["command"][
-            2
-        ] = f"--gen_config=experiments/configs/gen_{fmt_name(dataset)}.py"
-        sweep_config["command"][
-            3
-        ] = f"--inf_config=experiments/configs/inf_best.py:{dataset},{seed}"
+        sweep_command_gen += f":{angle},{num_trn}"
+    if dataset == "galaxy_mnist":
+        sweep_command_gen += f":{num_trn}"
+    sweep_config["command"][2] = sweep_command_gen
+
+    sweep_config_inf = f"--inf_config=experiments/configs/inf_best.py:{dataset},{seed}"
+    if dataset == "MNIST":
+        sweep_config_inf += f",0,{num_trn}"
+    if dataset == "galaxy_mnist":
+        sweep_config_inf += f",{num_trn}"
+    sweep_config["command"][3] = sweep_config_inf
 
     sweep_config["command"].append(f"--gen_config.seed={seed}")
 
     inf_ckpt = f"/home/jua23/rds/hpc-work/learning-invariances-models/inf_best_ckpt_{dataset}_{seed}"
     if dataset == "MNIST":
         inf_ckpt += f"_0_{num_trn}"
+    if dataset == "galaxy_mnist":
+        inf_ckpt += f"_{num_trn}"
     sweep_config["command"].append(f"--inf_config.checkpoint={inf_ckpt}")
 
     sweep_config["run_cap"] = MAX_NUM_RUNS
