@@ -275,7 +275,7 @@ class VAE(nn.Module):
     ) -> float:
         q_Z_given_x, p_X_given_z, p_Z = self(x, train=train)
 
-        ll = p_X_given_z.log_prob(x) / x.shape[-1]
+        ll = p_X_given_z.log_prob(x)
         kld = q_Z_given_x.kl_divergence(p_Z)
 
         return ll - β * kld, ll, kld
