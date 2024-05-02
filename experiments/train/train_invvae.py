@@ -7,12 +7,12 @@ import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as np
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
-import wandb
 from experiments.utils import (
     assert_inf_gen_compatiblity,
     duplicated_run,
@@ -183,7 +183,7 @@ def main(_):
                 [
                     # jnp.array([0, 0, 1, 0, 0]),
                     # jnp.array([1, 1, 0, 0, 0]),
-                    jnp.array([1, 1, 1, 1, 1]),
+                    jnp.array([1]),
                 ],
             )
         ):
@@ -291,7 +291,10 @@ def main(_):
         inv_vae_model = INV_VAE(
             transform=gen_model.transform,
             transform_kwargs=gen_config.get("transform_kwargs", None),
-            vae=vae_config.model.to_dict(),
+            vae={
+                **vae_config.model.to_dict(),
+                "image_shape": input_shape,
+            },
             inference=inf_config.model.to_dict(),
             generative=gen_config.model.to_dict(),
             bounds=gen_config.get("augment_bounds", None),

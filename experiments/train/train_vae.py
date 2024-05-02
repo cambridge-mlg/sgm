@@ -7,12 +7,12 @@ import flax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
+import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
-import wandb
 from experiments.utils import duplicated_run
 from src.models.utils import reset_metrics
 from src.models.vae import (
@@ -79,7 +79,7 @@ def main(_):
         train_ds, val_ds, test_ds = get_data(config, data_rng)
         input_shape = train_ds.element_spec["image"].shape[2:]
 
-        model = VAE(**config.model.to_dict())
+        model = VAE(**config.model.to_dict(), image_shape=input_shape)
 
         state = create_vae_state(model, config, init_rng, input_shape)
 

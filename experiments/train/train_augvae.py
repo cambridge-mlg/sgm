@@ -183,7 +183,7 @@ def main(_):
                 [
                     # jnp.array([0, 0, 1, 0, 0]),
                     # jnp.array([1, 1, 0, 0, 0]),
-                    jnp.array([1, 1, 1, 1, 1]),
+                    jnp.array([1]),
                 ],
             )
         ):
@@ -291,7 +291,10 @@ def main(_):
         aug_vae_model = AUG_VAE(
             transform=gen_model.transform,
             transform_kwargs=gen_config.get("transform_kwargs", None),
-            vae=vae_config.model.to_dict(),
+            vae={
+                **vae_config.model.to_dict(),
+                "image_shape": input_shape,
+            },
             inference=inf_config.model.to_dict(),
             generative=gen_config.model.to_dict(),
             bounds=gen_config.get("augment_bounds", None),
