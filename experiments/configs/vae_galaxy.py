@@ -4,8 +4,9 @@ from ml_collections import config_dict
 from experiments.configs.datasets import add_galaxy_mnist_config
 
 
-def get_config() -> config_dict.ConfigDict:
+def get_config(param) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
+    config.num_trn = int(param)
 
     config.seed = 0
 
@@ -37,6 +38,7 @@ def get_config() -> config_dict.ConfigDict:
     config.iwlb_num_samples = 300
 
     config.batch_size = 512
+    config.batch_size_eval = 50
     config.dataset = "galaxy_mnist"
     config.num_val = 1000
     add_galaxy_mnist_config(
@@ -44,5 +46,6 @@ def get_config() -> config_dict.ConfigDict:
         num_trn=config.get("num_trn", None),
         num_val=config.num_val,
     )
+    config.test_split = ""
 
     return config
