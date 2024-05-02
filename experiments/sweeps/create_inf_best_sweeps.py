@@ -5,28 +5,31 @@ ENTITY = "invariance-learners"
 PROJECT = "icml2024"
 CHECKPOINT_DIR = "/home/jua23/rds/hpc-work/learning-invariances-models"
 ANGLES = [
-    0,
-    15,
-    90,
-    180,
-    # None,
+    # 0,
+    # 15,
+    # 90,
+    # 180,
+    None,
 ]
 NUM_TRNS = [
-    12_500,
+    3_500,
+    7_000,
+    # 12_500,
     # 25_000,
     # 37_500,
     # 50_000,
     # None,
 ]
 SEEDS = [
-    0,
+    # 0,
     1,
     2,
 ]
 DATASETS = [
-    "MNIST",
+    # "MNIST",
     # "aug_dsprites",
     # "aug_dspritesv2",
+    "galaxy_mnist",
 ]
 
 
@@ -49,9 +52,16 @@ with job_file.open("w") as jf:
         ):
             continue
 
-        params = (
-            (dataset, seed, angle, num_trn) if dataset == "MNIST" else (dataset, seed)
-        )
+        if dataset == "galaxy_mnist" and (angle is not None):
+            continue
+
+        match dataset:
+            case "MNIST":
+                params = (dataset, seed, angle, num_trn)
+            case "galaxy_mnist":
+                params = (dataset, seed, num_trn)
+            case _:
+                params = (dataset, seed)
         params = [str(p) for p in params]
 
         sweep_command = (

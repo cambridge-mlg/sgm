@@ -4,9 +4,13 @@ from ml_collections import config_dict
 from experiments.configs.datasets import (
     add_aug_dsprites_config,
     add_aug_dsprites_config_v2,
+    add_galaxy_mnist_config,
     add_mnist_config,
 )
-from src.transformations.transforms import AffineTransformWithoutShear
+from src.transformations.transforms import (
+    AffineAndHSVWithoutShearTransform,
+    AffineTransformWithoutShear,
+)
 
 
 def get_config(params) -> config_dict.ConfigDict:
@@ -18,9 +22,11 @@ def get_config(params) -> config_dict.ConfigDict:
     if config.dataset == "aug_dspritesv2":
         config.dataset = "aug_dsprites"
         v2 = True
-    assert config.dataset in ["MNIST", "aug_dsprites"]
+    assert config.dataset in ["MNIST", "aug_dsprites", "galaxy_mnist"]
     config.seed = int(params[1])
-    if len(params) > 2:
+    if len(params) == 3:
+        config.num_trn = int(params[2])
+    if len(params) > 3:
         config.angle = float(params[2])
         config.num_trn = int(params[3])
 
@@ -31,34 +37,66 @@ def get_config(params) -> config_dict.ConfigDict:
 
     config.n_samples = 5
     config.x_mse_loss_mult = 1.0
-    config.invertibility_loss_mult = 0.1 if config.dataset == "MNIST" else 1.0
+    match config.dataset:
+        case "MNIST":
+            config.invertibility_loss_mult = 0.1
+        case "aug_dsprites":
+            config.invertibility_loss_mult = 1.0
+        case "galaxy_mnist":
+            config.invertibility_loss_mult = 0.0
+
     config.η_loss_mult = 0.0
-    config.steps = 60_000
+    match config.dataset:
+        case "galaxy_mnist":
+            config.steps = 10_000
+        case _:
+            config.steps = 60_000
     config.σ_lr = 3e-3
     config.blur_filter_size = 5
     config.blur_end_pct = 0.01
     config.weight_decay = 1e-4
-    config.symmetrized_loss = (
-        True if not (config.dataset == "aug_dsprites" and v2) else False
-    )
 
-    config.augment_bounds = (
-        (0.25, 0.25, jnp.pi, 0.25, 0.25)
-        if config.dataset == "MNIST"
-        else (
-            (0.5, 0.5, jnp.pi, 0.5, 0.5) if not v2 else (0.75, 0.75, jnp.pi, 0.75, 0.75)
-        )
-    )
-    config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
+    match (config.dataset, v2):
+        case ("aug_dsprites", True):
+            config.symmetrized_loss = False
+        case (_, _):
+            config.symmetrized_loss = True
+
+    match (config.dataset, v2):
+        case ("MNIST", _):
+            config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
+        case ("aug_dsprites", True):
+            config.augment_bounds = (0.75, 0.75, jnp.pi, 0.75, 0.75)
+        case ("aug_dsprites", False):
+            config.augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
+        case ("galaxy_mnist", _):
+            config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25, 0.5, 2.31, 0.51)
+
+    match config.dataset:
+        case "galaxy_mnist":
+            config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0)
+        case _:
+            config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
 
     config.model_name = "inference_net"
     config.model = config_dict.ConfigDict()
-    if not (config.dataset == "aug_dsprites" and v2):
-        config.model.squash_to_bounds = False
-    else:
-        config.model.squash_to_bounds = True
-    config.model.hidden_dims = (2048, 1024, 512, 256)
-    config.model.transform = AffineTransformWithoutShear
+    match (config.dataset, v2):
+        case ("aug_dsprites", True) | ("galaxy_mnist", _):
+            config.model.squash_to_bounds = True
+        case (_, _):
+            config.model.squash_to_bounds = False
+
+    config.model.hidden_dims = (
+        (2048, 1024, 512, 256)
+        if config.dataset != "galaxy_mnist"
+        else (1024, 1024, 512, 256)
+    )
+
+    config.model.transform = (
+        AffineTransformWithoutShear
+        if config.dataset != "galaxy_mnist"
+        else AffineAndHSVWithoutShearTransform
+    )
 
     match (
         config.dataset,
@@ -172,6 +210,48 @@ def get_config(params) -> config_dict.ConfigDict:
             config.init_lr_mult = 3e-2
             config.lr = 1e-3
             config.warmup_steps_pct = 0.2
+        case ("galaxy_mnist", 7_000, 0):  # s7g82eq0
+            config.blur_σ_init = 0.0
+            config.clip_norm = 10.0
+            config.final_lr_mult = 1e-3
+            config.init_lr_mult = 1e-2
+            config.lr = 1e-3
+            config.warmup_steps_pct = 0.1
+        case ("galaxy_mnist", 7_000, 1):  # kyl4c0rk
+            config.blur_σ_init = 0.0
+            config.clip_norm = 10.0
+            config.final_lr_mult = 3e-4
+            config.init_lr_mult = 1e-2
+            config.lr = 1e-3
+            config.warmup_steps_pct = 0.2
+        case ("galaxy_mnist", 7_000, 2):  # uy8ixhe3
+            config.blur_σ_init = 3.0
+            config.clip_norm = 10.0
+            config.final_lr_mult = 3e-4
+            config.init_lr_mult = 3e-2
+            config.lr = 1e-3
+            config.warmup_steps_pct = 0.2
+        case ("galaxy_mnist", 3_500, 0):  # mjjvylei
+            config.blur_σ_init = 3.0
+            config.clip_norm = 10.0
+            config.final_lr_mult = 1e-3
+            config.init_lr_mult = 1e-2
+            config.lr = 1e-3
+            config.warmup_steps_pct = 0.1
+        case ("galaxy_mnist", 3_500, 1):  # mcjzbob9
+            config.blur_σ_init = 0.0
+            config.clip_norm = 3.0
+            config.final_lr_mult = 1e-3
+            config.init_lr_mult = 1e-2
+            config.lr = 1e-3
+            config.warmup_steps_pct = 0.1
+        case ("galaxy_mnist", 3_500, 2):  # uz676nx8
+            config.blur_σ_init = 3.0
+            config.clip_norm = 10.0
+            config.final_lr_mult = 1e-3
+            config.init_lr_mult = 3e-2
+            config.lr = 1e-3
+            config.warmup_steps_pct = 0.2
 
     config.batch_size = 512
     if config.dataset == "MNIST":
@@ -182,10 +262,17 @@ def get_config(params) -> config_dict.ConfigDict:
             num_trn=config.get("num_trn", None),
             num_val=config.num_val,
         )
-    else:
+    elif config.dataset == "aug_dsprites":
         if not v2:
             add_aug_dsprites_config(config)
         else:
             add_aug_dsprites_config_v2(config)
+    else:
+        config.num_val = 1000
+        add_galaxy_mnist_config(
+            config,
+            num_trn=config.get("num_trn", None),
+            num_val=config.num_val,
+        )
 
     return config

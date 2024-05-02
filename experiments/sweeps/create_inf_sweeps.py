@@ -10,13 +10,15 @@ ENTITY = "invariance-learners"
 PROJECT = "icml2024"
 MAX_NUM_RUNS = 144
 ANGLES = [
-    0,
+    # 0,
     # 90,
     # 180,
-    # None,
+    None,
 ]
 NUM_TRNS = [
-    12_500,
+    3_500,
+    7_000,
+    # 12_500,
     # 25_000,
     # 37_500,
     # 50_000,
@@ -28,19 +30,26 @@ SEEDS = [
     2,
 ]
 DATASETS = [
-    "MNIST",
+    # "MNIST",
     # "aug_dsprites",
     # "aug_dspritesv2",
+    "galaxy_mnist",
 ]
 SWEEP_TYPE = "grid"  # "grid" or "rand" or "bayes"
-SWEEP_CONFIG = f"inf_{SWEEP_TYPE}_hyper_sweep.yaml"
+SWEEP_CONFIG = f"inf_{SWEEP_TYPE}_hyper_sweep_galaxy.yaml"
 
-fmt_name = lambda dataset_name: dataset_name.split("_")[-1].lower()
+fmt_name = {
+    "MNIST": "mnist",
+    "aug_dsprites": "dsprites",
+    "aug_dspritesv2": "dspritesv2",
+    "galaxy_mnist": "galaxy",
+}
+# fmt_name = lambda dataset_name: dataset_name.split("_")[-1].lower()
 
 parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
 
-job_folder = parent_path.parent / "jobs" / f"inf_{SWEEP_TYPE}_sweep_12k5_23"
+job_folder = parent_path.parent / "jobs" / f"inf_galaxy_{SWEEP_TYPE}_sweep"
 job_folder.mkdir(exist_ok=True)
 
 for dataset, angle, num_trn, seed in product(DATASETS, ANGLES, NUM_TRNS, SEEDS):
@@ -52,24 +61,27 @@ for dataset, angle, num_trn, seed in product(DATASETS, ANGLES, NUM_TRNS, SEEDS):
     ):
         continue
 
+    if (dataset == "galaxy_mnist") and (num_trn is None or angle is not None):
+        continue
+
     with sweep_path.open() as file:
         sweep_config = yaml.safe_load(file)
 
-    sweep_name = f"inf_{SWEEP_TYPE}_{fmt_name(dataset)}_sweep"
-    if num_trn is not None and angle is not None:
-        sweep_name += f"_{angle:03}_{format_thousand(num_trn)}"
+    sweep_name = f"inf_{SWEEP_TYPE}_{fmt_name[dataset]}_sweep"
+    if dataset == "MNIST":
+        sweep_name += f"_{angle:03}"
+    if dataset == "galaxy_mnist":
+        sweep_name += f"_{format_thousand(num_trn)}"
     sweep_name += f"_{seed}"
     print(sweep_name)
     sweep_config["name"] = sweep_name
 
-    if dataset == "MNIST":
-        sweep_config["command"][
-            2
-        ] = f"--config=experiments/configs/inf_{fmt_name(dataset)}.py:{angle},{num_trn}"
-    else:
-        sweep_config["command"][
-            2
-        ] = f"--config=experiments/configs/inf_{fmt_name(dataset)}.py"
+    sweep_command = f"--config=experiments/configs/inf_{fmt_name[dataset]}.py"
+    if angle is not None and num_trn is not None:
+        sweep_command += f":{angle},{num_trn}"
+    if num_trn is not None:
+        sweep_command += f":{num_trn}"
+    sweep_config["command"][2] = sweep_command
 
     sweep_config["command"].append(f"--config.seed={seed}")
 

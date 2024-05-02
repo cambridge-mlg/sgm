@@ -144,15 +144,15 @@ def main(_):
                     val_batch["image"][0][9],
                 ],
                 [
-                    jnp.array([0, 0, 1, 0, 0]),
-                    jnp.array([1, 1, 0, 0, 0]),
-                    jnp.array([1, 1, 1, 1, 1]),
+                    # jnp.array([1, 1, 1, 1, 1, 0, 0, 0]),
+                    # jnp.array([0, 0, 0, 0, 0, 1, 1, 1]),
+                    jnp.array([1]),
                 ],
             )
         ):
             fig = plot_protos_and_recons(
                 x_,
-                jnp.array(config.augment_bounds[:5]) * mask,
+                jnp.array(config.augment_bounds) * mask,
                 config.model.transform,
                 get_prototype,
                 config.get("transform_kwargs", None),

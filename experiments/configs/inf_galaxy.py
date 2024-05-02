@@ -2,15 +2,12 @@ from jax import numpy as jnp
 from ml_collections import config_dict
 
 from experiments.configs.datasets import add_galaxy_mnist_config
-from src.transformations.transforms import (
-    AffineAndHSVWithoutShearTransform,
-    AffineTransformWithoutShear,
-    HSVTransform,
-)
+from src.transformations.transforms import AffineAndHSVWithoutShearTransform
 
 
-def get_config() -> config_dict.ConfigDict:
+def get_config(param) -> config_dict.ConfigDict:
     config = config_dict.ConfigDict()
+    config.num_trn = int(param)
 
     config.seed = 0
 
@@ -22,7 +19,7 @@ def get_config() -> config_dict.ConfigDict:
     config.x_mse_loss_mult = 1.0
     config.invertibility_loss_mult = 0.0
     config.η_loss_mult = 0.0
-    config.steps = 3_000
+    config.steps = 10_000
     config.lr = 3e-4
     config.init_lr_mult = 1e-2
     config.final_lr_mult = 1e-4
@@ -60,7 +57,7 @@ def get_config() -> config_dict.ConfigDict:
     config.model = config_dict.ConfigDict()
     config.model.squash_to_bounds = True
     config.model.hidden_dims = (1024, 1024, 512, 256)
-    config.model.transform = AffineAndHSVWithoutShearTransform  # AffineTransformWithoutShear AffineAndHSVWithoutShearTransform HSVTransform
+    config.model.transform = AffineAndHSVWithoutShearTransform
 
     # Dataset
     config.batch_size = 512
