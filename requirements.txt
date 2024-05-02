@@ -23,3 +23,5 @@ pandas
 ipykernel
 wandb
 imax
+pyarrow
+fastparquet

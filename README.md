@@ -20,12 +20,15 @@ pip install orbax-checkpoint==0.4.0  --force --no-deps
 pip install -e .
 python3 -m ipykernel install --user --name=inv
 # ^ optional, for easily running IPython/Jupyter notebooks with the virtual env.
+cd src/utils/datasets/galaxy_mnist/
+tfds build
+# ^ for galaxy-mnist experiments
 ```
 
 If Python 3.11 needs to be installed without apt-get or similar, e.g. on Cambridge HPC.
   
 ```bash
-# install openssl
+# install openssl (if missing)
 wget https://www.openssl.org/source/openssl-1.1.1w.tar.gz
 md5sum openssl-1.1.1w.tar.gz  # should be 3f76825f195e52d4b10c70040681a275
 tar -xzvf openssl-1.1.1w.tar.gz
