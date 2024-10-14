@@ -37,7 +37,6 @@ parameters:
         distribution: categorical
         values:
           - "256"
-          - 128,64
           - "128"
   steps:
     distribution: categorical
@@ -45,19 +44,13 @@ parameters:
       - 2500
       - 5000
       - 10000
-      - 15000
-      - 20000
   warmup_steps_pct:
     distribution: uniform
     max: 0.3
     min: 0
-  # weight_decay:
-  #   distribution: log_uniform_values
-  #   max: 0.003
-  #   min: 0.00003
-  β_schedule_init_value:
-    distribution: uniform
-    max: 20
-    min: 1
+  weight_decay:
+    distribution: log_uniform_values
+    max: 0.01
+    min: 0.00003
 program: experiments/train/train_vae.py
-run_cap: 32
+run_cap: 64
