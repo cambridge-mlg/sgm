@@ -85,15 +85,17 @@ def get_data(
     if test_split is None or test_split == "":
         return train_ds, val_ds, None
 
+    batch_size_test = config.get("batch_size_test", batch_size_eval)
+    local_batch_size_test = batch_size_test // jax.device_count()
     num_test_examples = dataset_builder.info.splits[test_split].num_examples
     # Compute how many batches we need to contain the entire test set.
-    pad_up_to_batches = int(jnp.ceil(num_test_examples / batch_size_eval))
+    pad_up_to_batches = int(jnp.ceil(num_test_examples / batch_size_test))
 
     test_ds = deterministic_data.create_dataset(
         dataset_or_builder,
         split=tfds.split_for_jax_process(test_split),
         rng=test_rng,
-        batch_dims=[jax.local_device_count(), local_batch_size_eval],
+        batch_dims=[jax.local_device_count(), local_batch_size_test],
         num_epochs=1,
         preprocess_fn=preprocess_spec.parse(
             spec=config.pp_eval,
