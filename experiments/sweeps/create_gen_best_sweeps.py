@@ -12,33 +12,37 @@ ANGLES = [
     None,
 ]
 NUM_TRNS = [
-    3_500,
-    7_000,
+    # 3_500,
+    # 7_000,
     # 12_500,
     # 25_000,
     # 37_500,
     # 50_000,
     # None,
+    262_144,
+    65_536,
+    16_384,
 ]
 SEEDS = [
-    # 0,
-    1,
-    2,
+    0,
+    # 1,
+    # 2,
 ]
 DATASETS = [
     # "MNIST",
     # "aug_dsprites",
     # "aug_dspritesv2",
-    "galaxy_mnist",
+    # "galaxy_mnist",
+    "patch_camelyon",
 ]
 
 
 parent_path = Path(__file__).parent
 
-job_folder = parent_path.parent / "jobs" / f"gen_best_sweep_galaxy"
+job_folder = parent_path.parent / "jobs" / f"gen_best_sweep_camelyon"
 job_folder.mkdir(exist_ok=True, parents=True)
 
-job_file = job_folder / f"gen_best_sweep%01:30:00.txt"
+job_file = job_folder / f"gen_best_sweep%03:00:00.txt"
 if job_file.exists():
     job_file.unlink()
 
@@ -55,10 +59,13 @@ with job_file.open("w") as jf:
         if dataset == "galaxy_mnist" and (angle is not None):
             continue
 
+        if dataset == "patch_camelyon" and (angle is not None):
+            continue
+
         match dataset:
             case "MNIST":
                 params = (dataset, seed, angle, num_trn)
-            case "galaxy_mnist":
+            case "galaxy_mnist" | "patch_camelyon":
                 params = (dataset, seed, num_trn)
             case _:
                 params = (dataset, seed)

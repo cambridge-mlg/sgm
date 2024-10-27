@@ -6,6 +6,7 @@ from experiments.configs.datasets import (
     add_aug_dsprites_config_v2,
     add_galaxy_mnist_config,
     add_mnist_config,
+    add_patch_camelyon_config,
 )
 from src.transformations.transforms import (
     AffineAndHSVWithoutShearTransform,
@@ -22,7 +23,7 @@ def get_config(params) -> config_dict.ConfigDict:
     if config.dataset == "aug_dspritesv2":
         config.dataset = "aug_dsprites"
         v2 = True
-    assert config.dataset in ["MNIST", "aug_dsprites", "galaxy_mnist"]
+    assert config.dataset in ["MNIST", "aug_dsprites", "galaxy_mnist", "patch_camelyon"]
     config.seed = int(params[1])
     if len(params) == 3:
         config.num_trn = int(params[2])
@@ -41,11 +42,10 @@ def get_config(params) -> config_dict.ConfigDict:
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
     config.mae_loss_mult = 1.0
-    # config.bounds_mult = 1.0 if not (config.dataset == "aug_dsprites" and v2) else 0.75
     match (config.dataset, v2):
         case ("aug_dsprites", True):
             config.bounds_mult = 0.75
-        case ("galaxy_mnist", _):
+        case ("galaxy_mnist", _) | ("patch_camelyon", _):
             config.bounds_mult = 0.75
         case (_, _):
             config.bounds_mult = 1.0
@@ -57,11 +57,11 @@ def get_config(params) -> config_dict.ConfigDict:
             config.augment_bounds = (0.75, 0.75, jnp.pi, 0.75, 0.75)
         case ("aug_dsprites", False):
             config.augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
-        case ("galaxy_mnist", _):
+        case ("galaxy_mnist", _) | ("patch_camelyon", _):
             config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25, 0.5, 2.31, 0.51)
 
     match config.dataset:
-        case "galaxy_mnist":
+        case "galaxy_mnist" | "patch_camelyon":
             config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0)
         case _:
             config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
@@ -69,7 +69,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model_name = "generative_net"
     config.model = config_dict.ConfigDict()
     match (config.dataset, v2):
-        case ("aug_dsprites", True) | ("galaxy_mnist", _):
+        case ("aug_dsprites", True) | ("galaxy_mnist", _) | ("patch_camelyon", _):
             config.model.squash_to_bounds = True
         case (_, _):
             config.model.squash_to_bounds = False
@@ -80,7 +80,7 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model.conditioner.dropout_rate = 0.1
     config.model.transform = (
         AffineTransformWithoutShear
-        if config.dataset != "galaxy_mnist"
+        if config.dataset != "galaxy_mnist" and config.dataset != "patch_camelyon"
         else AffineAndHSVWithoutShearTransform
     )
 
@@ -205,6 +205,24 @@ def get_config(params) -> config_dict.ConfigDict:
             config.model.dropout_rate = 0.05
             config.model.num_flows = 4
             config.steps = 7500
+        case ("patch_camelyon", 262_144, 0):  # jrdy9r66
+            config.final_lr_mult = 0.03
+            config.lr = 0.0003
+            config.model.dropout_rate = 0.1
+            config.model.num_flows = 5
+            config.steps = 60000
+        case ("patch_camelyon", 65_536, 0):  # iewzgy5a
+            config.final_lr_mult = 0.03
+            config.lr = 0.0003
+            config.model.dropout_rate = 0.2
+            config.model.num_flows = 6
+            config.steps = 60000
+        case ("patch_camelyon", 16_384, 0):  # k6w6dbb6
+            config.final_lr_mult = 0.03
+            config.lr = 0.0003
+            config.model.dropout_rate = 0.2
+            config.model.num_flows = 4
+            config.steps = 15000
 
     config.batch_size = 512
     if config.dataset == "MNIST":
@@ -220,6 +238,13 @@ def get_config(params) -> config_dict.ConfigDict:
             add_aug_dsprites_config(config)
         else:
             add_aug_dsprites_config_v2(config)
+    elif config.dataset == "patch_camelyon":
+        config.num_val = 32_768
+        add_patch_camelyon_config(
+            config,
+            num_trn=config.get("num_trn", None),
+            num_val=config.num_val,
+        )
     else:
         config.num_val = 1000
         add_galaxy_mnist_config(

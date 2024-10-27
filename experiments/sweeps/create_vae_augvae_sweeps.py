@@ -22,37 +22,44 @@ NUM_TRNS = [
     # 37_500,
     # 25_000,
     # 12_500,
-    7_000,
-    3_500,
+    # 7_000,
+    # 3_500,
+    262_144,
+    65_536,
+    16_384,
 ]
 MODEL_NAMES = [
+    "vae",
     "augvae",
     # "invvae",
-    "vae",
     # "vae_wsda",
 ]
 SEEDS = [
     0,
-    1,
-    2,
+    # 1,
+    # 2,
 ]
 DATASETS = [
     # "MNIST",
-    "galaxy_mnist",
+    # "galaxy_mnist",
+    "patch_camelyon",
 ]
 SWEEP_TYPE = "grid"  # "grid" or "rand" or "bayes"
-SWEEP_CONFIG = f"vae_angles_{SWEEP_TYPE}_hyper_sweep.yaml"
+SWEEP_CONFIG = f"vae_angles_{SWEEP_TYPE}_hyper_sweep_camelyon.yaml"
 
 fmt_name = {
     "MNIST": "mnist",
     "galaxy_mnist": "galaxy",
+    "patch_camelyon": "camelyon",
 }
 
 parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
 
 for model_name in MODEL_NAMES:
-    job_folder = parent_path.parent / "jobs" / f"{model_name}_{SWEEP_TYPE}_sweep"
+    job_folder = (
+        parent_path.parent / "jobs" / f"{model_name}_{SWEEP_TYPE}_sweep_camelyon"
+    )
     job_folder.mkdir(exist_ok=True)
 
     for dataset, angle, num_trn, seed in product(DATASETS, ANGLES, NUM_TRNS, SEEDS):
@@ -60,6 +67,9 @@ for model_name in MODEL_NAMES:
             continue
 
         if (dataset == "galaxy_mnist") and (num_trn is None or angle is not None):
+            continue
+
+        if dataset == "patch_camelyon" and (num_trn is None or angle is not None):
             continue
 
         with sweep_path.open() as file:
@@ -77,7 +87,7 @@ for model_name in MODEL_NAMES:
         match dataset:
             case "MNIST":
                 params = (dataset, seed, angle, num_trn)
-            case "galaxy_mnist":
+            case "galaxy_mnist" | "patch_camelyon":
                 params = (dataset, seed, num_trn)
         params = [str(p) for p in params]
 
@@ -112,7 +122,7 @@ for model_name in MODEL_NAMES:
 
         sweep_id = wandb.sweep(sweep_config, entity=ENTITY, project=PROJECT)
 
-        time = "01:30:00"
+        time = "12:00:00"
         job_file = job_folder / f"{sweep_name}%{time}.txt"
         if job_file.exists():
             job_file.unlink()

@@ -6,6 +6,7 @@ from experiments.configs.datasets import (
     add_aug_dsprites_config_v2,
     add_galaxy_mnist_config,
     add_mnist_config,
+    add_patch_camelyon_config,
 )
 from src.transformations.transforms import (
     AffineAndHSVWithoutShearTransform,
@@ -22,7 +23,7 @@ def get_config(params) -> config_dict.ConfigDict:
     if config.dataset == "aug_dspritesv2":
         config.dataset = "aug_dsprites"
         v2 = True
-    assert config.dataset in ["MNIST", "aug_dsprites", "galaxy_mnist"]
+    assert config.dataset in ["MNIST", "aug_dsprites", "galaxy_mnist", "patch_camelyon"]
     config.seed = int(params[1])
     if len(params) == 3:
         config.num_trn = int(params[2])
@@ -42,13 +43,15 @@ def get_config(params) -> config_dict.ConfigDict:
             config.invertibility_loss_mult = 0.1
         case "aug_dsprites":
             config.invertibility_loss_mult = 1.0
-        case "galaxy_mnist":
+        case "galaxy_mnist" | "patch_camelyon":
             config.invertibility_loss_mult = 0.0
 
     config.η_loss_mult = 0.0
     match config.dataset:
         case "galaxy_mnist":
             config.steps = 10_000
+        case "patch_camelyon":
+            config.steps = 20_000
         case _:
             config.steps = 60_000
     config.σ_lr = 3e-3
@@ -69,11 +72,11 @@ def get_config(params) -> config_dict.ConfigDict:
             config.augment_bounds = (0.75, 0.75, jnp.pi, 0.75, 0.75)
         case ("aug_dsprites", False):
             config.augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
-        case ("galaxy_mnist", _):
+        case ("galaxy_mnist", _) | ("patch_camelyon", _):
             config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25, 0.5, 2.31, 0.51)
 
     match config.dataset:
-        case "galaxy_mnist":
+        case "galaxy_mnist" | "patch_camelyon":
             config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0)
         case _:
             config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
@@ -81,20 +84,20 @@ def get_config(params) -> config_dict.ConfigDict:
     config.model_name = "inference_net"
     config.model = config_dict.ConfigDict()
     match (config.dataset, v2):
-        case ("aug_dsprites", True) | ("galaxy_mnist", _):
+        case ("aug_dsprites", True) | ("galaxy_mnist", _) | ("patch_camelyon", _):
             config.model.squash_to_bounds = True
         case (_, _):
             config.model.squash_to_bounds = False
 
     config.model.hidden_dims = (
         (2048, 1024, 512, 256)
-        if config.dataset != "galaxy_mnist"
+        if config.dataset != "galaxy_mnist" and config.dataset != "patch_camelyon"
         else (1024, 1024, 512, 256)
     )
 
     config.model.transform = (
         AffineTransformWithoutShear
-        if config.dataset != "galaxy_mnist"
+        if config.dataset != "galaxy_mnist" and config.dataset != "patch_camelyon"
         else AffineAndHSVWithoutShearTransform
     )
 
@@ -252,6 +255,27 @@ def get_config(params) -> config_dict.ConfigDict:
             config.init_lr_mult = 3e-2
             config.lr = 1e-3
             config.warmup_steps_pct = 0.2
+        case ("patch_camelyon", 16_384, 0):  # 82r7tvy2
+            config.blur_σ_init = 3.0
+            config.clip_norm = 10.0
+            config.final_lr_mult = 3e-4
+            config.init_lr_mult = 3e-2
+            config.lr = 3e-4
+            config.warmup_steps_pct = 0.05
+        case ("patch_camelyon", 65_536, 0):  # g39czjr8
+            config.blur_σ_init = 3.0
+            config.clip_norm = 10.0
+            config.final_lr_mult = 3e-4
+            config.init_lr_mult = 1e-2
+            config.lr = 3e-4
+            config.warmup_steps_pct = 0.05
+        case ("patch_camelyon", 262_144, 0):  # 0pc7lq4t
+            config.blur_σ_init = 0.0
+            config.clip_norm = 3.0
+            config.final_lr_mult = 1e-3
+            config.init_lr_mult = 3e-2
+            config.lr = 3e-4
+            config.warmup_steps_pct = 0.05
 
     config.batch_size = 512
     if config.dataset == "MNIST":
@@ -267,6 +291,13 @@ def get_config(params) -> config_dict.ConfigDict:
             add_aug_dsprites_config(config)
         else:
             add_aug_dsprites_config_v2(config)
+    elif config.dataset == "patch_camelyon":
+        config.num_val = 32_768
+        add_patch_camelyon_config(
+            config,
+            num_trn=config.get("num_trn", None),
+            num_val=config.num_val,
+        )
     else:
         config.num_val = 1000
         add_galaxy_mnist_config(

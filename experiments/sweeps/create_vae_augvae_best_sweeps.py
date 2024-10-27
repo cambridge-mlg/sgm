@@ -35,7 +35,8 @@ SEEDS = [
 ]
 DATASETS = [
     # "MNIST",
-    "galaxy_mnist",
+    # "galaxy_mnist",
+    "patch_camelyon",
 ]
 
 fmt_model_name = {
@@ -62,10 +63,13 @@ for model_name in MODEL_NAMES:
             if (dataset == "galaxy_mnist") and (num_trn is None or angle is not None):
                 continue
 
+            if (dataset == "patch_camelyon") and (num_trn is None or angle is not None):
+                continue
+
             match dataset:
                 case "MNIST":
                     params = (dataset, seed, angle, num_trn)
-                case "galaxy_mnist":
+                case "galaxy_mnist" | "patch_camelyon":
                     params = (dataset, seed, num_trn)
             params = [str(p) for p in params]
 
