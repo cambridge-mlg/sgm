@@ -36,7 +36,6 @@ SEEDS = [
 DATASETS = [
     # "MNIST",
     # "galaxy_mnist",
-    "patch_camelyon",
 ]
 
 fmt_model_name = {

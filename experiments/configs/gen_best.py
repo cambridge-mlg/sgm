@@ -169,37 +169,37 @@ def get_config(params) -> config_dict.ConfigDict:
             config.model.dropout_rate = 0.05
             config.model.num_flows = 6
             config.steps = 60000
-        case ("galaxy_mnist", 7_000, 0):  # i8yrjt9f
+        case ("galaxy_mnist", 7_000, 0):
             config.final_lr_mult = 0.03
             config.lr = 0.0003
             config.model.dropout_rate = 0.05
             config.model.num_flows = 4
             config.steps = 15000
-        case ("galaxy_mnist", 7_000, 1):  # o8m0r0v5
+        case ("galaxy_mnist", 7_000, 1):
             config.final_lr_mult = 0.03
             config.lr = 0.0003
             config.model.dropout_rate = 0.05
             config.model.num_flows = 5
             config.steps = 7500
-        case ("galaxy_mnist", 7_000, 2):  # owjbmfaz
+        case ("galaxy_mnist", 7_000, 2):
             config.final_lr_mult = 0.03
             config.lr = 0.0003
             config.model.dropout_rate = 0.05
             config.model.num_flows = 5
             config.steps = 7500
-        case ("galaxy_mnist", 3_500, 0):  #
+        case ("galaxy_mnist", 3_500, 0):
             config.final_lr_mult = 0.03
             config.lr = 0.0003
             config.model.dropout_rate = 0.05
             config.model.num_flows = 4
             config.steps = 7500
-        case ("galaxy_mnist", 3_500, 1):  # jtsuv2a8
+        case ("galaxy_mnist", 3_500, 1):
             config.final_lr_mult = 0.03
             config.lr = 0.0003
             config.model.dropout_rate = 0.05
             config.model.num_flows = 5
             config.steps = 3750
-        case ("galaxy_mnist", 3_500, 2):  # gf3dj73k
+        case ("galaxy_mnist", 3_500, 2):
             config.final_lr_mult = 0.03
             config.lr = 0.0003
             config.model.dropout_rate = 0.05
@@ -211,17 +211,19 @@ def get_config(params) -> config_dict.ConfigDict:
             config.model.dropout_rate = 0.1
             config.model.num_flows = 5
             config.steps = 60000
+            # config.mae_loss_mult = 0.0
+            # ^ This is actually the best setting but we made a mistake
         case ("patch_camelyon", 65_536, 0):  # iewzgy5a
-            config.final_lr_mult = 0.03
+            config.final_lr_mult = 0.03  # 0.3 is actually better but we made a mistake
             config.lr = 0.0003
             config.model.dropout_rate = 0.2
-            config.model.num_flows = 6
+            config.model.num_flows = 6  # 5 is actually better but we made a mistake
             config.steps = 60000
         case ("patch_camelyon", 16_384, 0):  # k6w6dbb6
             config.final_lr_mult = 0.03
             config.lr = 0.0003
             config.model.dropout_rate = 0.2
-            config.model.num_flows = 4
+            config.model.num_flows = 4  # 5 is actually better but we made a mistake
             config.steps = 15000
 
     config.batch_size = 512
