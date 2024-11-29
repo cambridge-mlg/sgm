@@ -1,4 +1,4 @@
-# TODO(@shreyas): Split this config in two: one for inference and one for generation, see gen_mnist and inf_mnist.
+# TODO: Split this config in two: one for inference and one for generation, see gen_mnist and inf_mnist.
 from ml_collections import config_dict
 
 from src.transformations.transforms import HSVTransform
