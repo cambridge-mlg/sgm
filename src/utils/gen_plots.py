@@ -20,7 +20,7 @@ def plot_gen_model_training_metrics(history):
         mae,
         lr_gen,
     ) = history.collect("steps", "loss", "log_p_η_x_hat", "mae", "lr_gen")
-    # mae_loss_mult = history.collect("mae_loss_mult")
+    # consistency_loss_mult = history.collect("consistency_loss_mult")
     steps_test, loss_test, log_p_η_x_hat_test, mae_test = history.collect(
         "steps", "loss_test", "log_p_η_x_hat_test", "mae_test"
     )
@@ -58,8 +58,8 @@ def plot_gen_model_training_metrics(history):
     )
     # (p2,) = multiplier_ax.plot(
     #     steps,
-    #     mae_loss_mult,
-    #     label=f"mae_loss_mult {mae_loss_mult[-1]:.4f}",
+    #     consistency_loss_mult,
+    #     label=f"consistency_loss_mult {consistency_loss_mult[-1]:.4f}",
     #     color=colors[2],
     # )
     lines = [p1]

@@ -1,9 +1,9 @@
 from itertools import product
 from pathlib import Path
 
-import wandb
 import yaml
 
+import wandb
 from experiments.utils import format_thousand
 
 ENTITY = "invariance-learners"
@@ -11,33 +11,33 @@ PROJECT = "icml2024"
 MAX_NUM_RUNS = 144
 ANGLES = [
     # 0,
-    # 90,
-    # 180,
-    None,
+    15,
+    90,
+    180,
+    # None,
 ]
 NUM_TRNS = [
     # 3_500,
     # 7_000,
-    # 12_500,
-    # 25_000,
-    # 37_500,
-    # 50_000,
+    12_500,
+    25_000,
+    37_500,
+    50_000,
     # None,
-    262_144,
-    65_536,
-    16_384,
+    # 262_144,
+    # 65_536,
+    # 16_384,
 ]
 SEEDS = [
     0,
-    # 1,
-    # 2,
+    1,
+    2,
 ]
 DATASETS = [
-    # "MNIST",
+    "MNIST",
     # "aug_dsprites",
-    # "aug_dspritesv2",
     # "galaxy_mnist",
-    "patch_camelyon",
+    # "patch_camelyon",
 ]
 SWEEP_TYPE = "grid"  # "grid" or "rand" or "bayes"
 SWEEP_CONFIG = f"inf_{SWEEP_TYPE}_hyper_sweep.yaml"
@@ -49,7 +49,6 @@ fmt_name = {
     "galaxy_mnist": "galaxy",
     "patch_camelyon": "camelyon",
 }
-# fmt_name = lambda dataset_name: dataset_name.split("_")[-1].lower()
 
 parent_path = Path(__file__).parent
 sweep_path = parent_path / SWEEP_CONFIG
@@ -61,9 +60,7 @@ for dataset, angle, num_trn, seed in product(DATASETS, ANGLES, NUM_TRNS, SEEDS):
     if dataset == "MNIST" and (num_trn is None or angle is None):
         continue
 
-    if (dataset == "aug_dsprites" or dataset == "aug_dspritesv2") and not (
-        num_trn is None and angle is None
-    ):
+    if dataset == "aug_dsprites" and not (num_trn is None and angle is None):
         continue
 
     if (dataset == "galaxy_mnist") and (num_trn is None or angle is not None):

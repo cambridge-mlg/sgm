@@ -7,12 +7,12 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
-import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
+import wandb
 from experiments.utils import (
     assert_inf_gen_compatiblity,
     duplicated_run,
@@ -33,12 +33,12 @@ from src.models.utils import reset_metrics
 from src.transformations import transforms
 from src.utils.gen_plots import plot_gen_dists, plot_gen_model_training_metrics
 from src.utils.input import get_data
-from src.utils.proto_plots import (
+from src.utils.training import custom_wandb_logger
+from utils.inf_plots import (
     make_get_prototype_fn,
-    plot_proto_model_training_metrics,
+    plot_inf_model_training_metrics,
     plot_protos_and_recons,
 )
-from src.utils.training import custom_wandb_logger
 
 flax.config.update("flax_use_orbax_checkpointing", True)
 logging.set_verbosity(logging.INFO)
@@ -131,7 +131,7 @@ def main(_):
                 inf_model, inf_config
             )
 
-            inf_final_state, history, _ = ciclo.train_loop(
+            final_inf_state, history, _ = ciclo.train_loop(
                 inf_state,
                 deterministic_data.start_input_pipeline(train_ds),
                 {
@@ -147,13 +147,13 @@ def main(_):
                 stop=inf_config.steps + 1,
             )
 
-            save_checkpoint(inf_model_checkpoint_path, inf_final_state, inf_config)
+            save_checkpoint(inf_model_checkpoint_path, final_inf_state, inf_config)
 
-            fig = plot_proto_model_training_metrics(history)
-            run.summary["proto_training_metrics"] = wandb.Image(fig)
+            fig = plot_inf_model_training_metrics(history)
+            run.summary["inf_training_metrics"] = wandb.Image(fig)
             plt.close(fig)
         else:
-            inf_final_state, inf_config_ = load_checkpoint(
+            final_inf_state, inf_config_ = load_checkpoint(
                 inf_model_checkpoint_path, inf_state, inf_config
             )
             if (
@@ -170,7 +170,7 @@ def main(_):
 
         get_prototype = make_get_prototype_fn(
             inf_model,
-            inf_final_state,
+            final_inf_state,
             rng,
             inf_model.transform,
             inf_config.get("transform_kwargs", None),
@@ -184,13 +184,8 @@ def main(_):
                     val_batch["image"][0][7],
                     val_batch["image"][0][8],
                     val_batch["image"][0][9],
-                    # val_batch["image"][0][1],
-                    # val_batch["image"][0][4],
-                    # val_batch["image"][0][9],
                 ],
                 [
-                    # jnp.array([0, 0, 1, 0, 0]),
-                    # jnp.array([1, 1, 0, 0, 0]),
                     jnp.array([1]),
                 ],
             )
@@ -208,7 +203,7 @@ def main(_):
         ####### GEN MODEL #######
         def prototype_function(x, rng):
             η = inf_model.apply(
-                {"params": inf_final_state.params}, x, train=False
+                {"params": final_inf_state.params}, x, train=False
             ).sample(seed=rng)
             return η
 
@@ -235,7 +230,7 @@ def main(_):
             gen_model, gen_config, prototype_function=prototype_function
         )
 
-        gen_final_state, history, _ = ciclo.train_loop(
+        final_gen_state, history, _ = ciclo.train_loop(
             gen_state,
             deterministic_data.start_input_pipeline(train_ds),
             {
@@ -255,7 +250,7 @@ def main(_):
         # Save the checkpoint if a path is provided:
         gen_model_checkpoint_path = gen_config.get("checkpoint", "")
         if gen_model_checkpoint_path != "":
-            save_checkpoint(gen_model_checkpoint_path, gen_final_state, gen_config)
+            save_checkpoint(gen_model_checkpoint_path, final_gen_state, gen_config)
 
         fig = plot_gen_model_training_metrics(history)
         run.summary[f"gen_training_metrics"] = wandb.Image(fig)
@@ -277,7 +272,7 @@ def main(_):
                 prototype_function,
                 rng,
                 gen_model,
-                gen_final_state.params,
+                final_gen_state.params,
                 gen_config,
             )
             run.summary[f"gen_plots_{i}"] = wandb.Image(fig)
@@ -301,7 +296,7 @@ def main(_):
                 prototype_function,
                 rng,
                 gen_model,
-                gen_final_state.params,
+                final_gen_state.params,
                 gen_config,
             )
             run.summary[f"gen_rep_plots_{i}"] = wandb.Image(fig)

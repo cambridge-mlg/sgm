@@ -7,9 +7,6 @@
 # Single job mode: pass the python arguments to this script
 # Batch job mode: pass a file with first the job tag and second the commands per line
 
-# JMH233-SL3-GPU T2-CS117-GPU T2-CS133-GPU T2-CS169-GPU
-
-#SBATCH -A JMH233-SL2-GPU 
 #SBATCH --nodes=1
 #SBATCH --partition=ampere
 #SBATCH --mail-type=FAIL
@@ -23,8 +20,6 @@ module load rhel7/default-gpu              # REQUIRED - loads the basic environm
 # My custom modules
 source ~/.bashrc
 source ~/.virtualenvs/inv/bin/activate
-# module load cuda/12.1
-# module load cudnn/8.9_cuda-12.1
 
 #! Work directory (i.e. where the job will run):
 workdir="$SLURM_SUBMIT_DIR"  # The value of SLURM_SUBMIT_DIR sets workdir to the directory
@@ -51,9 +46,9 @@ echo "nvidia-smi"
 nvidia-smi
 
 
-######################################
-### Joosts script starts from here ###
-######################################
+#######################################
+### y0ast's script starts from here ###
+#######################################
 
 set -e # fail fully on first line failure
 

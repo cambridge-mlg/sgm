@@ -3,7 +3,6 @@ from ml_collections import config_dict
 
 from experiments.configs.datasets import (
     add_aug_dsprites_config,
-    add_aug_dsprites_config_v2,
     add_galaxy_mnist_config,
     add_mnist_config,
     add_patch_camelyon_config,
@@ -19,10 +18,6 @@ def get_config(params) -> config_dict.ConfigDict:
 
     params = params.split(",")
     config.dataset = params[0]
-    v2 = False
-    if config.dataset == "aug_dspritesv2":
-        config.dataset = "aug_dsprites"
-        v2 = True
     assert config.dataset in ["MNIST", "aug_dsprites", "galaxy_mnist", "patch_camelyon"]
     config.seed = int(params[1])
     if len(params) == 3:
@@ -41,23 +36,21 @@ def get_config(params) -> config_dict.ConfigDict:
     config.warmup_steps_pct = 0.2
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
-    config.mae_loss_mult = 1.0
-    match (config.dataset, v2):
-        case ("aug_dsprites", True):
+    config.consistency_loss_mult = 1.0
+    match config.dataset:
+        case "aug_dsprites":
             config.bounds_mult = 0.75
-        case ("galaxy_mnist", _) | ("patch_camelyon", _):
+        case "galaxy_mnist" | "patch_camelyon":
             config.bounds_mult = 0.75
-        case (_, _):
+        case _:
             config.bounds_mult = 1.0
 
-    match (config.dataset, v2):
-        case ("MNIST", _):
+    match config.dataset:
+        case "MNIST":
             config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25)
-        case ("aug_dsprites", True):
+        case "aug_dsprites":
             config.augment_bounds = (0.75, 0.75, jnp.pi, 0.75, 0.75)
-        case ("aug_dsprites", False):
-            config.augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
-        case ("galaxy_mnist", _) | ("patch_camelyon", _):
+        case "galaxy_mnist" | "patch_camelyon":
             config.augment_bounds = (0.25, 0.25, jnp.pi, 0.25, 0.25, 0.5, 2.31, 0.51)
 
     match config.dataset:
@@ -68,10 +61,10 @@ def get_config(params) -> config_dict.ConfigDict:
 
     config.model_name = "generative_net"
     config.model = config_dict.ConfigDict()
-    match (config.dataset, v2):
-        case ("aug_dsprites", True) | ("galaxy_mnist", _) | ("patch_camelyon", _):
+    match config.dataset:
+        case "aug_dsprites" | "galaxy_mnist" | "patch_camelyon":
             config.model.squash_to_bounds = True
-        case (_, _):
+        case _:
             config.model.squash_to_bounds = False
     config.model.hidden_dims = (1024, 512, 256)
     config.model.num_bins = 6
@@ -144,19 +137,13 @@ def get_config(params) -> config_dict.ConfigDict:
             config.model.num_flows = 5
             config.steps = 7500
         case ("aug_dsprites", None, 0):
-            if not v2:
-                config.final_lr_mult = 0.3
-                config.lr = 0.0003
-                config.model.dropout_rate = 0.05
-                config.model.num_flows = 6
-                config.steps = 60000
-            else:  # q4r7bi1r
-                config.final_lr_mult = 0.03
-                config.lr = 0.003
-                config.mae_loss_mult = 0.0
-                config.model.dropout_rate = 0.05
-                config.model.num_flows = 6
-                config.steps = 60000
+            # q4r7bi1r
+            config.final_lr_mult = 0.03
+            config.lr = 0.003
+            config.consistency_loss_mult = 0.0
+            config.model.dropout_rate = 0.05
+            config.model.num_flows = 6
+            config.steps = 60000
         case ("aug_dsprites", None, 1):
             config.final_lr_mult = 0.03
             config.lr = 0.0003
@@ -211,7 +198,7 @@ def get_config(params) -> config_dict.ConfigDict:
             config.model.dropout_rate = 0.1
             config.model.num_flows = 5
             config.steps = 60000
-            # config.mae_loss_mult = 0.0
+            # config.consistency_loss_mult = 0.0
             # ^ This is actually the best setting but we made a mistake
         case ("patch_camelyon", 65_536, 0):  # iewzgy5a
             config.final_lr_mult = 0.03  # 0.3 is actually better but we made a mistake
@@ -236,10 +223,7 @@ def get_config(params) -> config_dict.ConfigDict:
             num_val=config.num_val,
         )
     elif config.dataset == "aug_dsprites":
-        if not v2:
-            add_aug_dsprites_config(config)
-        else:
-            add_aug_dsprites_config_v2(config)
+        add_aug_dsprites_config(config)
     elif config.dataset == "patch_camelyon":
         config.num_val = 32_768
         add_patch_camelyon_config(

@@ -191,7 +191,7 @@ def create_inv_vae_optimizer(params, config):
 
 
 def create_inv_vae_state(
-    model, config, rng, input_shape, inf_final_state, gen_final_state
+    model, config, rng, input_shape, final_inf_state, final_gen_state
 ):
     state_rng, init_rng, dropout_rng = random.split(rng, 3)
     variables = model.init(
@@ -203,8 +203,8 @@ def create_inv_vae_state(
     parameter_overview.log_parameter_overview(variables)
 
     params = variables["params"]
-    params["inference_model"] = inf_final_state.params
-    params["generative_model"] = gen_final_state.params
+    params["inference_model"] = final_inf_state.params
+    params["generative_model"] = final_gen_state.params
     params = flax.core.freeze(params)
     del variables
 

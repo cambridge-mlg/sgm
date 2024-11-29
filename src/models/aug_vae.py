@@ -55,8 +55,8 @@ class AUG_VAE(nn.Module):
         self, x: Array, train: bool = True
     ) -> Tuple[distrax.Distribution, ...]:
         # Note: if using this function to initialize the model, if train=False,
-        # the proto_gen_model will not be initialized. This is probably not an
-        # issue, since the idea is to pre-train the pgm.
+        # the inf and gen models will not be initialized. This is probably not an
+        # issue, since the idea is to pre-train them.
         if train:
             x = self.resample(x, train=train)
 
@@ -152,7 +152,7 @@ def create_aug_vae_optimizer(params, config):
 
 
 def create_aug_vae_state(
-    model, config, rng, input_shape, inf_final_state, gen_final_state
+    model, config, rng, input_shape, final_inf_state, final_gen_state
 ):
     state_rng, init_rng, dropout_rng = random.split(rng, 3)
     variables = model.init(
@@ -164,8 +164,8 @@ def create_aug_vae_state(
     parameter_overview.log_parameter_overview(variables)
 
     params = variables["params"]
-    params["inference_model"] = inf_final_state.params
-    params["generative_model"] = gen_final_state.params
+    params["inference_model"] = final_inf_state.params
+    params["generative_model"] = final_gen_state.params
     params = flax.core.freeze(params)
     del variables
 

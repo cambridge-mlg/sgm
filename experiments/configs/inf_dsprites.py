@@ -29,13 +29,14 @@ def get_config() -> config_dict.ConfigDict:
     config.blur_filter_size = 5
     config.blur_σ_init = 3.0
     config.blur_end_pct = 0.01
+    config.symmetrized_loss = False
 
-    config.augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
+    config.augment_bounds = (0.75, 0.75, jnp.pi, 0.75, 0.75)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
 
     config.model_name = "inference_net"
     config.model = config_dict.ConfigDict()
-    config.model.squash_to_bounds = False
+    config.model.squash_to_bounds = True
     config.model.hidden_dims = (2048, 1024, 512, 256)
     config.model.transform = AffineTransformWithoutShear
 

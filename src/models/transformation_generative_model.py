@@ -240,7 +240,7 @@ def make_transformation_generative_train_and_eval(
 
         # --- TODO: smoothness loss? Need to think about it, cause the l2 of grad. doesn't necessarily make sense
 
-        loss = -log_p_η_x_hat.mean() + config.mae_loss_mult * mae
+        loss = -log_p_η_x_hat.mean() + config.consistency_loss_mult * mae
 
         return loss, {
             "loss": loss,

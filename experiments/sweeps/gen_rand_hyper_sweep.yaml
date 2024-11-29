@@ -26,11 +26,11 @@ parameters:
     distribution: log_uniform_values
     max: 0.01
     min: 0.0001
-  mae_loss_mult_final:
+  consistency_loss_mult_final:
     distribution: uniform
     max: 1
     min: 0
-  mae_loss_mult_initial:
+  consistency_loss_mult_initial:
     distribution: uniform
     max: 1
     min: 0

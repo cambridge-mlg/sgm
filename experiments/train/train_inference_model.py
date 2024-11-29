@@ -5,12 +5,12 @@ import flax
 import jax.numpy as jnp
 import jax.random as random
 import matplotlib.pyplot as plt
-import wandb
 from absl import app, flags, logging
 from clu import deterministic_data
 from jax.config import config as jax_config
 from ml_collections import config_dict, config_flags
 
+import wandb
 from experiments.utils import duplicated_run, save_checkpoint
 from src.models.transformation_inference_model import (
     TransformationInferenceNet,
@@ -20,12 +20,12 @@ from src.models.transformation_inference_model import (
 from src.models.utils import reset_metrics
 from src.transformations import transforms
 from src.utils.input import get_data
-from src.utils.proto_plots import (
+from src.utils.training import custom_wandb_logger
+from utils.inf_plots import (
     make_get_prototype_fn,
-    plot_proto_model_training_metrics,
+    plot_inf_model_training_metrics,
     plot_protos_and_recons,
 )
-from src.utils.training import custom_wandb_logger
 
 flax.config.update("flax_use_orbax_checkpointing", True)
 logging.set_verbosity(logging.INFO)
@@ -119,7 +119,7 @@ def main(_):
         if model_checkpoint_path != "":
             save_checkpoint(model_checkpoint_path, final_state, config)
 
-        fig = plot_proto_model_training_metrics(history)
+        fig = plot_inf_model_training_metrics(history)
         run.summary["inf_training_metrics"] = wandb.Image(fig)
         plt.close(fig)
 
@@ -144,8 +144,6 @@ def main(_):
                     val_batch["image"][0][9],
                 ],
                 [
-                    # jnp.array([1, 1, 1, 1, 1, 0, 0, 0]),
-                    # jnp.array([0, 0, 0, 0, 0, 1, 1, 1]),
                     jnp.array([1]),
                 ],
             )

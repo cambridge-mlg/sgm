@@ -23,7 +23,7 @@ def get_config(param) -> config_dict.ConfigDict:
     config.warmup_steps_pct = 0.2
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
-    config.mae_loss_mult = 1.0
+    config.consistency_loss_mult = 1.0
     config.bounds_mult = 0.75
 
     config.augment_bounds = (

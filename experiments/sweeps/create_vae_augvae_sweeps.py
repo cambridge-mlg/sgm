@@ -1,48 +1,48 @@
 from itertools import product
 from pathlib import Path
 
-import wandb
 import yaml
 
+import wandb
 from experiments.utils import format_thousand
 
 ENTITY = "invariance-learners"
 PROJECT = "icml2024"
-CHECKPOINT_DIR = "/home/jua23/rds/hpc-work/learning-invariances-models"
+CHECKPOINT_DIR = "learning-invariances-models"
 MAX_NUM_RUNS = 36
 ANGLES = [
     # 0,
-    # 15,
-    # 90,
-    # 180,
-    None
+    15,
+    90,
+    180,
+    # None
 ]
 NUM_TRNS = [
-    # 50_000,
-    # 37_500,
-    # 25_000,
-    # 12_500,
+    50_000,
+    37_500,
+    25_000,
+    12_500,
     # 7_000,
     # 3_500,
-    262_144,
-    65_536,
-    16_384,
+    # 262_144,
+    # 65_536,
+    # 16_384,
 ]
 MODEL_NAMES = [
     "vae",
     "augvae",
-    # "invvae",
+    "invvae",
     # "vae_wsda",
 ]
 SEEDS = [
     0,
-    # 1,
-    # 2,
+    1,
+    2,
 ]
 DATASETS = [
-    # "MNIST",
+    "MNIST",
     # "galaxy_mnist",
-    "patch_camelyon",
+    # "patch_camelyon",
 ]
 SWEEP_TYPE = "grid"  # "grid" or "rand" or "bayes"
 SWEEP_CONFIG = f"vae_angles_{SWEEP_TYPE}_hyper_sweep_camelyon.yaml"

@@ -22,15 +22,16 @@ def get_config() -> config_dict.ConfigDict:
     config.warmup_steps_pct = 0.2
     config.clip_norm = 2.0
     config.weight_decay = 1e-4
-    config.mae_loss_mult = 1.0
+    config.consistency_loss_mult = 1.0
+    config.bounds_mult = 0.75
 
-    config.augment_bounds = (0.5, 0.5, jnp.pi, 0.5, 0.5)
+    config.augment_bounds = (0.75, 0.75, jnp.pi, 0.75, 0.75)
     config.augment_offset = (0.0, 0.0, 0.0, 0.0, 0.0)
 
     config.model_name = "generative_net"
     config.model = config_dict.ConfigDict()
     config.model.hidden_dims = (1024, 512, 256)
-    config.model.squash_to_bounds = False
+    config.model.squash_to_bounds = True
     config.model.num_flows = 6
     config.model.num_bins = 6
     config.model.dropout_rate = 0.05

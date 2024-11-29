@@ -1,8 +1,8 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
-    name="invariances",
-    version="0.0.1",
-    description="Experiments for learning invariances.",
+    name="sgm",
+    version="1.0.0",
+    description="Experiments and code for 'A Generative Model of Symmetry Transformations' (https://arxiv.org/abs/2403.01946).",
     packages=find_packages(),
 )
